@@ -1,0 +1,63 @@
+# -*- text -*-
+# =============================================================================
+#  RADIUS PRO — rlm_sql (PostgreSQL)
+#
+#  Uses the stock FreeRADIUS 3.2 PostgreSQL queries:
+#    ${modconfdir}/sql/main/postgresql/queries.conf
+#
+#  Connection settings come from the container environment (docker-compose),
+#  so no database credentials are committed to Git.
+# =============================================================================
+
+sql {
+	dialect = "postgresql"
+	driver = "rlm_sql_${dialect}"
+
+	postgresql {
+		send_application_name = yes
+		application_name = "FreeRADIUS - RADIUS PRO"
+	}
+
+	# ---- Connection (from environment) -------------------------------------
+	server = $ENV{RADIUS_DB_HOST}
+	port = $ENV{RADIUS_DB_PORT}
+	login = $ENV{RADIUS_DB_USER}
+	password = $ENV{RADIUS_DB_PASSWORD}
+	radius_db = $ENV{RADIUS_DB_NAME}
+
+	# ---- Tables ------------------------------------------------------------
+	acct_table1 = "radacct"
+	acct_table2 = "radacct"
+	postauth_table = "radpostauth"
+	authcheck_table = "radcheck"
+	groupcheck_table = "radgroupcheck"
+	authreply_table = "radreply"
+	groupreply_table = "radgroupreply"
+	usergroup_table = "radusergroup"
+
+	# Close stale sessions for a user when a new one starts on the same port
+	delete_stale_sessions = yes
+
+	# ---- Connection pool ---------------------------------------------------
+	pool {
+		start = ${thread[pool].start_servers}
+		min = ${thread[pool].min_spare_servers}
+		max = ${thread[pool].max_servers}
+		spare = ${thread[pool].max_spare_servers}
+		uses = 0
+		retry_delay = 30
+		lifetime = 0
+		idle_timeout = 60
+		max_retries = 5
+	}
+
+	# ---- Dynamic clients ---------------------------------------------------
+	# Phase 2 (NAS Management) will switch this on so NAS devices added in the
+	# panel are loaded from the "nas" table at startup.
+	read_clients = no
+	client_table = "nas"
+
+	group_attribute = "SQL-Group"
+
+	$INCLUDE ${modconfdir}/${.:name}/main/${dialect}/queries.conf
+}

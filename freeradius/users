@@ -1,0 +1,11 @@
+# -*- text -*-
+# =============================================================================
+#  RADIUS PRO — local users file (mods-config/files/authorize)
+#
+#  Production subscribers will live in PostgreSQL (radcheck / radreply /
+#  radusergroup) and be managed by the Customer module in a later phase.
+#  This file only holds the development test account.
+# =============================================================================
+
+# Development test user — DEVELOPMENT ONLY
+testuser	Cleartext-Password := "testpassword"

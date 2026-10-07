@@ -1,0 +1,313 @@
+'use client';
+
+import React from 'react';
+import {
+  LayoutDashboard,
+  Radio,
+  Network,
+  Users,
+  Box,
+  CreditCard,
+  FileBarChart,
+  Activity,
+  Settings,
+  ChevronDown,
+  Layers,
+  Server,
+  Zap,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface SidebarProps {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  collapsed: boolean;
+  onNavigateNotice?: (name: string) => void;
+}
+
+export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }: SidebarProps) {
+  const [radiusOpen, setRadiusOpen] = React.useState(true);
+  const [networkOpen, setNetworkOpen] = React.useState(true);
+  const [managementOpen, setManagementOpen] = React.useState(false);
+  const [systemOpen, setSystemOpen] = React.useState(true);
+
+  const handleNextModule = (title: string) => {
+    if (onNavigateNotice) onNavigateNotice(title);
+  };
+
+  return (
+    <aside
+      className={cn(
+        'border-r border-border bg-card/60 backdrop-blur-xl flex flex-col transition-all duration-300 z-20 select-none flex-shrink-0',
+        collapsed ? 'w-20' : 'w-64'
+      )}
+    >
+      {/* Brand Logo & Subtitle */}
+      <div className="h-16 flex items-center px-4 border-b border-border/80 gap-3">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 via-indigo-600 to-primary flex items-center justify-center text-white font-bold shadow-lg shadow-purple-500/20 flex-shrink-0">
+          <Zap className="w-5 h-5 fill-white/20 stroke-[2.5]" />
+        </div>
+        {!collapsed && (
+          <div className="flex flex-col overflow-hidden">
+            <span className="font-bold tracking-tight text-foreground text-sm uppercase flex items-center gap-1.5">
+              RADIUS PRO
+              <span className="text-[10px] bg-primary/10 text-primary font-semibold px-1.5 py-0.5 rounded border border-primary/20">
+                v1.0
+              </span>
+            </span>
+            <span className="text-[10px] font-medium text-muted-foreground tracking-wider uppercase">
+              ISP Management
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Nav List */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        {/* Dashboard */}
+        <div>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group',
+              activeTab === 'dashboard'
+                ? 'bg-primary text-primary-foreground shadow-md shadow-primary/25 font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            )}
+            title="Dashboard"
+          >
+            <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span>Dashboard</span>}
+          </button>
+        </div>
+
+        {/* RADIUS GROUP */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setRadiusOpen(!radiusOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <Radio className="w-3.5 h-3.5 text-primary" /> RADIUS
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !radiusOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? radiusOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => setActiveTab('radius_overview')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'radius_overview'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="RADIUS Overview"
+              >
+                <Radio className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>Overview</span>}
+              </button>
+
+              <button
+                onClick={() => handleNextModule('RADIUS Authentication')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                title="Authentication (Coming in next module)"
+              >
+                <div className="flex items-center gap-3">
+                  <Activity className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>Authentication</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+
+              <button
+                onClick={() => handleNextModule('RADIUS Accounting')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                title="Accounting (Coming in next module)"
+              >
+                <div className="flex items-center gap-3">
+                  <FileBarChart className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>Accounting</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+
+              <button
+                onClick={() => handleNextModule('Sessions Management')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                title="Sessions (Coming in next module)"
+              >
+                <div className="flex items-center gap-3">
+                  <Layers className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>Sessions</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* NETWORK GROUP */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setNetworkOpen(!networkOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <Network className="w-3.5 h-3.5 text-blue-500" /> NETWORK
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !networkOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? networkOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => handleNextModule('NAS Devices')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                title="NAS Devices"
+              >
+                <div className="flex items-center gap-3">
+                  <Server className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>NAS Devices</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+
+              <button
+                onClick={() => handleNextModule('IP Pools')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                title="IP Pools"
+              >
+                <div className="flex items-center gap-3">
+                  <Box className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>IP Pools</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* MANAGEMENT GROUP */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setManagementOpen(!managementOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-emerald-500" /> MANAGEMENT
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !managementOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? managementOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => handleNextModule('Customers Management')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+              >
+                <div className="flex items-center gap-3">
+                  <Users className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>Customers</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+
+              <button
+                onClick={() => handleNextModule('Packages & Bandwidth')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+              >
+                <div className="flex items-center gap-3">
+                  <Box className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>Packages</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+
+              <button
+                onClick={() => handleNextModule('Billing & Invoicing')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+              >
+                <div className="flex items-center gap-3">
+                  <CreditCard className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>Billing</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* REPORTS */}
+        <div>
+          <button
+            onClick={() => handleNextModule('Reports & Analytics')}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+          >
+            <div className="flex items-center gap-3">
+              <FileBarChart className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span>Reports</span>}
+            </div>
+            {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+          </button>
+        </div>
+
+        {/* SYSTEM */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setSystemOpen(!systemOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <Settings className="w-3.5 h-3.5 text-orange-500" /> SYSTEM
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !systemOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? systemOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => handleNextModule('System Health Diagnostics')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+              >
+                <div className="flex items-center gap-3">
+                  <Activity className="w-4 h-4 flex-shrink-0 text-emerald-500" />
+                  {!collapsed && <span>System Health</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-emerald-500/80 font-mono">Live</span>}
+              </button>
+
+              <button
+                onClick={() => handleNextModule('System Settings')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+              >
+                <div className="flex items-center gap-3">
+                  <Settings className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span>Settings</span>}
+                </div>
+                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}

@@ -1,0 +1,153 @@
+# =============================================================================
+#  RADIUS PRO — ISP RADIUS Management Panel (Phase 1)
+#
+#  Usage:
+#    cp .env.example .env    # then edit secrets
+#    docker compose up -d
+#
+#  Services:
+#    postgres    PostgreSQL 16  (FreeRADIUS schema + application schema)
+#    freeradius  FreeRADIUS 3.2 (UDP 1812 auth / UDP 1813 accounting)
+#    backend     Node.js / TypeScript REST API           (:4000)
+#    frontend    Next.js dashboard                       (:3000)
+# =============================================================================
+
+name: radius-panel
+
+x-db-env: &db-env
+  DATABASE_HOST: postgres
+  DATABASE_PORT: 5432
+  DATABASE_NAME: ${POSTGRES_DB:-radius}
+  DATABASE_USER: ${POSTGRES_USER:-radius}
+  DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: radius-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-radius}
+      POSTGRES_USER: ${POSTGRES_USER:-radius}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      TZ: ${APP_TIMEZONE:-Asia/Kathmandu}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Bound to localhost only — never expose the database publicly.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - radius_net
+
+  freeradius:
+    build:
+      context: ./freeradius
+    image: radius-panel/freeradius:3.2
+    # The official FreeRADIUS image is published for amd64 only.
+    platform: linux/amd64
+    container_name: radius-freeradius
+    restart: unless-stopped
+    environment:
+      # Consumed by FreeRADIUS config via $ENV{...}
+      RADIUS_SECRET: ${RADIUS_SECRET:?RADIUS_SECRET must be set in .env}
+      RADIUS_CLIENT_NETWORK: ${RADIUS_CLIENT_NETWORK:-172.28.0.0/16}
+      RADIUS_DB_HOST: postgres
+      RADIUS_DB_PORT: 5432
+      RADIUS_DB_NAME: ${POSTGRES_DB:-radius}
+      RADIUS_DB_USER: ${POSTGRES_USER:-radius}
+      RADIUS_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      TZ: ${APP_TIMEZONE:-Asia/Kathmandu}
+    ports:
+      - "${RADIUS_AUTH_PORT:-1812}:1812/udp"
+      - "${RADIUS_ACCT_PORT:-1813}:1813/udp"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Full Access-Request, tagged with NAS-Identifier so it is not logged to radpostauth
+      test: ["CMD-SHELL", "printf 'User-Name=testuser\\nUser-Password=testpassword\\nNAS-Identifier=radius-pro-healthcheck\\nMessage-Authenticator=0x00\\n' | radclient -t 3 -r 1 127.0.0.1:1812 auth testing123 | grep -q Access-Accept"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - radius_net
+
+  backend:
+    build:
+      context: ./backend
+    image: radius-panel/backend:latest
+    container_name: radius-backend
+    restart: unless-stopped
+    environment:
+      <<: *db-env
+      NODE_ENV: production
+      PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kathmandu}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      SESSION_REMEMBER_DAYS: ${SESSION_REMEMBER_DAYS:-30}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-System Administrator}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      RADIUS_HOST: freeradius
+      RADIUS_AUTH_PORT: 1812
+      RADIUS_ACCT_PORT: 1813
+      RADIUS_SECRET: ${RADIUS_SECRET:?RADIUS_SECRET must be set in .env}
+      RADIUS_TIMEOUT_MS: ${RADIUS_TIMEOUT_MS:-2000}
+      RADIUS_HEALTHCHECK_USERNAME: ${RADIUS_HEALTHCHECK_USERNAME:-testuser}
+      RADIUS_HEALTHCHECK_PASSWORD: ${RADIUS_HEALTHCHECK_PASSWORD:-testpassword}
+      DATA_MODE: ${DATA_MODE:-hybrid}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      freeradius:
+        # Backend starts even if FreeRADIUS is down so the dashboard can report it.
+        condition: service_started
+    networks:
+      - radius_net
+
+  frontend:
+    build:
+      context: ./frontend
+    image: radius-panel/frontend:latest
+    container_name: radius-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:4000
+      NEXT_PUBLIC_APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kathmandu}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    networks:
+      - radius_net
+
+networks:
+  radius_net:
+    name: radius_net
+    driver: bridge
+    ipam:
+      config:
+        # Fixed subnet so FreeRADIUS can trust the backend as a RADIUS client.
+        - subnet: 172.28.0.0/16
+
+volumes:
+  postgres_data:
+    name: radius_postgres_data

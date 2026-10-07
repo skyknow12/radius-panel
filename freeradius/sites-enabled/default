@@ -1,0 +1,120 @@
+# -*- text -*-
+# =============================================================================
+#  RADIUS PRO — default virtual server
+#
+#  Handles:
+#    UDP 1812  Access-Request  (PAP / CHAP / MS-CHAP)  + Status-Server
+#    UDP 1813  Accounting-Request                      + Status-Server
+#
+#  Lookup order for users:  files (users)  ->  SQL (radcheck / radreply)
+#  Accounting + post-auth logs are written to PostgreSQL (radacct / radpostauth).
+# =============================================================================
+
+server default {
+
+listen {
+	type = auth
+	ipaddr = *
+	port = 1812
+	limit {
+		max_connections = 16
+		lifetime = 0
+		idle_timeout = 30
+	}
+}
+
+listen {
+	type = acct
+	ipaddr = *
+	port = 1813
+	limit {
+	}
+}
+
+# -----------------------------------------------------------------------------
+authorize {
+	filter_username
+	preprocess
+
+	chap
+	mschap
+	suffix
+
+	# Local users file (development test user)
+	files
+
+	# PostgreSQL: radcheck / radreply / radgroupcheck / radgroupreply
+	-sql
+
+	expiration
+	logintime
+
+	pap
+
+	# Status-Server (RFC 5997) — used by the panel health checks
+	Autz-Type Status-Server {
+		ok
+	}
+}
+
+# -----------------------------------------------------------------------------
+authenticate {
+	Auth-Type PAP {
+		pap
+	}
+	Auth-Type CHAP {
+		chap
+	}
+	Auth-Type MS-CHAP {
+		mschap
+	}
+	mschap
+}
+
+# -----------------------------------------------------------------------------
+preacct {
+	preprocess
+	acct_unique
+	suffix
+	files
+}
+
+# -----------------------------------------------------------------------------
+accounting {
+	# Write sessions to radacct
+	-sql
+
+	exec
+	attr_filter.accounting_response
+
+	Acct-Type Status-Server {
+		ok
+	}
+}
+
+# -----------------------------------------------------------------------------
+session {
+	-sql
+}
+
+# -----------------------------------------------------------------------------
+post-auth {
+	# Log authentication result to radpostauth (skip the panel's own health checks)
+	if (!&request:NAS-Identifier || (&request:NAS-Identifier != "radius-pro-healthcheck")) {
+		-sql
+	}
+
+	exec
+
+	Post-Auth-Type REJECT {
+		if (!&request:NAS-Identifier || (&request:NAS-Identifier != "radius-pro-healthcheck")) {
+			-sql
+		}
+		attr_filter.access_reject
+	}
+
+	Post-Auth-Type Challenge {
+	}
+}
+
+}
