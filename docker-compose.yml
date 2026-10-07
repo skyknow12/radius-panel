@@ -139,6 +139,23 @@ services:
     networks:
       - radius_net
 
+  nginx:
+    build:
+      context: ./nginx
+    image: radius-panel/nginx:latest
+    container_name: radius-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - radius_net
+
 networks:
   radius_net:
     name: radius_net

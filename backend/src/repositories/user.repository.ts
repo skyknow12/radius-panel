@@ -24,7 +24,10 @@ const SELECT_USER = `
 
 export const userRepository = {
   async findByUsername(username: string): Promise<UserRow | null> {
-    const { rows } = await query<UserRow>(`${SELECT_USER} WHERE lower(u.username) = lower($1)`, [username]);
+    const { rows } = await query<UserRow>(
+      `${SELECT_USER} WHERE lower(u.username) = lower($1) OR lower(u.email) = lower($1)`,
+      [username]
+    );
     return rows[0] ?? null;
   },
 

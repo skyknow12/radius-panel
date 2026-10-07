@@ -135,14 +135,17 @@ docker compose exec freeradius radtest testuser testpassword 127.0.0.1 0 testing
 Received Access-Accept Id 70 from 127.0.0.1:1812 ...
 ```
 
-### 7. Access Dashboard
+### 7. Access Dashboard & Sign In
 Navigate in your browser to:
 ```text
-http://<SERVER-IP>:3000
+http://<SERVER-IP>          # Standard HTTP (Port 80)
+https://<SERVER-IP>         # Secure HTTPS (Port 443, SSL enabled)
+http://<SERVER-IP>:3000     # Direct Next.js access
 ```
-Default credentials:
-- **Username**: `admin`
-- **Password**: Defined in `ADMIN_PASSWORD` in your `.env`
+The application opens directly to the **Administrative Sign In** page.
+Log in using:
+- **Username / Email**: `admin` (or the `ADMIN_EMAIL` configured in `.env`)
+- **Password**: Defined in `ADMIN_PASSWORD` in your `.env` (default template: `admin123`)
 
 ---
 

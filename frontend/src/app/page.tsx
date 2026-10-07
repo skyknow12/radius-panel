@@ -12,10 +12,13 @@ import { NasStatusList } from '@/components/nas-status-list';
 import { SystemHealthSection } from '@/components/system-health-section';
 import { RadiusOverviewView } from '@/components/radius-overview-view';
 import { RadiusTestModal } from '@/components/radius-test-modal';
-import { Sparkles, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { LoginView } from '@/components/login-view';
+import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
 import type { TimeRange } from '@/types/api';
 
 export default function DashboardPage() {
+  const [currentUser, setCurrentUser] = React.useState<any>(null);
+  const [checkingAuth, setCheckingAuth] = React.useState(true);
   const [collapsed, setCollapsed] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState('dashboard');
   const [range, setRange] = React.useState<TimeRange>('24h');
@@ -32,6 +35,43 @@ export default function DashboardPage() {
   const [currentTime, setCurrentTime] = React.useState('');
   const [currentDate, setCurrentDate] = React.useState('');
 
+  // Check existing session on mount
+  React.useEffect(() => {
+    const verifySession = async () => {
+      try {
+        const token = localStorage.getItem('radius_token');
+        const savedUser = localStorage.getItem('radius_user');
+
+        const res = await fetch('/api/auth/me', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          setCurrentUser(json.data || (savedUser ? JSON.parse(savedUser) : { username: 'admin' }));
+        } else {
+          localStorage.removeItem('radius_token');
+          localStorage.removeItem('radius_user');
+          setCurrentUser(null);
+        }
+      } catch {
+        setCurrentUser(null);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    verifySession();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    localStorage.removeItem('radius_token');
+    localStorage.removeItem('radius_user');
+    setCurrentUser(null);
+  };
+
   React.useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -44,13 +84,25 @@ export default function DashboardPage() {
   }, []);
 
   const fetchData = async () => {
+    if (!currentUser) return;
     try {
       setLoading(true);
       setError(null);
+      const token = typeof window !== 'undefined' ? localStorage.getItem('radius_token') : null;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const [dashRes, healthRes] = await Promise.all([
-        fetch(`/api/dashboard?range=${range}`),
-        fetch('/api/system/health'),
+        fetch(`/api/dashboard?range=${range}`, { headers }),
+        fetch('/api/system/health', { headers }),
       ]);
+
+      if (dashRes.status === 401 || healthRes.status === 401) {
+        handleLogout();
+        return;
+      }
 
       if (!dashRes.ok || !healthRes.ok) {
         throw new Error('Failed to fetch telemetry data from backend');
@@ -69,15 +121,32 @@ export default function DashboardPage() {
   };
 
   React.useEffect(() => {
-    fetchData();
-    const poll = setInterval(fetchData, 30000); // 30s live refresh
-    return () => clearInterval(poll);
-  }, [range]);
+    if (currentUser) {
+      fetchData();
+      const poll = setInterval(fetchData, 30000); // 30s live refresh
+      return () => clearInterval(poll);
+    }
+  }, [range, currentUser]);
 
   const handleNextModuleNotice = (moduleName: string) => {
     setNotice(`The module "${moduleName}" is coming in the next phase.`);
     setTimeout(() => setNotice(null), 4000);
   };
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-background text-foreground">
+        <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-3 shadow-inner">
+          <Shield className="w-6 h-6 animate-pulse" />
+        </div>
+        <p className="text-xs text-muted-foreground font-medium animate-pulse">Initializing SKY RADIUS Console...</p>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginView onLoginSuccess={(user) => setCurrentUser(user)} />;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -95,6 +164,8 @@ export default function DashboardPage() {
           collapsed={collapsed}
           setCollapsed={setCollapsed}
           systemHealth={healthData}
+          currentUser={currentUser}
+          onLogout={handleLogout}
           onOpenTestModal={() => setTestModalOpen(true)}
         />
 
@@ -117,7 +188,9 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-5">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight text-foreground">Good morning</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                  Welcome back, {currentUser?.fullName || currentUser?.username || 'Administrator'}
+                </h1>
                 <span className="text-xl">☀️</span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">

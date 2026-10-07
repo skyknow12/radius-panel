@@ -6,6 +6,10 @@
 .env.test.local
 .env.production.local
 !.env.example
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt
+!nginx/ssl/.gitkeep
 
 # Dependencies
 node_modules/
