@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Search, User, Server, Layers, Box, Network, ArrowRight } from 'lucide-react';
+import { Search, User, Server, Layers, Box, Network, ArrowRight, CreditCard } from 'lucide-react';
 import type { GlobalSearchResult } from '@/types/api';
 
 interface GlobalSearchDialogProps {
