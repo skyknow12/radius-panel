@@ -25,6 +25,11 @@ import { NocDashboardView } from '@/components/noc-dashboard-view';
 import { AlertsView } from '@/components/alerts-view';
 import { NetworkEventsView } from '@/components/network-events-view';
 import { ReportsView } from '@/components/reports-view';
+import { BillingDashboardView } from '@/components/billing-dashboard-view';
+import { BillingTransactionsView } from '@/components/billing-transactions-view';
+import { BillingExpiryView } from '@/components/billing-expiry-view';
+import { PaymentMethodsView } from '@/components/payment-methods-view';
+import { FinancialReportsView } from '@/components/financial-reports-view';
 import { GlobalSearchDialog } from '@/components/global-search-dialog';
 import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
@@ -43,6 +48,7 @@ export default function DashboardPage() {
   const [subscriberProfileId, setSubscriberProfileId] = React.useState<number | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [nasFilterForSessions, setNasFilterForSessions] = React.useState<string | null>(null);
+  const [billingExpiryFilter, setBillingExpiryFilter] = React.useState<string>('today');
 
   // Live state from backend
   const [dashboardData, setDashboardData] = React.useState<any>(null);
@@ -282,8 +288,29 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Conditional View: Dashboard vs Phase 2, 3 & 4 Tabs */}
-          {activeTab === 'noc_dashboard' ? (
+          {/* Conditional View: Dashboard vs Operations vs Billing Tabs */}
+          {activeTab === 'billing_dashboard' ? (
+            <BillingDashboardView
+              onNavigate={(tab, filter) => {
+                if (filter) setBillingExpiryFilter(filter);
+                setActiveTab(tab);
+              }}
+              onViewSubscriber={handleOpenSubscriberByUsername}
+            />
+          ) : activeTab === 'billing_transactions' ? (
+            <BillingTransactionsView
+              onViewSubscriber={handleOpenSubscriberByUsername}
+            />
+          ) : activeTab === 'billing_expiry' ? (
+            <BillingExpiryView
+              onViewSubscriber={handleOpenSubscriberByUsername}
+              initialFilter={billingExpiryFilter}
+            />
+          ) : activeTab === 'payment_methods' ? (
+            <PaymentMethodsView />
+          ) : activeTab === 'billing_reports' ? (
+            <FinancialReportsView />
+          ) : activeTab === 'noc_dashboard' ? (
             <NocDashboardView
               onViewSubscriber={handleOpenSubscriberByUsername}
               onNavigate={(tab) => setActiveTab(tab)}

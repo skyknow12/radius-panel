@@ -79,6 +79,8 @@ export function GlobalSearchDialog({
       }
     } else if (item.type === 'ip') {
       onNavigate?.('ip_addresses');
+    } else if (item.type === 'transaction' || item.type === 'invoice') {
+      onNavigate?.('billing_transactions');
     }
   };
 
@@ -91,7 +93,7 @@ export function GlobalSearchDialog({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search username, subscriber name, CID, IP, NAS, session ID..."
+            placeholder="Search username, subscriber name, CID, IP, NAS, session, Txn ID..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
@@ -125,6 +127,8 @@ export function GlobalSearchDialog({
                       <Server className="w-4 h-4 text-cyan-400" />
                     ) : item.type === 'package' ? (
                       <Box className="w-4 h-4 text-amber-400" />
+                    ) : item.type === 'transaction' || item.type === 'invoice' ? (
+                      <CreditCard className="w-4 h-4 text-emerald-400" />
                     ) : (
                       <Network className="w-4 h-4 text-blue-400" />
                     )}

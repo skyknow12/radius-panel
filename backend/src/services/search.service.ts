@@ -1,7 +1,7 @@
 import { query } from '../db/pool';
 
 export interface GlobalSearchResultItem {
-  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip';
+  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice';
   title: string;
   subtitle: string;
   id: string | number;
@@ -85,6 +85,24 @@ export const searchService = {
         id: p.id,
         title: `Package: ${p.name}`,
         subtitle: `Rate: ${p.rate_limit} • NPR ${p.price}`,
+      });
+    }
+
+    // 5. Billing Transactions & Invoices
+    const txRes = await query<{ transaction_id: string; username: string; final_amount: string; currency: string; status: string; package_name: string }>(
+      `SELECT transaction_id, username, final_amount, currency, status, package_name
+         FROM recharge_transactions
+        WHERE transaction_id ILIKE $1 OR payment_reference ILIKE $1 OR receipt_no ILIKE $1
+        LIMIT 4`,
+      [pattern],
+    );
+    for (const tx of txRes.rows) {
+      results.push({
+        type: 'transaction',
+        id: tx.transaction_id,
+        title: `Txn: ${tx.transaction_id}`,
+        subtitle: `${tx.username} • ${tx.currency} ${tx.final_amount} (${tx.package_name})`,
+        badge: tx.status,
       });
     }
 

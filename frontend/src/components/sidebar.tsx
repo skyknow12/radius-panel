@@ -19,6 +19,9 @@ import {
   Bell,
   AlertTriangle,
   History,
+  DollarSign,
+  FileText,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -33,6 +36,7 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
   const [radiusOpen, setRadiusOpen] = React.useState(true);
   const [networkOpen, setNetworkOpen] = React.useState(true);
   const [managementOpen, setManagementOpen] = React.useState(true);
+  const [billingOpen, setBillingOpen] = React.useState(true);
   const [systemOpen, setSystemOpen] = React.useState(true);
 
   const handleNextModule = (title: string) => {
@@ -317,16 +321,96 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
                 <Box className="w-4 h-4 flex-shrink-0" />
                 {!collapsed && <span>Packages</span>}
               </button>
+            </div>
+          )}
+        </div>
+
+        {/* BILLING & FINANCE GROUP */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setBillingOpen(!billingOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <CreditCard className="w-3.5 h-3.5 text-primary" /> BILLING & FINANCE
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !billingOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? billingOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => setActiveTab('billing_dashboard')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'billing_dashboard'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Billing Dashboard"
+              >
+                <DollarSign className="w-4 h-4 flex-shrink-0 text-emerald-500" />
+                {!collapsed && <span>Billing Dashboard</span>}
+              </button>
 
               <button
-                onClick={() => handleNextModule('Billing & Invoicing')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+                onClick={() => setActiveTab('billing_transactions')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'billing_transactions'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Transactions & Ledger"
               >
-                <div className="flex items-center gap-3">
-                  <CreditCard className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>Billing</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+                <FileText className="w-4 h-4 flex-shrink-0 text-primary" />
+                {!collapsed && <span>Transactions</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('billing_expiry')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'billing_expiry'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Expiry Management"
+              >
+                <Clock className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                {!collapsed && <span>Expiry Management</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('payment_methods')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'payment_methods'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Payment Channels"
+              >
+                <CreditCard className="w-4 h-4 flex-shrink-0 text-indigo-400" />
+                {!collapsed && <span>Payment Channels</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('billing_reports')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'billing_reports'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Financial Reports"
+              >
+                <FileBarChart className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                {!collapsed && <span>Financial Reports</span>}
               </button>
             </div>
           )}

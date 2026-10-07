@@ -36,12 +36,15 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { RechargeModal } from './recharge-modal';
+import { TransactionDetailsModal } from './transaction-details-modal';
+import { ReceiptModal } from './receipt-modal';
 import type {
   SubscriberItem,
   SubscriberProfileData,
   SubscriberUsageData,
   PackageItem,
   RechargeTransactionItem,
+  BillingTransactionItem,
 } from '@/types/api';
 
 interface SubscriberProfileModalProps {
@@ -67,6 +70,8 @@ export function SubscriberProfileModal({
   // Modals inside profile
   const [rechargeModalOpen, setRechargeModalOpen] = React.useState(false);
   const [recharges, setRecharges] = React.useState<RechargeTransactionItem[]>([]);
+  const [selectedTxId, setSelectedTxId] = React.useState<string | null>(null);
+  const [receiptTx, setReceiptTx] = React.useState<BillingTransactionItem | null>(null);
   const [passwordModalOpen, setPasswordModalOpen] = React.useState(false);
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -998,36 +1003,69 @@ export function SubscriberProfileModal({
                 </div>
               )}
 
-              {/* 9. Recharge History Tab */}
+              {/* 9. Recharge & Billing History Tab */}
               {activeTab === 'recharge' && (
                 <div className="space-y-4 animate-in fade-in">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-bold text-sm text-foreground">Recharge & Renewal History</h4>
+                      <h4 className="font-bold text-sm text-foreground">Subscriber Billing & Ledger History</h4>
                       <p className="text-xs text-muted-foreground">
-                        Chronological record of packages, payments, and calculated validity extensions.
+                        Comprehensive ledger of all service packages, payments, validity extensions, and receipts.
                       </p>
                     </div>
                     <button
                       onClick={() => setRechargeModalOpen(true)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+                      className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
                     >
                       <CreditCard className="w-3.5 h-3.5" /> New Recharge
                     </button>
                   </div>
 
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Current Package</span>
+                      <span className="font-bold text-foreground text-xs mt-0.5 block truncate">
+                        {profile.subscriber.package_name || 'No Active Package'}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Service Expiry</span>
+                      <span className="font-mono font-bold text-emerald-500 text-xs mt-0.5 block">
+                        {profile.subscriber.expiry_date
+                          ? new Date(profile.subscriber.expiry_date).toLocaleDateString()
+                          : 'No Expiry'}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Total Recharges</span>
+                      <span className="font-mono font-bold text-foreground text-sm mt-0.5 block">
+                        {recharges.length}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Lifetime Paid</span>
+                      <span className="font-mono font-bold text-primary text-sm mt-0.5 block">
+                        NPR {recharges.reduce((acc, r) => acc + Number(r.amount || 0), 0).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="overflow-x-auto rounded-xl border border-border bg-card">
                     <table className="w-full text-left text-xs">
-                      <thead className="bg-muted/40 border-b border-border text-muted-foreground">
+                      <thead className="bg-muted/40 border-b border-border text-muted-foreground font-semibold">
                         <tr>
-                          <th className="py-2.5 px-3 font-medium">Receipt No</th>
-                          <th className="py-2.5 px-3 font-medium">Package</th>
-                          <th className="py-2.5 px-3 font-medium">Duration</th>
-                          <th className="py-2.5 px-3 font-medium">Amount</th>
-                          <th className="py-2.5 px-3 font-medium">Method</th>
-                          <th className="py-2.5 px-3 font-medium">Recharge Date</th>
-                          <th className="py-2.5 px-3 font-medium">New Expiry</th>
-                          <th className="py-2.5 px-3 font-medium">Operator</th>
+                          <th className="py-2.5 px-3">Transaction / Receipt</th>
+                          <th className="py-2.5 px-3">Package</th>
+                          <th className="py-2.5 px-3">Duration</th>
+                          <th className="py-2.5 px-3 text-right">Amount</th>
+                          <th className="py-2.5 px-3">Method</th>
+                          <th className="py-2.5 px-3">Recharge Date</th>
+                          <th className="py-2.5 px-3">Extended Expiry</th>
+                          <th className="py-2.5 px-3 text-right">Receipt</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/60">
@@ -1039,32 +1077,82 @@ export function SubscriberProfileModal({
                           </tr>
                         ) : (
                           recharges.map((rec) => (
-                            <tr key={rec.id} className="hover:bg-muted/30">
-                              <td className="py-2.5 px-3 font-mono font-semibold text-primary">
-                                {rec.receipt_no}
+                            <tr key={rec.id} className="hover:bg-muted/30 transition-colors">
+                              <td className="py-2.5 px-3 font-mono font-bold">
+                                <button
+                                  onClick={() => setSelectedTxId(rec.receipt_no)}
+                                  className="text-primary hover:underline"
+                                >
+                                  {rec.receipt_no}
+                                </button>
                               </td>
                               <td className="py-2.5 px-3 font-medium text-foreground">
                                 {rec.package_name || 'Standard Package'}
                               </td>
                               <td className="py-2.5 px-3">
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
-                                  {rec.duration_months} Month{rec.duration_months > 1 ? 's' : ''}
+                                  {rec.duration_months} mo
                                 </span>
                               </td>
-                              <td className="py-2.5 px-3 font-mono font-bold text-foreground">
+                              <td className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
                                 {rec.currency} {Number(rec.amount).toLocaleString()}
                               </td>
                               <td className="py-2.5 px-3 text-muted-foreground">
                                 {rec.payment_method}
                               </td>
                               <td className="py-2.5 px-3 font-mono text-muted-foreground">
-                                {new Date(rec.recharge_date).toLocaleDateString()}
+                                {new Date(rec.recharge_date).toLocaleDateString([], {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
                               </td>
-                              <td className="py-2.5 px-3 font-mono font-semibold text-emerald-500">
-                                {new Date(rec.new_expiry).toLocaleDateString()}
+                              <td className="py-2.5 px-3 font-mono font-bold text-emerald-500">
+                                {new Date(rec.new_expiry).toLocaleDateString([], {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
                               </td>
-                              <td className="py-2.5 px-3 text-muted-foreground font-mono">
-                                {rec.created_by}
+                              <td className="py-2.5 px-3 text-right">
+                                <button
+                                  onClick={() =>
+                                    setReceiptTx({
+                                      id: rec.id,
+                                      transaction_id: rec.receipt_no,
+                                      receipt_no: rec.receipt_no,
+                                      subscriber_id: subscriberId,
+                                      username: profile.subscriber.username,
+                                      customer_id: profile.subscriber.customer_id,
+                                      full_name: profile.subscriber.full_name,
+                                      package_id: rec.package_id,
+                                      package_name: rec.package_name || 'Broadband Plan',
+                                      duration: rec.duration_months,
+                                      duration_unit: 'months',
+                                      original_price: rec.amount,
+                                      discount_type: 'none',
+                                      discount_value: '0',
+                                      discount_amount: '0',
+                                      adjustment_amount: '0',
+                                      tax_rate: '0',
+                                      tax_amount: '0',
+                                      final_amount: rec.amount,
+                                      currency: rec.currency,
+                                      payment_method: rec.payment_method,
+                                      payment_reference: null,
+                                      recharge_date: rec.recharge_date,
+                                      previous_expiry: rec.previous_expiry,
+                                      new_expiry: rec.new_expiry,
+                                      status: 'COMPLETED',
+                                      created_by: rec.created_by,
+                                      notes: rec.notes || null,
+                                      created_at: rec.created_at,
+                                    })
+                                  }
+                                  className="px-2 py-0.5 rounded-lg border border-border hover:bg-muted text-[10px] font-semibold text-foreground transition-colors"
+                                >
+                                  Print
+                                </button>
                               </td>
                             </tr>
                           ))
@@ -1243,6 +1331,21 @@ export function SubscriberProfileModal({
             }}
           />
         )}
+
+        {/* Transaction Details Modal */}
+        <TransactionDetailsModal
+          isOpen={selectedTxId !== null}
+          onClose={() => setSelectedTxId(null)}
+          transactionId={selectedTxId}
+          onUpdate={fetchProfile}
+        />
+
+        {/* Receipt Modal */}
+        <ReceiptModal
+          isOpen={receiptTx !== null}
+          onClose={() => setReceiptTx(null)}
+          transaction={receiptTx}
+        />
       </div>
     </div>
   );

@@ -430,11 +430,139 @@ export interface NocMetrics {
 }
 
 export interface GlobalSearchResult {
-  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip';
+  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice';
   title: string;
   subtitle: string;
   id: string | number;
   url?: string;
   badge?: string;
 }
+
+// =============================================================================
+// PHASE 5 BILLING & FINANCIAL MANAGEMENT TYPES
+// =============================================================================
+
+export interface BillingTransactionItem {
+  id: number;
+  transaction_id: string;
+  receipt_no: string;
+  subscriber_id: number;
+  username: string;
+  customer_id: string;
+  full_name: string;
+  package_id: number;
+  package_name: string;
+  duration: number;
+  duration_unit: string;
+  original_price: string;
+  discount_type: 'none' | 'fixed' | 'percentage';
+  discount_value: string;
+  discount_amount: string;
+  adjustment_amount: string;
+  tax_rate: string;
+  tax_amount: string;
+  final_amount: string;
+  currency: string;
+  payment_method: string;
+  payment_reference: string | null;
+  recharge_date: string;
+  previous_expiry: string | null;
+  new_expiry: string;
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'REFUNDED' | 'PARTIALLY_REFUNDED' | 'FAILED';
+  created_by: string;
+  notes: string | null;
+  idempotency_key?: string | null;
+  created_at: string;
+}
+
+export interface InvoiceItem {
+  id: number;
+  invoice_no: string;
+  transaction_id: string | null;
+  subscriber_id: number;
+  customer_name: string;
+  customer_id: string;
+  username: string;
+  service_name: string;
+  package_name: string;
+  duration_months: number;
+  price: string;
+  discount_amount: string;
+  tax_rate: string;
+  tax_amount: string;
+  total_amount: string;
+  currency: string;
+  status: 'PAID' | 'UNPAID' | 'CANCELLED';
+  issue_date: string;
+  due_date: string | null;
+  created_at: string;
+}
+
+export interface RefundItem {
+  id: number;
+  refund_id: string;
+  transaction_id: string;
+  subscriber_id: number;
+  amount: string;
+  currency: string;
+  refund_type: 'full' | 'partial';
+  reason: string;
+  refund_method: string;
+  processed_by: string;
+  created_at: string;
+}
+
+export interface PaymentMethodItem {
+  id: number;
+  code: string;
+  name: string;
+  requires_reference: boolean;
+  is_active: boolean;
+  sort_order: number;
+  description: string | null;
+  created_at: string;
+}
+
+export interface PackagePriceHistoryItem {
+  id: number;
+  package_id: number;
+  duration_months: number;
+  old_price: string | null;
+  new_price: string;
+  currency: string;
+  changed_by: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface BillingAdjustmentItem {
+  id: number;
+  adjustment_id: string;
+  subscriber_id: number;
+  adjustment_type: 'amount' | 'expiry' | 'credit' | 'discount';
+  amount: string;
+  days: number;
+  reason: string;
+  operator_username: string;
+  created_at: string;
+}
+
+export interface BillingDashboardMetrics {
+  todayRevenue: number;
+  monthRevenue: number;
+  todayRechargesCount: number;
+  monthRechargesCount: number;
+  activeSubscribers: number;
+  expiringTodayCount: number;
+  expiringSoonCount: number;
+  expiredSubscribersCount: number;
+  pendingTransactionsCount: number;
+  refundsAmount: number;
+  grossRevenue: number;
+  totalDiscounts: number;
+  totalRefunds: number;
+  netRevenue: number;
+  recentTransactions: BillingTransactionItem[];
+}
+
 

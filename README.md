@@ -376,3 +376,81 @@ Phase 4 turns the platform into a carrier-grade ISP Network Operations Center (N
 - `⌘K` / `Ctrl+K` global search modal indexing subscribers, active sessions, NAS gateways, packages, and IP addresses.
 - Usernames are clickable everywhere (Dashboard, Online Users, Session Tables, Auth Logs, Reports) opening the full subscriber profile with service management and recharge history.
 
+---
+
+## Phase 5: Core Billing, Recharge & Financial Management
+
+Phase 5 builds a complete subscriber billing, recharge, and financial ledger platform designed for ISP commercial operations:
+
+### 1. Accounting Ledger & Revenue Formula
+- **Net Revenue Formula**: `Net Revenue = Gross Revenue − Discounts − Refunds`
+- Revenue is strictly calculated from `COMPLETED` transactions. `PENDING`, `CANCELLED`, and `FAILED` transactions are never counted as revenue.
+- Every recharge generates an immutable financial transaction and matching invoice.
+
+### 2. Multi-Duration Package Pricing & Audit History
+- Every package supports independent prices for **1 Month**, **3 Months**, **6 Months**, **12 Months**, and custom durations (e.g. 2, 9, 18, 24 months).
+- Prices are never derived automatically; each duration is stored and configured independently.
+- `package_price_history` tracks all price modifications: old price, new price, package, duration, changed by, timestamp, and reason.
+- Historical transactions retain their immutable purchase price even if package prices change later.
+
+### 3. Transactional Recharge Engine & Double-Recharge Protection
+- Complete ACID transactional execution (`BEGIN ... COMMIT / ROLLBACK`):
+  1. Validates subscriber, package, duration, and price.
+  2. Applies and validates discounts against operator permission limits.
+  3. Calculates new expiration date (adds duration from existing valid expiry if subscriber is active, or from current timestamp if expired).
+  4. Creates unique transaction ID (`REC-YYYYMMDD-XXXX`) and invoice (`INV-YYYYMMDD-XXXX`).
+  5. Updates subscriber status, package, and expiry date.
+  6. Updates FreeRADIUS `radcheck` Expiration attribute and removes any `Auth-Type := Reject`.
+  7. Inserts `subscriber_services`, `subscriber_activity`, `network_events`, and audit logs.
+- **Double-Recharge Protection**: Enforces client-side submit lock and unique `idempotency_key` verification to prevent duplicate payment submissions.
+
+### 4. Configurable Payment Methods & References
+- Database-backed `payment_methods` table with active toggles and reference requirement flags:
+  - **Cash** (Counter receipt, optional reference)
+  - **Bank Transfer** (Deposit slip / voucher reference required)
+  - **QR / Fonepay** (Instant scan with transaction ID required)
+  - **Digital Wallet** (eSewa / Khalti / IME Pay reference)
+  - **Cheque** (Cheque number required)
+  - **Complimentary / Staff** (Authorized internal service)
+
+### 5. Financial Discounts & RBAC Permissions
+- Supports fixed amount (NPR) and percentage (%) discounts.
+- Role-based discount caps enforced on the backend:
+  - `operator`: Maximum 5% discount
+  - `admin`: Maximum 15% discount
+  - `super_admin`: Unlimited / configurable
+- Granular billing permissions: `billing.view`, `billing.recharge`, `billing.discount`, `billing.adjustment`, `billing.refund`, `billing.invoice`, `billing.receipt`, `billing.report`, `billing.export`, `billing.package_price`.
+
+### 6. Refunds & Cancellations
+- Completed transactions can be refunded (full or partial) with audit logging into `refunds`.
+- Transaction status updates to `REFUNDED` or `PARTIALLY_REFUNDED`. Original records are never deleted.
+- Pending transactions can be cancelled with mandatory reason logging.
+
+### 7. Interactive Billing Dashboard
+- 10 clickable metric cards:
+  - Today's Revenue → Filtered transaction ledger
+  - Monthly Revenue → Monthly financial report
+  - Today's Recharges → Today's recharge list
+  - Monthly Recharges → Monthly transaction list
+  - Active Subscribers → Subscribers view
+  - Expiring Today → Subscribers expiring today
+  - Expiring in 7 Days → Upcoming expiry list
+  - Expired Subscribers → Suspended/expired subscriber list
+  - Pending Transactions → Pending capture queue
+  - Refunds Issued → Refunds audit ledger
+- Accounting summary card showing Gross, Discounts, Refunds, and Net Total Revenue.
+- Recent 10 transactions table with clickable IDs, usernames, and quick receipt action.
+
+### 8. Official Payment Receipts & Invoices
+- Printable and downloadable payment receipt layout with ISP branding, subscriber information, breakdown of plan and discounts, previous & extended expiry dates, and payment reference.
+- Built-in `@media print` styling for clean, professional paper printing or PDF export.
+
+### 9. Expiry & Renewal Management View
+- Dedicated lifecycle view with time-window pills: **Expiring Today**, **Expiring Tomorrow**, **In 3 Days**, **In 7 Days**, and **Already Expired**.
+- Instant "Recharge" action on each row opening pre-filled recharge dialog for that subscriber.
+
+### 10. Financial Reports & CSV Export
+- Server-side aggregated reports: Daily Revenue, Monthly Revenue, Package Breakdown, Payment Channels, Discounts Given, Refunds Ledger, and Manual Adjustments.
+- Streaming CSV exports for spreadsheet analysis and tax accounting.
+
+

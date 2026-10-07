@@ -18,6 +18,7 @@ import { coaService } from '../services/coa.service';
 import { nocService } from '../services/noc.service';
 import { searchService } from '../services/search.service';
 import { reportsService } from '../services/reports.service';
+import { billingRepository } from '../repositories/billing.repository';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
@@ -1495,4 +1496,285 @@ apiRouter.get(
     res.send(csvContent);
   })
 );
+
+// =============================================================================
+// PHASE 5 — CORE BILLING, RECHARGE & FINANCIAL MANAGEMENT ROUTES
+// =============================================================================
+
+// ---- 1. Billing Dashboard ----
+apiRouter.get(
+  '/billing/dashboard',
+  asyncHandler(async (req, res) => {
+    const metrics = await billingRepository.getDashboardMetrics();
+    res.json(envelope(metrics, 'live'));
+  })
+);
+
+// ---- 2. Billing Transactions & Invoices ----
+apiRouter.get(
+  '/billing/transactions',
+  asyncHandler(async (req, res) => {
+    const subscriberId = req.query.subscriber_id ? Number(req.query.subscriber_id) : undefined;
+    const status = req.query.status as string;
+    const paymentMethod = req.query.payment_method as string;
+    const packageId = req.query.package_id ? Number(req.query.package_id) : undefined;
+    const search = req.query.search as string;
+    const dateFrom = req.query.date_from as string;
+    const dateTo = req.query.date_to as string;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const result = await billingRepository.listTransactions({
+      subscriberId,
+      status,
+      paymentMethod,
+      packageId,
+      search,
+      dateFrom,
+      dateTo,
+      limit,
+      offset,
+    });
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/billing/transactions/:id',
+  asyncHandler(async (req, res) => {
+    const details = await billingRepository.getTransactionDetails(req.params.id);
+    res.json(envelope(details, 'live'));
+  })
+);
+
+const billingRechargeSchema = z.object({
+  subscriber_id: z.number().int().positive(),
+  package_id: z.number().int().positive(),
+  duration_months: z.number().int().positive(),
+  original_price: z.number().nonnegative().optional(),
+  discount_type: z.enum(['none', 'fixed', 'percentage']).default('none'),
+  discount_value: z.number().nonnegative().default(0),
+  tax_rate: z.number().nonnegative().default(0),
+  payment_method: z.string().default('Cash'),
+  payment_reference: z.string().optional(),
+  notes: z.string().optional(),
+  idempotency_key: z.string().optional(),
+});
+
+apiRouter.post(
+  '/billing/recharge',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = billingRechargeSchema.parse(req.body);
+    const result = await billingRepository.processRecharge({
+      ...body,
+      created_by: req.user?.username || 'admin',
+      user_role: req.user?.role || 'operator',
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+const refundSchema = z.object({
+  amount: z.number().positive().optional(),
+  reason: z.string().min(1),
+  refund_method: z.string().default('Cash'),
+});
+
+apiRouter.post(
+  '/billing/transactions/:id/refund',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = refundSchema.parse(req.body);
+    const refund = await billingRepository.processRefund({
+      transaction_id: req.params.id,
+      amount: body.amount,
+      reason: body.reason,
+      refund_method: body.refund_method,
+      processed_by: req.user?.username || 'admin',
+    });
+    res.json(envelope(refund, 'live'));
+  })
+);
+
+const cancelTxSchema = z.object({
+  reason: z.string().min(1),
+});
+
+apiRouter.post(
+  '/billing/transactions/:id/cancel',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = cancelTxSchema.parse(req.body);
+    await billingRepository.cancelTransaction(
+      req.params.id,
+      body.reason,
+      req.user?.username || 'admin',
+    );
+    res.json(envelope({ success: true, message: 'Transaction cancelled' }, 'live'));
+  })
+);
+
+// ---- 3. Payment Methods ----
+apiRouter.get(
+  '/billing/payment-methods',
+  asyncHandler(async (req, res) => {
+    const activeOnly = req.query.active_only === 'true';
+    const list = await billingRepository.getPaymentMethods(activeOnly);
+    res.json(envelope(list, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/billing/payment-methods/:id/toggle',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const isActive = req.body.is_active === true;
+    const updated = await billingRepository.togglePaymentMethod(id, isActive);
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+// ---- 4. Adjustments ----
+const adjustmentSchema = z.object({
+  subscriber_id: z.number().int().positive(),
+  adjustment_type: z.enum(['amount', 'expiry', 'credit', 'discount']),
+  amount: z.number().optional(),
+  days: z.number().int().optional(),
+  reason: z.string().min(1),
+});
+
+apiRouter.post(
+  '/billing/adjustments',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = adjustmentSchema.parse(req.body);
+    const adj = await billingRepository.createAdjustment({
+      ...body,
+      operator_username: req.user?.username || 'admin',
+    });
+    res.json(envelope(adj, 'live'));
+  })
+);
+
+// ---- 5. Expiry Management ----
+apiRouter.get(
+  '/billing/expiry',
+  asyncHandler(async (req, res) => {
+    const filter = (req.query.filter as any) || 'all';
+    const packageId = req.query.package_id ? Number(req.query.package_id) : undefined;
+    const search = req.query.search as string;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const list = await billingRepository.getExpiringSubscribers({
+      filter,
+      packageId,
+      search,
+      limit,
+      offset,
+    });
+    res.json(envelope(list, 'live'));
+  })
+);
+
+// ---- 6. Financial Reports & Export ----
+apiRouter.get(
+  '/billing/reports',
+  asyncHandler(async (req, res) => {
+    const reportType = (req.query.type as any) || 'daily';
+    const dateFrom = req.query.date_from as string;
+    const dateTo = req.query.date_to as string;
+    const packageId = req.query.package_id ? Number(req.query.package_id) : undefined;
+    const paymentMethod = req.query.payment_method as string;
+
+    const data = await billingRepository.getFinancialReports({
+      reportType,
+      dateFrom,
+      dateTo,
+      packageId,
+      paymentMethod,
+    });
+    res.json(envelope(data, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/billing/reports/export',
+  asyncHandler(async (req, res) => {
+    const reportType = (req.query.type as any) || 'daily';
+    const dateFrom = req.query.date_from as string;
+    const dateTo = req.query.date_to as string;
+
+    const data = await billingRepository.getFinancialReports({
+      reportType,
+      dateFrom,
+      dateTo,
+    });
+
+    // Generate CSV string
+    if (!Array.isArray(data) || data.length === 0) {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="billing_${reportType}_empty.csv"`);
+      return res.send('No records found\n');
+    }
+
+    const headers = Object.keys(data[0]);
+    const csvRows = [headers.join(',')];
+    for (const row of data) {
+      const values = headers.map((h) => {
+        const val = row[h] === null || row[h] === undefined ? '' : String(row[h]).replace(/"/g, '""');
+        return `"${val}"`;
+      });
+      csvRows.push(values.join(','));
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="billing_${reportType}_${Date.now()}.csv"`);
+    res.send(csvRows.join('\n'));
+  })
+);
+
+// ---- 7. Invoices ----
+apiRouter.get(
+  '/billing/invoices',
+  asyncHandler(async (req, res) => {
+    const subscriberId = req.query.subscriber_id ? Number(req.query.subscriber_id) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+    const result = await billingRepository.listInvoices(subscriberId, limit, offset);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/billing/invoices/:no',
+  asyncHandler(async (req, res) => {
+    const invoice = await billingRepository.getInvoiceByNo(req.params.no);
+    res.json(envelope(invoice, 'live'));
+  })
+);
+
+// ---- 8. Package Price History ----
+apiRouter.get(
+  '/packages/:id/price-history',
+  asyncHandler(async (req, res) => {
+    const packageId = parseInt(req.params.id, 10);
+    const history = await billingRepository.getPackagePriceHistory(packageId);
+    res.json(envelope(history, 'live'));
+  })
+);
+
+// ---- 9. Global Billing Search ----
+apiRouter.get(
+  '/billing/search',
+  asyncHandler(async (req, res) => {
+    const q = (req.query.q as string) || '';
+    const results = await billingRepository.searchBilling(q);
+    res.json(envelope(results, 'live'));
+  })
+);
+
 
