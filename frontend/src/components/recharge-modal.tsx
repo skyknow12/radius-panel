@@ -304,8 +304,8 @@ export function RechargeModal({
                 Current Expiry:
               </span>
               <span className="font-mono text-foreground font-medium">
-                {subscriber.expiry_date
-                  ? new Date(subscriber.expiry_date).toLocaleDateString([], {
+                {activeSub.expiry_date
+                  ? new Date(activeSub.expiry_date).toLocaleDateString([], {
                       year: 'numeric',
                       month: 'short',
                       day: 'numeric',
