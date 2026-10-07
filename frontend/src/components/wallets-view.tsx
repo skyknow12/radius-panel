@@ -27,7 +27,11 @@ import {
 } from 'lucide-react';
 import type { WalletItem, WalletTransactionItem, WalletDashboardMetrics } from '@/types/api';
 
-export function WalletsView() {
+interface WalletsViewProps {
+  currentUser?: any;
+}
+
+export function WalletsView({ currentUser }: WalletsViewProps = {}) {
   const [metrics, setMetrics] = React.useState<WalletDashboardMetrics | null>(null);
   const [wallets, setWallets] = React.useState<WalletItem[]>([]);
   const [ledger, setLedger] = React.useState<WalletTransactionItem[]>([]);

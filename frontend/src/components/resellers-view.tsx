@@ -25,9 +25,10 @@ import type { ResellerItem, ResellerDashboardMetrics, BranchItem } from '@/types
 interface ResellersViewProps {
   onViewCustomers?: (resellerId: number) => void;
   onViewWallet?: (resellerId: number) => void;
+  currentUser?: any;
 }
 
-export function ResellersView({ onViewCustomers, onViewWallet }: ResellersViewProps) {
+export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: ResellersViewProps) {
   const [resellers, setResellers] = React.useState<ResellerItem[]>([]);
   const [branches, setBranches] = React.useState<BranchItem[]>([]);
   const [loading, setLoading] = React.useState(true);

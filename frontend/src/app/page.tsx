@@ -340,9 +340,17 @@ export default function DashboardPage() {
               currentUser={currentUser}
             />
           ) : activeTab === 'branches' ? (
-            <BranchesView currentUser={currentUser} />
+            <BranchesView
+              onViewSubscribers={() => setActiveTab('subscribers')}
+              onViewWallet={() => setActiveTab('wallets')}
+              currentUser={currentUser}
+            />
           ) : activeTab === 'resellers' ? (
-            <ResellersView currentUser={currentUser} />
+            <ResellersView
+              onViewCustomers={() => setActiveTab('subscribers')}
+              onViewWallet={() => setActiveTab('wallets')}
+              currentUser={currentUser}
+            />
           ) : activeTab === 'wallets' ? (
             <WalletsView currentUser={currentUser} />
           ) : activeTab === 'channel_pricing' ? (

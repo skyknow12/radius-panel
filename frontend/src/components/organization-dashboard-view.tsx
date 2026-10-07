@@ -25,9 +25,10 @@ import type { OrganizationItem, OrganizationDashboardMetrics } from '@/types/api
 
 interface OrganizationDashboardViewProps {
   onNavigate: (tab: string, filter?: string) => void;
+  currentUser?: any;
 }
 
-export function OrganizationDashboardView({ onNavigate }: OrganizationDashboardViewProps) {
+export function OrganizationDashboardView({ onNavigate, currentUser }: OrganizationDashboardViewProps) {
   const [org, setOrg] = React.useState<OrganizationItem | null>(null);
   const [metrics, setMetrics] = React.useState<OrganizationDashboardMetrics | null>(null);
   const [loading, setLoading] = React.useState(true);

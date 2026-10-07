@@ -24,9 +24,10 @@ import type { BranchItem, BranchDashboardMetrics } from '@/types/api';
 interface BranchesViewProps {
   onViewSubscribers?: (branchId: number) => void;
   onViewWallet?: (branchId: number) => void;
+  currentUser?: any;
 }
 
-export function BranchesView({ onViewSubscribers, onViewWallet }: BranchesViewProps) {
+export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: BranchesViewProps) {
   const [branches, setBranches] = React.useState<BranchItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
