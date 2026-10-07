@@ -7,8 +7,10 @@ import type { GlobalSearchResult } from '@/types/api';
 interface GlobalSearchDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onNavigate: (tab: string) => void;
+  onNavigate?: (tab: string) => void;
   onSelectSubscriber: (id: number) => void;
+  onSelectNas?: () => void;
+  onSelectPackage?: () => void;
 }
 
 export function GlobalSearchDialog({
@@ -16,6 +18,8 @@ export function GlobalSearchDialog({
   onClose,
   onNavigate,
   onSelectSubscriber,
+  onSelectNas,
+  onSelectPackage,
 }: GlobalSearchDialogProps) {
   const [query, setQuery] = React.useState<string>('');
   const [results, setResults] = React.useState<GlobalSearchResult[]>([]);
@@ -60,13 +64,21 @@ export function GlobalSearchDialog({
     if (item.type === 'subscriber') {
       onSelectSubscriber(Number(item.id));
     } else if (item.type === 'session') {
-      onNavigate('sessions');
+      onNavigate?.('sessions');
     } else if (item.type === 'nas') {
-      onNavigate('nas_devices');
+      if (onSelectNas) {
+        onSelectNas();
+      } else {
+        onNavigate?.('nas_devices');
+      }
     } else if (item.type === 'package') {
-      onNavigate('packages');
+      if (onSelectPackage) {
+        onSelectPackage();
+      } else {
+        onNavigate?.('packages');
+      }
     } else if (item.type === 'ip') {
-      onNavigate('ip_addresses');
+      onNavigate?.('ip_addresses');
     }
   };
 

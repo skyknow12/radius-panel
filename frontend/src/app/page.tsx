@@ -399,6 +399,7 @@ export default function DashboardPage() {
       <GlobalSearchDialog
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
+        onNavigate={setActiveTab}
         onSelectSubscriber={handleOpenSubscriberById}
         onSelectNas={() => {
           setActiveTab('nas_devices');
