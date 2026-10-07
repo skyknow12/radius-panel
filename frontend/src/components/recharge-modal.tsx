@@ -7,26 +7,45 @@ import type { PackageItem, PackagePriceItem } from '@/types/api';
 interface RechargeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  subscriber: {
+  subscriber?: {
     id: number;
     username: string;
-    customer_id: string;
-    full_name: string;
+    customer_id?: string;
+    full_name?: string;
     current_package_id?: number | null;
     package_name?: string | null;
     expiry_date?: string | null;
   } | null;
-  packages: PackageItem[];
-  onRechargeSuccess: () => void;
+  subscriberId?: number;
+  username?: string;
+  currentPackageId?: number | null;
+  packages?: PackageItem[];
+  onRechargeSuccess?: () => void;
+  onSuccess?: () => void;
 }
 
 export function RechargeModal({
   isOpen,
   onClose,
   subscriber,
-  packages,
+  subscriberId,
+  username,
+  currentPackageId,
+  packages = [],
   onRechargeSuccess,
+  onSuccess,
 }: RechargeModalProps) {
+  const activeSub = subscriber || (subscriberId ? {
+    id: subscriberId,
+    username: username || '',
+    customer_id: String(subscriberId),
+    full_name: username || '',
+    current_package_id: currentPackageId,
+    package_name: null,
+    expiry_date: null,
+  } : null);
+
+  const [localPackages, setLocalPackages] = React.useState<PackageItem[]>(packages);
   const [selectedPackageId, setSelectedPackageId] = React.useState<number>(1);
   const [durationMonths, setDurationMonths] = React.useState<number>(1);
   const [prices, setPrices] = React.useState<PackagePriceItem[]>([]);
@@ -37,14 +56,30 @@ export function RechargeModal({
   const [submitting, setSubmitting] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Sync or fetch packages
+  React.useEffect(() => {
+    if (packages && packages.length > 0) {
+      setLocalPackages(packages);
+    } else {
+      fetch('/api/packages')
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.data && Array.isArray(json.data)) {
+            setLocalPackages(json.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [packages]);
+
   // Initialize selected package
   React.useEffect(() => {
-    if (subscriber?.current_package_id) {
-      setSelectedPackageId(subscriber.current_package_id);
-    } else if (packages.length > 0) {
-      setSelectedPackageId(packages[0].id);
+    if (activeSub?.current_package_id) {
+      setSelectedPackageId(activeSub.current_package_id);
+    } else if (localPackages.length > 0) {
+      setSelectedPackageId(localPackages[0].id);
     }
-  }, [subscriber, packages]);
+  }, [activeSub, localPackages]);
 
   // Fetch package multi-duration prices whenever selected package changes
   React.useEffect(() => {
@@ -63,7 +98,7 @@ export function RechargeModal({
             setAmount(Number(found.price));
             setCurrency(found.currency || 'NPR');
           } else {
-            const pkg = packages.find((p) => p.id === selectedPackageId);
+            const pkg = localPackages.find((p) => p.id === selectedPackageId);
             if (pkg) {
               setAmount(Number(pkg.price) * durationMonths);
               setCurrency(pkg.currency || 'NPR');
@@ -73,12 +108,12 @@ export function RechargeModal({
       } catch {}
     };
     fetchPrices();
-  }, [selectedPackageId, durationMonths, packages]);
+  }, [selectedPackageId, durationMonths, localPackages]);
 
-  if (!isOpen || !subscriber) return null;
+  if (!isOpen || !activeSub) return null;
 
   // Calculate new expiry date preview
-  const currentExpiry = subscriber.expiry_date ? new Date(subscriber.expiry_date) : null;
+  const currentExpiry = activeSub.expiry_date ? new Date(activeSub.expiry_date) : null;
   const now = new Date();
   const baseDate = currentExpiry && currentExpiry > now ? currentExpiry : now;
   const calculatedExpiry = new Date(baseDate);
@@ -91,7 +126,7 @@ export function RechargeModal({
       setAmount(Number(found.price));
       setCurrency(found.currency || 'NPR');
     } else {
-      const pkg = packages.find((p) => p.id === selectedPackageId);
+      const pkg = localPackages.find((p) => p.id === selectedPackageId);
       if (pkg) {
         setAmount(Number(pkg.price) * months);
       }
@@ -111,7 +146,7 @@ export function RechargeModal({
         method: 'POST',
         headers,
         body: JSON.stringify({
-          subscriber_id: subscriber.id,
+          subscriber_id: activeSub.id,
           package_id: selectedPackageId,
           duration_months: durationMonths,
           amount: Number(amount),
@@ -126,7 +161,8 @@ export function RechargeModal({
         throw new Error(json.error?.message || json.message || 'Recharge failed');
       }
 
-      onRechargeSuccess();
+      if (onRechargeSuccess) onRechargeSuccess();
+      if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
       setError(err.message || 'Error processing recharge');
@@ -146,10 +182,10 @@ export function RechargeModal({
             </div>
             <div>
               <h3 className="text-sm font-bold text-foreground">
-                Recharge Subscriber: {subscriber.username}
+                Recharge Subscriber: {activeSub.username}
               </h3>
               <p className="text-[11px] text-muted-foreground">
-                CID: {subscriber.customer_id} • {subscriber.full_name}
+                CID: {activeSub.customer_id || activeSub.id} {activeSub.full_name ? `• ${activeSub.full_name}` : ''}
               </p>
             </div>
           </div>
@@ -179,7 +215,7 @@ export function RechargeModal({
               onChange={(e) => setSelectedPackageId(Number(e.target.value))}
               className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary font-medium"
             >
-              {packages.map((pkg) => (
+              {localPackages.map((pkg) => (
                 <option key={pkg.id} value={pkg.id}>
                   {pkg.name} ({pkg.download_speed_mbps}M/{pkg.upload_speed_mbps}M) — {pkg.currency} {pkg.price}/mo
                 </option>

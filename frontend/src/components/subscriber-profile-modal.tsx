@@ -1227,9 +1227,14 @@ export function SubscriberProfileModal({
           <RechargeModal
             isOpen={rechargeModalOpen}
             onClose={() => setRechargeModalOpen(false)}
-            subscriberId={subscriberId}
-            username={profile.subscriber.username}
-            currentPackageId={profile.subscriber.current_package_id}
+            subscriber={profile.subscriber}
+            packages={packages}
+            onRechargeSuccess={() => {
+              setRechargeModalOpen(false);
+              fetchProfile();
+              onUpdate();
+              showNotice('Recharge applied successfully!');
+            }}
             onSuccess={() => {
               setRechargeModalOpen(false);
               fetchProfile();
