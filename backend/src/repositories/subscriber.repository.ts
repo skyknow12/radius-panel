@@ -40,6 +40,12 @@ export interface SubscriberRow {
   current_session_id: string | null;
   session_start_time: Date | null;
   notes: string | null;
+  organization_id?: number | null;
+  branch_id?: number | null;
+  branch_name?: string | null;
+  reseller_id?: number | null;
+  reseller_name?: string | null;
+  ownership_type?: 'head_office' | 'branch' | 'reseller';
   created_at: Date;
   updated_at: Date;
 }
@@ -121,6 +127,10 @@ export interface SubscriberListQuery {
   connection_type?: string;
   branch?: string;
   ip_pool_id?: number;
+  branch_id?: number;
+  reseller_id?: number;
+  organization_id?: number;
+  ownership_type?: string;
   sort_by?: string;
   sort_dir?: 'asc' | 'desc';
 }
@@ -137,6 +147,10 @@ export interface CreateSubscriberInput {
   address?: string;
   area?: string;
   branch?: string;
+  organization_id?: number;
+  branch_id?: number;
+  reseller_id?: number;
+  ownership_type?: 'head_office' | 'branch' | 'reseller';
   installation_date?: string | Date;
   current_package_id?: number;
   ip_pool_id?: number;
@@ -165,6 +179,10 @@ export interface UpdateSubscriberInput {
   address?: string;
   area?: string;
   branch?: string;
+  organization_id?: number | null;
+  branch_id?: number | null;
+  reseller_id?: number | null;
+  ownership_type?: 'head_office' | 'branch' | 'reseller';
   installation_date?: string | Date | null;
   current_package_id?: number | null;
   ip_pool_id?: number | null;
@@ -247,6 +265,30 @@ export const subscriberRepository = {
       idx++;
     }
 
+    if (params.branch_id) {
+      conditions.push(`s.branch_id = $${idx}`);
+      values.push(params.branch_id);
+      idx++;
+    }
+
+    if (params.reseller_id) {
+      conditions.push(`s.reseller_id = $${idx}`);
+      values.push(params.reseller_id);
+      idx++;
+    }
+
+    if (params.organization_id) {
+      conditions.push(`s.organization_id = $${idx}`);
+      values.push(params.organization_id);
+      idx++;
+    }
+
+    if (params.ownership_type && params.ownership_type !== 'all') {
+      conditions.push(`s.ownership_type = $${idx}`);
+      values.push(params.ownership_type);
+      idx++;
+    }
+
     if (params.ip_pool_id) {
       conditions.push(`s.ip_pool_id = $${idx}`);
       values.push(params.ip_pool_id);
@@ -318,8 +360,12 @@ export const subscriberRepository = {
              host(act.nasipaddress) AS current_nas_ip,
              act.acctsessionid AS current_session_id,
              act.acctstarttime AS session_start_time,
+             s.organization_id, s.branch_id, s.reseller_id, s.ownership_type,
+             br.name AS branch_name, res.name AS reseller_name,
              s.notes, s.created_at, s.updated_at
         FROM subscribers s
+        LEFT JOIN branches br ON br.id = s.branch_id
+        LEFT JOIN resellers res ON res.id = s.reseller_id
         LEFT JOIN packages p ON p.id = s.current_package_id
         LEFT JOIN ip_pools pool ON pool.id = s.ip_pool_id
         LEFT JOIN nas_devices n ON n.id = s.nas_restriction_id
@@ -368,8 +414,12 @@ export const subscriberRepository = {
               host(act.nasipaddress) AS current_nas_ip,
               act.acctsessionid AS current_session_id,
               act.acctstarttime AS session_start_time,
+              s.organization_id, s.branch_id, s.reseller_id, s.ownership_type,
+              br.name AS branch_name, res.name AS reseller_name,
               s.notes, s.created_at, s.updated_at
          FROM subscribers s
+         LEFT JOIN branches br ON br.id = s.branch_id
+         LEFT JOIN resellers res ON res.id = s.reseller_id
          LEFT JOIN packages p ON p.id = s.current_package_id
          LEFT JOIN ip_pools pool ON pool.id = s.ip_pool_id
          LEFT JOIN nas_devices n ON n.id = s.nas_restriction_id
@@ -405,8 +455,12 @@ export const subscriberRepository = {
               host(act.nasipaddress) AS current_nas_ip,
               act.acctsessionid AS current_session_id,
               act.acctstarttime AS session_start_time,
+              s.organization_id, s.branch_id, s.reseller_id, s.ownership_type,
+              br.name AS branch_name, res.name AS reseller_name,
               s.notes, s.created_at, s.updated_at
          FROM subscribers s
+         LEFT JOIN branches br ON br.id = s.branch_id
+         LEFT JOIN resellers res ON res.id = s.reseller_id
          LEFT JOIN packages p ON p.id = s.current_package_id
          LEFT JOIN ip_pools pool ON pool.id = s.ip_pool_id
          LEFT JOIN nas_devices n ON n.id = s.nas_restriction_id
@@ -513,13 +567,15 @@ export const subscriberRepository = {
          status, connection_type, address, area, branch, installation_date,
          current_package_id, ip_pool_id, static_ip, ipv6_address, ipv6_prefix,
          ipv6_prefix_length, mac_address, vlan_id, nas_restriction_id,
-         olt_pon_port, onu_mac_sn, onu_model, expiry_date, notes
+         olt_pon_port, onu_mac_sn, onu_model, expiry_date, notes,
+         organization_id, branch_id, reseller_id, ownership_type
        ) VALUES (
          $1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10, $11, $12,
          $13, $14, $15, $16, $17,
          $18, $19, $20, $21,
-         $22, $23, $24, $25, $26
+         $22, $23, $24, $25, $26,
+         $27, $28, $29, $30
        ) RETURNING id`,
       [
         rawCustomerId,
@@ -548,6 +604,10 @@ export const subscriberRepository = {
         input.onu_model?.trim() || null,
         input.expiry_date ? new Date(input.expiry_date) : null,
         input.notes?.trim() || null,
+        input.organization_id || 1,
+        input.branch_id || null,
+        input.reseller_id || null,
+        input.ownership_type || (input.reseller_id ? 'reseller' : (input.branch_id ? 'branch' : 'head_office')),
       ],
     );
 
@@ -629,8 +689,12 @@ export const subscriberRepository = {
               expiry_date = $23,
               notes = $24,
               password_cleartext = COALESCE($25, password_cleartext),
+              organization_id = COALESCE($26, organization_id),
+              branch_id = $27,
+              reseller_id = $28,
+              ownership_type = COALESCE($29, ownership_type),
               updated_at = NOW()
-        WHERE id = $26`,
+        WHERE id = $30`,
       [
         input.customer_id?.trim() || null,
         input.full_name?.trim() || null,
@@ -657,6 +721,10 @@ export const subscriberRepository = {
         input.expiry_date !== undefined ? (input.expiry_date ? new Date(input.expiry_date) : null) : existing.expiry_date,
         input.notes !== undefined ? input.notes?.trim() || null : existing.notes,
         input.password || null,
+        input.organization_id !== undefined ? input.organization_id : existing.organization_id,
+        input.branch_id !== undefined ? input.branch_id : existing.branch_id,
+        input.reseller_id !== undefined ? input.reseller_id : existing.reseller_id,
+        input.ownership_type !== undefined ? input.ownership_type : existing.ownership_type,
         id,
       ],
     );

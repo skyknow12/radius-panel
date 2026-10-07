@@ -22,6 +22,10 @@ import {
   DollarSign,
   FileText,
   Clock,
+  Building2,
+  Store,
+  Wallet,
+  Percent,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,6 +40,7 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
   const [radiusOpen, setRadiusOpen] = React.useState(true);
   const [networkOpen, setNetworkOpen] = React.useState(true);
   const [managementOpen, setManagementOpen] = React.useState(true);
+  const [channelsOpen, setChannelsOpen] = React.useState(true);
   const [billingOpen, setBillingOpen] = React.useState(true);
   const [systemOpen, setSystemOpen] = React.useState(true);
 
@@ -320,6 +325,111 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
               >
                 <Box className="w-4 h-4 flex-shrink-0" />
                 {!collapsed && <span>Packages</span>}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* CHANNELS & WALLETS GROUP */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setChannelsOpen(!channelsOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-purple-400" /> CHANNELS & WALLETS
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !channelsOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? channelsOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => setActiveTab('organization_dashboard')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'organization_dashboard'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Organization HQ"
+              >
+                <Building2 className="w-4 h-4 flex-shrink-0 text-purple-400" />
+                {!collapsed && <span>Organization HQ</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('branches')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'branches'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Branches"
+              >
+                <Network className="w-4 h-4 flex-shrink-0 text-blue-400" />
+                {!collapsed && <span>Branches</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('resellers')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'resellers'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Resellers"
+              >
+                <Store className="w-4 h-4 flex-shrink-0 text-pink-400" />
+                {!collapsed && <span>Resellers</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('wallets')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'wallets'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Wallets & Credit"
+              >
+                <Wallet className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+                {!collapsed && <span>Wallets & Credit</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('channel_pricing')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'channel_pricing'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Channel Pricing"
+              >
+                <Percent className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                {!collapsed && <span>Channel Pricing</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('commission_report')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'commission_report'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Commission Ledger"
+              >
+                <FileText className="w-4 h-4 flex-shrink-0 text-indigo-400" />
+                {!collapsed && <span>Commission Ledger</span>}
               </button>
             </div>
           )}

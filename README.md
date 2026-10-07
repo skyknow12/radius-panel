@@ -453,4 +453,71 @@ Phase 5 builds a complete subscriber billing, recharge, and financial ledger pla
 - Server-side aggregated reports: Daily Revenue, Monthly Revenue, Package Breakdown, Payment Channels, Discounts Given, Refunds Ledger, and Manual Adjustments.
 - Streaming CSV exports for spreadsheet analysis and tax accounting.
 
+---
+
+## Phase 6: Organization, Branch, Reseller, Wallet, Credit & Commission
+
+Phase 6 extends the platform into a multi-tier, multi-tenant ISP distribution and channel management system supporting hierarchical branches, reseller franchises, dedicated prepaid wallets, post-paid credit lines, and automated commission accounting.
+
+### 1. Hierarchical Multi-Channel Architecture
+The system supports a 3-tier operational hierarchy:
+- **Head Office (HQ)**: Root enterprise organization overseeing all branches, partners, network gateways, and global financial transactions.
+- **Branches**: Regional operating branches (e.g. Kathmandu Core, Pokhara Western, Lalitpur Hub) with designated branch managers, staff, subscribers, and dedicated operational wallets.
+- **Resellers & Franchises**: Independent local ISP franchisees or sub-distributors operating on prepaid wallet or post-paid credit terms with automated commission earnings.
+
+### 2. Subscriber Ownership & Transfer Audit Trail
+- Every subscriber has an explicit ownership model: `head_office`, `branch`, or `reseller`.
+- Subscribers display live channel badges in subscriber lists and management tables.
+- **Ownership Transfer Engine**: Operators with `organization.manage` permission can reassign subscriber ownership between HQ, branches, and resellers.
+- All transfers are immutably logged into `subscriber_ownership_history` tracking `from_type`, `to_type`, `from_id`, `to_id`, `reason`, `transferred_by`, and timestamp.
+
+### 3. Immutable Wallet Ledger & Credit Lines
+- **Dedicated Wallets**: Every branch and reseller partner has a dedicated financial wallet tracked in `wallets`.
+- **Double-Entry Ledger**: Every balance mutation creates an immutable record in `wallet_transactions` tracking:
+  - `opening_balance` & `closing_balance`
+  - Transaction types: `topup`, `recharge_deduction`, `commission_payout`, `adjustment`, `refund`
+  - Audit trail: `reference`, `notes`, `created_by`, `created_at`
+- **Super Admin Cash Top-Up**:
+  - Wallets can only be funded through authorized Super Admin cash top-up (`POST /api/wallets/:id/topup`).
+  - Branch and reseller operators are prohibited from topping up their own wallets.
+- **Post-Paid Credit Accounts**:
+  - Partners can be assigned a revolving credit facility (`credit_accounts`) with configurable `credit_limit`, `used_credit`, and `expiry_date`.
+  - Recharge transactions debit available cash first; if cash is insufficient, the remainder is drawn from the active credit line.
+  - Transactions fail atomically if combined cash and available credit are insufficient.
+- **Manual Balance Adjustments**: Super Admins can issue audited balance adjustments with mandatory rationale.
+
+### 4. Channel Pricing & Commission Rules
+- Configurable rules in `channel_pricing_rules` determine wholesale package costs and partner incentives:
+  - **Wholesale Discounts**: Percentage discounts (e.g. 15% wholesale discount) or fixed NPR discounts off standard retail rates.
+  - **Partner Commissions**: Automated commission rates credited to reseller wallets or recorded in commission ledgers upon subscriber recharge.
+  - **Duration Multipliers**: Custom wholesale pricing rules for 1, 3, 6, and 12-month packages.
+- **Interactive Pricing Simulator**: Built-in pricing calculator tool allowing administrators to preview exact channel margins, wallet deductions, and partner commissions in real-time.
+
+### 5. Transactional Channel Recharge Engine
+- When a reseller or branch operator initiates a subscriber recharge:
+  1. Verifies channel partner status, wallet balance, and active credit line.
+  2. Calculates net wholesale deduction and partner commission according to active channel pricing rules.
+  3. Atomically debits partner wallet / credit line in a single PostgreSQL ACID transaction.
+  4. Extends subscriber validity and updates FreeRADIUS expiration and accounting attributes.
+  5. Records commission earnings and generates transaction invoice.
+- **Double-Recharge Protection**: Client-side submission guards and unique transaction idempotency keys prevent duplicate wallet debits.
+
+### 6. Granular Dashboards & Reporting
+- **Organization HQ Dashboard**: 10 clickable operational cards (Total Branches, Resellers, Channel Subscribers, Network Wallets, Total Wallet Cash, Allocated Credit, Channel Revenue, Accrued Commissions, Overdue Accounts, Pending Transfers) with live channel launchers and organization profile controls.
+- **Branch Management View**: Complete branch inventory, contact information, subscriber metrics, and performance analytics.
+- **Reseller Management View**: Reseller directory, commission schemes, billing models, and partner onboarding.
+- **Wallets & Credit View**: Financial overview, partner wallet balances, transaction ledgers, credit controls, top-up modal, and balance adjustment tools.
+- **Reseller Commission Report**: Aggregated partner commissions with search, date filters, summary KPI cards, and streaming CSV export.
+- **Wallet Ledger CSV Export**: Export complete transaction history for accounting audits.
+
+### 7. Backend Data Isolation & RBAC
+- Built-in roles:
+  - `super_admin`: Full system access across all organizations, branches, and resellers.
+  - `branch_admin`: Scoped exclusively to their assigned branch and its subscribers.
+  - `branch_operator`: Day-to-day operations for branch subscribers.
+  - `reseller_admin`: Scoped exclusively to their franchise, wallet, and customer base.
+  - `reseller_operator`: Recharge and view permissions for reseller subscribers.
+- **Strict Data Isolation**: Multi-tenant isolation is enforced at the database and API query layer, ensuring partner accounts cannot view or modify unauthorized branches or subscribers.
+
+
 

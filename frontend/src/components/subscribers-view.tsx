@@ -29,9 +29,13 @@ import {
   Square,
   Package,
   X,
+  Building2,
+  Store,
+  ShieldCheck,
 } from 'lucide-react';
 import type { SubscriberItem, PackageItem, NasDeviceItem, IpPoolItem } from '@/types/api';
 import { SubscriberProfileModal } from './subscriber-profile-modal';
+import { SubscriberOwnershipModal } from './subscriber-ownership-modal';
 
 interface SubscribersViewProps {
   onOpenSubscriberDetails?: (sub: SubscriberItem) => void;
@@ -49,6 +53,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('all');
   const [packageFilter, setPackageFilter] = React.useState<string>('all');
+  const [ownershipFilter, setOwnershipFilter] = React.useState<string>('all');
   const [onlineFilter, setOnlineFilter] = React.useState<'all' | 'true' | 'false'>('all');
   const [connTypeFilter, setConnTypeFilter] = React.useState('all');
   const [expiryFilter, setExpiryFilter] = React.useState('all');
@@ -64,6 +69,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
 
   // Profile Modal State
   const [profileModalSubId, setProfileModalSubId] = React.useState<number | null>(null);
+  const [ownershipModalSub, setOwnershipModalSub] = React.useState<SubscriberItem | null>(null);
 
   // Modals & Actions
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -129,6 +135,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
       if (search.trim()) params.set('search', search.trim());
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (packageFilter !== 'all') params.set('package_id', packageFilter);
+      if (ownershipFilter !== 'all') params.set('ownership_type', ownershipFilter);
       if (onlineFilter !== 'all') params.set('is_online', onlineFilter);
       if (connTypeFilter !== 'all') params.set('connection_type', connTypeFilter);
       params.set('sort_by', sortBy);
@@ -152,7 +159,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
   React.useEffect(() => {
     fetchSubscribers(1);
     setSelectedIds([]);
-  }, [search, statusFilter, packageFilter, onlineFilter, connTypeFilter, sortBy, sortDir]);
+  }, [search, statusFilter, packageFilter, ownershipFilter, onlineFilter, connTypeFilter, sortBy, sortDir]);
 
   const toggleSelectAll = () => {
     if (selectedIds.length === subscribers.length) {
@@ -175,6 +182,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
     if (search.trim()) params.set('search', search.trim());
     if (statusFilter !== 'all') params.set('status', statusFilter);
     if (packageFilter !== 'all') params.set('package_id', packageFilter);
+    if (ownershipFilter !== 'all') params.set('ownership_type', ownershipFilter);
     window.location.href = `/api/subscribers/export/csv?${params.toString()}`;
   };
 
@@ -510,6 +518,17 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
           <option value="Static IP">Static IP</option>
           <option value="Other">Other</option>
         </select>
+
+        <select
+          value={ownershipFilter}
+          onChange={(e) => setOwnershipFilter(e.target.value)}
+          className="px-3 py-2 rounded-xl bg-card border border-border text-xs font-medium text-foreground outline-none"
+        >
+          <option value="all">All Ownerships</option>
+          <option value="head_office">Head Office</option>
+          <option value="branch">Branch Owned</option>
+          <option value="reseller">Reseller Owned</option>
+        </select>
       </div>
 
       {/* Subscribers Table */}
@@ -529,6 +548,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
                 <th className="py-3 px-3">Customer ID</th>
                 <th className="py-3 px-3">Username</th>
                 <th className="py-3 px-3">Full Name</th>
+                <th className="py-3 px-3">Owner / Channel</th>
                 <th className="py-3 px-3">Package</th>
                 <th className="py-3 px-3">Type</th>
                 <th className="py-3 px-3">Status</th>
@@ -541,14 +561,14 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={12} className="py-12 text-center text-muted-foreground">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
                     Loading subscriber records...
                   </td>
                 </tr>
               ) : subscribers.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={12} className="py-12 text-center text-muted-foreground">
                     No subscribers found matching query filters.
                   </td>
                 </tr>
@@ -583,6 +603,39 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
                         {sub.username}
                       </td>
                       <td className="py-3 px-3 font-semibold text-foreground">{sub.full_name}</td>
+                      <td className="py-3 px-3">
+                        {sub.ownership_type === 'reseller' ? (
+                          <button
+                            type="button"
+                            onClick={() => setOwnershipModalSub(sub)}
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors"
+                            title="Manage Channel Ownership / Transfer"
+                          >
+                            <Store className="w-3 h-3 text-purple-400" />
+                            <span>{sub.reseller_name || 'Reseller'}</span>
+                          </button>
+                        ) : sub.ownership_type === 'branch' ? (
+                          <button
+                            type="button"
+                            onClick={() => setOwnershipModalSub(sub)}
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                            title="Manage Channel Ownership / Transfer"
+                          >
+                            <Building2 className="w-3 h-3 text-blue-400" />
+                            <span>{sub.branch_name || 'Branch'}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setOwnershipModalSub(sub)}
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted/60 text-muted-foreground border border-border hover:bg-muted transition-colors"
+                            title="Manage Channel Ownership / Transfer"
+                          >
+                            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                            <span>Head Office</span>
+                          </button>
+                        )}
+                      </td>
                       <td className="py-3 px-3">
                         <span className="font-medium text-foreground">{sub.package_name || '—'}</span>
                         <span className="block text-[10px] text-muted-foreground font-mono">
@@ -628,6 +681,13 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
                             title="View Full Profile"
                           >
                             <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setOwnershipModalSub(sub)}
+                            className="p-1.5 text-muted-foreground hover:text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors"
+                            title="Transfer Ownership / Channel"
+                          >
+                            <Building2 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => openEditModal(sub)}
@@ -684,6 +744,24 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
           subscriberId={profileModalSubId}
           onClose={() => setProfileModalSubId(null)}
           onUpdate={() => fetchSubscribers(meta.page)}
+        />
+      )}
+
+      {/* Subscriber Channel Ownership / Transfer Modal */}
+      {ownershipModalSub && (
+        <SubscriberOwnershipModal
+          isOpen={!!ownershipModalSub}
+          onClose={() => setOwnershipModalSub(null)}
+          subscriberId={ownershipModalSub.id}
+          username={ownershipModalSub.username}
+          currentOwnershipType={ownershipModalSub.ownership_type || 'head_office'}
+          currentBranchId={ownershipModalSub.branch_id}
+          currentResellerId={ownershipModalSub.reseller_id}
+          currentBranchName={ownershipModalSub.branch_name}
+          currentResellerName={ownershipModalSub.reseller_name}
+          onSuccess={() => {
+            fetchSubscribers(meta.page);
+          }}
         />
       )}
 

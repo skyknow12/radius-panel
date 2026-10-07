@@ -13,11 +13,18 @@ export interface UserRow {
   role_id: number;
   role_name: string;
   role_display_name: string;
+  organization_id?: number | null;
+  branch_id?: number | null;
+  reseller_id?: number | null;
+  employee_id?: string | null;
+  user_type?: string;
 }
 
 const SELECT_USER = `
   SELECT u.id, u.username, u.email, u.full_name, u.password_hash, u.is_active,
          u.failed_login_attempts, u.locked_until, u.last_login_at,
+         u.organization_id, u.branch_id, u.reseller_id, u.employee_id,
+         COALESCE(u.user_type, 'isp') AS user_type,
          r.id AS role_id, r.name AS role_name, r.display_name AS role_display_name
     FROM users u
     JOIN roles r ON r.id = u.role_id`;

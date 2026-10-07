@@ -155,6 +155,12 @@ export interface SubscriberItem {
   current_nas_ip: string | null;
   current_session_id: string | null;
   session_start_time: string | null;
+  organization_id?: number | null;
+  branch_id?: number | null;
+  branch_name?: string | null;
+  reseller_id?: number | null;
+  reseller_name?: string | null;
+  ownership_type?: 'head_office' | 'branch' | 'reseller';
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -430,7 +436,7 @@ export interface NocMetrics {
 }
 
 export interface GlobalSearchResult {
-  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice';
+  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice' | 'branch' | 'reseller' | 'wallet';
   title: string;
   subtitle: string;
   id: string | number;
@@ -563,6 +569,240 @@ export interface BillingDashboardMetrics {
   totalRefunds: number;
   netRevenue: number;
   recentTransactions: BillingTransactionItem[];
+}
+
+// =============================================================================
+// PHASE 6: ORGANIZATION, BRANCH, RESELLER, WALLET, CREDIT & COMMISSION
+// =============================================================================
+
+export interface OrganizationItem {
+  id: number;
+  name: string;
+  code: string;
+  logo_url: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  currency: string;
+  timezone: string;
+  status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+  settings: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BranchItem {
+  id: number;
+  organization_id: number;
+  name: string;
+  code: string;
+  address: string | null;
+  contact_number: string | null;
+  email: string | null;
+  manager_name: string | null;
+  status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+  notes: string | null;
+  wallet_id?: number | null;
+  wallet_balance?: number;
+  credit_limit?: number;
+  subscriber_count?: number;
+  active_subscribers?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResellerItem {
+  id: number;
+  organization_id: number;
+  branch_id: number | null;
+  branch_name?: string | null;
+  name: string;
+  code: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+  commission_model: 'discount' | 'commission';
+  notes: string | null;
+  wallet_id?: number | null;
+  wallet_balance?: number;
+  credit_limit?: number;
+  used_credit?: number;
+  customer_count?: number;
+  active_customers?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WalletItem {
+  id: number;
+  wallet_number: string;
+  entity_type: 'branch' | 'reseller';
+  branch_id: number | null;
+  reseller_id: number | null;
+  entity_name?: string;
+  entity_code?: string;
+  balance: number;
+  total_topup: number;
+  total_used: number;
+  total_refund: number;
+  total_adjusted: number;
+  currency: string;
+  status: 'ACTIVE' | 'SUSPENDED' | 'LOCKED';
+  credit_enabled?: boolean;
+  credit_limit?: number;
+  used_credit?: number;
+  remaining_credit?: number;
+  total_available?: number;
+  credit_status?: string;
+  credit_expiry?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WalletTransactionItem {
+  id: number;
+  transaction_id: string;
+  wallet_id: number;
+  wallet_number?: string;
+  entity_name?: string;
+  entity_type?: string;
+  type: 'TOP_UP' | 'DEBIT' | 'CREDIT' | 'REFUND' | 'ADJUSTMENT' | 'REVERSAL';
+  amount: number;
+  balance_before: number;
+  balance_after: number;
+  credit_used_before: number;
+  credit_used_after: number;
+  reference: string | null;
+  payment_method: string | null;
+  reason: string | null;
+  idempotency_key?: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ChannelPricingRuleItem {
+  id: number;
+  rule_name: string;
+  channel_type: 'branch' | 'reseller';
+  branch_id: number | null;
+  branch_name?: string | null;
+  reseller_id: number | null;
+  reseller_name?: string | null;
+  package_id: number | null;
+  package_name?: string | null;
+  duration_months: number | null;
+  rule_type: 'percentage_discount' | 'percentage_commission' | 'fixed_discount' | 'fixed_override';
+  value: number;
+  is_active: boolean;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OwnershipHistoryItem {
+  id: number;
+  subscriber_id: number;
+  username?: string;
+  previous_ownership_type: string;
+  previous_branch_name?: string | null;
+  previous_reseller_name?: string | null;
+  new_ownership_type: string;
+  new_branch_name?: string | null;
+  new_reseller_name?: string | null;
+  changed_by: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface OrganizationDashboardMetrics {
+  totalBranches: number;
+  activeBranches: number;
+  totalResellers: number;
+  activeResellers: number;
+  totalSubscribers: number;
+  activeSubscribers: number;
+  expiredSubscribers: number;
+  onlineUsers: number;
+  todayRecharge: number;
+  monthlyRecharge: number;
+  monthlyRevenue: number;
+  monthlyCommission: number;
+  walletBalance: number;
+  totalCredit: number;
+  usedCredit: number;
+  availableCredit: number;
+}
+
+export interface BranchDashboardMetrics {
+  subscribers: number;
+  activeSubscribers: number;
+  expiredSubscribers: number;
+  todayRecharge: number;
+  monthlyRevenue: number;
+  walletBalance: number;
+  creditLimit: number;
+  usedCredit: number;
+  remainingCredit: number;
+  totalAvailable: number;
+  recentTransactions: any[];
+}
+
+export interface ResellerDashboardMetrics {
+  customers: number;
+  activeCustomers: number;
+  expiredCustomers: number;
+  todayRecharge: number;
+  monthlyRevenue: number;
+  commission: number;
+  walletBalance: number;
+  creditLimit: number;
+  usedCredit: number;
+  remainingCredit: number;
+  totalAvailable: number;
+  recentTransactions: any[];
+}
+
+export interface WalletDashboardMetrics {
+  totalWalletBalance: number;
+  totalCreditLimit: number;
+  usedCredit: number;
+  availableCredit: number;
+  todayTopups: number;
+  todayDebits: number;
+  monthlyWalletUsage: number;
+}
+
+export interface ResellerCommissionReportData {
+  totals: {
+    gross: number;
+    discount: number;
+    commission: number;
+    netIspRevenue: number;
+  };
+  items: Array<{
+    id: number;
+    transaction_id: string;
+    receipt_no: string;
+    subscriber_id: number;
+    username: string;
+    customer_id: string;
+    full_name: string;
+    package_name: string;
+    duration: number;
+    original_price: number;
+    discount_amount: number;
+    final_amount: number;
+    commission_amount: number;
+    recharge_date: string;
+    status: string;
+    reseller_name: string;
+    reseller_code: string;
+  }>;
+  total: number;
 }
 
 

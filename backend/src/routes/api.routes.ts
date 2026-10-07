@@ -19,6 +19,7 @@ import { nocService } from '../services/noc.service';
 import { searchService } from '../services/search.service';
 import { reportsService } from '../services/reports.service';
 import { billingRepository } from '../repositories/billing.repository';
+import { organizationRepository } from '../repositories/organization.repository';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
@@ -459,9 +460,22 @@ apiRouter.get(
     const nas_id = req.query.nas_id ? Number(req.query.nas_id) : undefined;
     const connection_type = req.query.connection_type as string;
     const branch = req.query.branch as string;
+    let branch_id = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+    let reseller_id = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+    const ownership_type = req.query.ownership_type as string;
     const ip_pool_id = req.query.ip_pool_id ? Number(req.query.ip_pool_id) : undefined;
     const sort_by = req.query.sort_by as string;
     const sort_dir = (req.query.sort_dir as 'asc' | 'desc') || 'desc';
+
+    // Data isolation enforcement for branch/reseller operators
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
+        reseller_id = authReq.user.resellerId;
+      } else if (authReq.user.userType === 'branch' && authReq.user.branchId) {
+        branch_id = authReq.user.branchId;
+      }
+    }
 
     const result = await subscriberRepository.list({
       page,
@@ -473,6 +487,9 @@ apiRouter.get(
       nas_id,
       connection_type,
       branch,
+      branch_id,
+      reseller_id,
+      ownership_type,
       ip_pool_id,
       sort_by,
       sort_dir,
@@ -1775,6 +1792,605 @@ apiRouter.get(
     const q = (req.query.q as string) || '';
     const results = await billingRepository.searchBilling(q);
     res.json(envelope(results, 'live'));
+  })
+);
+
+// =============================================================================
+// PHASE 6: ORGANIZATION, BRANCH, RESELLER, WALLET, CREDIT & COMMISSION
+// =============================================================================
+
+// ---- 1. Organization ----
+apiRouter.get(
+  '/organization',
+  asyncHandler(async (_req, res) => {
+    const org = await organizationRepository.getPrimaryOrganization();
+    res.json(envelope(org, 'live'));
+  })
+);
+
+apiRouter.put(
+  '/organization',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('organization.edit')) {
+      throw HttpError.forbidden('Only Super Admin or Organization Admin can modify organization profile');
+    }
+    const org = await organizationRepository.getPrimaryOrganization();
+    const updated = await organizationRepository.updateOrganization(org.id, req.body);
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/organization/dashboard',
+  asyncHandler(async (_req, res) => {
+    const metrics = await organizationRepository.getOrganizationDashboardMetrics();
+    res.json(envelope(metrics, 'live'));
+  })
+);
+
+// ---- 2. Branches ----
+apiRouter.get(
+  '/branches',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    let branches = await organizationRepository.listBranches();
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'branch' && authReq.user.branchId) {
+        branches = branches.filter((b) => b.id === authReq.user!.branchId);
+      }
+    }
+    res.json(envelope(branches, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/branches',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('branch.create')) {
+      throw HttpError.forbidden('Unauthorized to create branches');
+    }
+    const branch = await organizationRepository.createBranch(req.body);
+    res.status(201).json(envelope(branch, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/branches/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'branch' && authReq.user.branchId !== id) {
+        throw HttpError.forbidden('Access denied to other branch details');
+      }
+    }
+    const branch = await organizationRepository.getBranch(id);
+    if (!branch) throw HttpError.notFound('Branch not found');
+    res.json(envelope(branch, 'live'));
+  })
+);
+
+apiRouter.put(
+  '/branches/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('branch.edit')) {
+      throw HttpError.forbidden('Unauthorized to edit branch');
+    }
+    const updated = await organizationRepository.updateBranch(id, req.body);
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/branches/:id/dashboard',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'branch' && authReq.user.branchId !== id) {
+        throw HttpError.forbidden('Access denied to other branch dashboard');
+      }
+    }
+    const metrics = await organizationRepository.getBranchDashboardMetrics(id);
+    res.json(envelope(metrics, 'live'));
+  })
+);
+
+// ---- 3. Resellers ----
+apiRouter.get(
+  '/resellers',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+    let resellers = await organizationRepository.listResellers(branchId);
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
+        resellers = resellers.filter((r) => r.id === authReq.user!.resellerId);
+      } else if (authReq.user.userType === 'branch' && authReq.user.branchId) {
+        resellers = resellers.filter((r) => r.branch_id === authReq.user!.branchId);
+      }
+    }
+    res.json(envelope(resellers, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/resellers',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('reseller.create')) {
+      throw HttpError.forbidden('Unauthorized to create resellers');
+    }
+    const reseller = await organizationRepository.createReseller(req.body);
+    res.status(201).json(envelope(reseller, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to other reseller data');
+      }
+    }
+    const reseller = await organizationRepository.getReseller(id);
+    if (!reseller) throw HttpError.notFound('Reseller not found');
+    res.json(envelope(reseller, 'live'));
+  })
+);
+
+apiRouter.put(
+  '/resellers/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('reseller.edit')) {
+      throw HttpError.forbidden('Unauthorized to edit reseller');
+    }
+    const updated = await organizationRepository.updateReseller(id, req.body);
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id/dashboard',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to other reseller dashboard');
+      }
+    }
+    const metrics = await organizationRepository.getResellerDashboardMetrics(id);
+    res.json(envelope(metrics, 'live'));
+  })
+);
+
+// ---- 4. Subscriber Ownership & History ----
+apiRouter.post(
+  '/subscribers/:id/transfer-ownership',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const operator = authReq.user?.username || 'admin';
+
+    const schema = z.object({
+      ownership_type: z.enum(['head_office', 'branch', 'reseller']),
+      branch_id: z.number().nullable().optional(),
+      reseller_id: z.number().nullable().optional(),
+      reason: z.string().min(1, 'Transfer reason is mandatory'),
+    });
+    const parsed = schema.parse(req.body);
+
+    await organizationRepository.transferSubscriberOwnership(id, {
+      ...parsed,
+      changed_by: operator,
+    });
+
+    res.json(envelope({ success: true, message: 'Ownership transferred successfully' }, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/ownership-history',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const history = await organizationRepository.getSubscriberOwnershipHistory(id);
+    res.json(envelope(history, 'live'));
+  })
+);
+
+// ---- 5. Wallets & Credit System ----
+apiRouter.get(
+  '/wallets/dashboard',
+  asyncHandler(async (_req, res) => {
+    const metrics = await organizationRepository.getWalletDashboardMetrics();
+    res.json(envelope(metrics, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/wallets',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const entityType = req.query.entity_type as 'branch' | 'reseller' | undefined;
+    const status = req.query.status as string | undefined;
+
+    let wallets = await organizationRepository.listWallets({ entityType, status });
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
+        wallets = wallets.filter((w) => w.reseller_id === authReq.user!.resellerId);
+      } else if (authReq.user.userType === 'branch' && authReq.user.branchId) {
+        wallets = wallets.filter((w) => w.branch_id === authReq.user!.branchId);
+      }
+    }
+    res.json(envelope(wallets, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/wallets/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const wallet = await organizationRepository.getWallet(id);
+    if (!wallet) throw HttpError.notFound('Wallet not found');
+
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && wallet.reseller_id !== authReq.user.resellerId) {
+        throw HttpError.forbidden('Access denied to other wallet');
+      } else if (authReq.user.userType === 'branch' && wallet.branch_id !== authReq.user.branchId) {
+        throw HttpError.forbidden('Access denied to other wallet');
+      }
+    }
+    res.json(envelope(wallet, 'live'));
+  })
+);
+
+// CRITICAL: Top-up Wallet (Super Admin Only)
+apiRouter.post(
+  '/wallets/:id/topup',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('wallet.topup')) {
+      throw HttpError.forbidden('Security Restriction: Only Super Admin can perform wallet top-ups');
+    }
+
+    const walletId = Number(req.params.id);
+    const schema = z.object({
+      amount: z.number().positive('Top-up amount must be positive'),
+      paymentMethod: z.string().min(1),
+      paymentReference: z.string().optional(),
+      remarks: z.string().optional(),
+      idempotencyKey: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const tx = await organizationRepository.topUpWallet({
+      walletId,
+      ...parsed,
+      operator: authReq.user?.username || 'admin',
+    });
+    res.status(201).json(envelope(tx, 'live'));
+  })
+);
+
+// Manual Adjustment (Super Admin Only)
+apiRouter.post(
+  '/wallets/:id/adjust',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('wallet.adjust')) {
+      throw HttpError.forbidden('Security Restriction: Only Super Admin can adjust wallet balances');
+    }
+
+    const walletId = Number(req.params.id);
+    const schema = z.object({
+      amount: z.number().positive(),
+      direction: z.enum(['credit', 'debit']),
+      reason: z.string().min(1, 'Reason is required for audit reconciliation'),
+    });
+    const parsed = schema.parse(req.body);
+
+    const tx = await organizationRepository.adjustWalletBalance({
+      walletId,
+      ...parsed,
+      operator: authReq.user?.username || 'admin',
+    });
+    res.json(envelope(tx, 'live'));
+  })
+);
+
+// Configure Credit Limit (Super Admin Only)
+apiRouter.put(
+  '/wallets/:id/credit',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('credit.edit')) {
+      throw HttpError.forbidden('Security Restriction: Only Super Admin can configure credit accounts');
+    }
+
+    const walletId = Number(req.params.id);
+    const schema = z.object({
+      creditEnabled: z.boolean(),
+      creditLimit: z.number().min(0),
+      startDate: z.string().nullable().optional(),
+      expiryDate: z.string().nullable().optional(),
+      status: z.enum(['ACTIVE', 'SUSPENDED', 'EXPIRED']),
+      notes: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const account = await organizationRepository.updateCreditAccount({
+      walletId,
+      ...parsed,
+      operator: authReq.user?.username || 'admin',
+    });
+    res.json(envelope(account, 'live'));
+  })
+);
+
+// Wallet Ledger / Transactions
+apiRouter.get(
+  '/wallets/:id/ledger',
+  asyncHandler(async (req, res) => {
+    const walletId = Number(req.params.id);
+    const type = req.query.type as string | undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const result = await organizationRepository.listWalletTransactions({
+      walletId,
+      type,
+      limit,
+      offset,
+    });
+    res.json(envelope(result.transactions, 'live', { total: result.total, limit, offset }));
+  })
+);
+
+apiRouter.get(
+  '/wallets/ledger/all',
+  asyncHandler(async (req, res) => {
+    const type = req.query.type as string | undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const result = await organizationRepository.listWalletTransactions({
+      type,
+      limit,
+      offset,
+    });
+    res.json(envelope(result.transactions, 'live', { total: result.total, limit, offset }));
+  })
+);
+
+// ---- 6. Channel Pricing Rules ----
+apiRouter.get(
+  '/pricing-rules',
+  asyncHandler(async (req, res) => {
+    const channelType = req.query.channel_type as 'branch' | 'reseller' | undefined;
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+    const resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+    const packageId = req.query.package_id ? Number(req.query.package_id) : undefined;
+
+    const rules = await organizationRepository.listPricingRules({
+      channelType,
+      branchId,
+      resellerId,
+      packageId,
+    });
+    res.json(envelope(rules, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/pricing-rules',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('pricing.edit')) {
+      throw HttpError.forbidden('Unauthorized to create pricing rules');
+    }
+
+    const schema = z.object({
+      rule_name: z.string().min(1),
+      channel_type: z.enum(['branch', 'reseller']),
+      branch_id: z.number().nullable().optional(),
+      reseller_id: z.number().nullable().optional(),
+      package_id: z.number().nullable().optional(),
+      duration_months: z.number().nullable().optional(),
+      rule_type: z.enum(['percentage_discount', 'percentage_commission', 'fixed_discount', 'fixed_override']),
+      value: z.number().min(0),
+      notes: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const rule = await organizationRepository.createPricingRule({
+      ...parsed,
+      created_by: authReq.user?.username || 'admin',
+    });
+    res.status(201).json(envelope(rule, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/pricing-rules/:id',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('pricing.edit')) {
+      throw HttpError.forbidden('Unauthorized to delete pricing rules');
+    }
+    await organizationRepository.deletePricingRule(Number(req.params.id));
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/pricing/calculate',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      packageId: z.number(),
+      durationMonths: z.number(),
+      channelType: z.enum(['branch', 'reseller']),
+      entityId: z.number(),
+    });
+    const parsed = schema.parse(req.body);
+    const result = await organizationRepository.resolveChannelPrice(parsed);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// ---- 7. Channel Recharge Execution ----
+apiRouter.post(
+  '/channel/recharge',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const operator = authReq.user?.username || 'admin';
+
+    const schema = z.object({
+      subscriberId: z.number(),
+      packageId: z.number(),
+      durationMonths: z.number().positive(),
+      channelType: z.enum(['branch', 'reseller']),
+      channelEntityId: z.number(),
+      paymentReference: z.string().optional(),
+      idempotencyKey: z.string().optional(),
+      notes: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    // Verify channel caller authority
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (parsed.channelType === 'reseller' && authReq.user.userType === 'reseller' && authReq.user.resellerId !== parsed.channelEntityId) {
+        throw HttpError.forbidden('Unauthorized to debit another reseller wallet');
+      }
+      if (parsed.channelType === 'branch' && authReq.user.userType === 'branch' && authReq.user.branchId !== parsed.channelEntityId) {
+        throw HttpError.forbidden('Unauthorized to debit another branch wallet');
+      }
+    }
+
+    const receipt = await organizationRepository.executeChannelRecharge({
+      ...parsed,
+      operator,
+    });
+    res.status(201).json(envelope(receipt, 'live'));
+  })
+);
+
+// ---- 8. Reseller Commission & Reports ----
+apiRouter.get(
+  '/reports/commission',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
+        resellerId = authReq.user.resellerId;
+      }
+    }
+
+    const startDate = req.query.start_date as string | undefined;
+    const endDate = req.query.end_date as string | undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const report = await organizationRepository.getCommissionReport({
+      resellerId,
+      startDate,
+      endDate,
+      limit,
+      offset,
+    });
+    res.json(envelope(report, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/reports/commission/export',
+  asyncHandler(async (req, res) => {
+    const resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+    const startDate = req.query.start_date as string | undefined;
+    const endDate = req.query.end_date as string | undefined;
+
+    const report = await organizationRepository.getCommissionReport({
+      resellerId,
+      startDate,
+      endDate,
+      limit: 5000,
+      offset: 0,
+    });
+
+    const headers = ['Transaction ID', 'Receipt No', 'Reseller', 'Subscriber', 'Customer ID', 'Package', 'Duration', 'Gross Price', 'Discount', 'Commission', 'Net Amount', 'Date', 'Status'];
+    const csvRows = [headers.join(',')];
+
+    for (const item of report.items) {
+      const row = [
+        item.transaction_id,
+        item.receipt_no,
+        `"${item.reseller_name || ''}"`,
+        item.username,
+        item.customer_id,
+        `"${item.package_name || ''}"`,
+        `${item.duration} mo`,
+        item.original_price,
+        item.discount_amount,
+        item.commission_amount,
+        item.final_amount,
+        new Date(item.recharge_date).toISOString().slice(0, 10),
+        item.status,
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="reseller_commission_${Date.now()}.csv"`);
+    res.send(csvRows.join('\n'));
+  })
+);
+
+apiRouter.get(
+  '/reports/wallet/export',
+  asyncHandler(async (req, res) => {
+    const walletId = req.query.wallet_id ? Number(req.query.wallet_id) : undefined;
+    const result = await organizationRepository.listWalletTransactions({
+      walletId,
+      limit: 5000,
+      offset: 0,
+    });
+
+    const headers = ['Date', 'Transaction ID', 'Wallet', 'Entity', 'Type', 'Amount', 'Balance Before', 'Balance After', 'Credit Used', 'Reference', 'Payment Method', 'Reason', 'Operator'];
+    const csvRows = [headers.join(',')];
+
+    for (const tx of result.transactions) {
+      const row = [
+        new Date(tx.created_at).toISOString().slice(0, 19).replace('T', ' '),
+        tx.transaction_id,
+        tx.wallet_number || '',
+        `"${tx.entity_name || ''}"`,
+        tx.type,
+        tx.amount,
+        tx.balance_before,
+        tx.balance_after,
+        tx.credit_used_after,
+        `"${tx.reference || ''}"`,
+        tx.payment_method || '',
+        `"${(tx.reason || '').replace(/"/g, '""')}"`,
+        tx.created_by,
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="wallet_ledger_${Date.now()}.csv"`);
+    res.send(csvRows.join('\n'));
   })
 );
 

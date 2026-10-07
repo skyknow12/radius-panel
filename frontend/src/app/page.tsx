@@ -30,6 +30,12 @@ import { BillingTransactionsView } from '@/components/billing-transactions-view'
 import { BillingExpiryView } from '@/components/billing-expiry-view';
 import { PaymentMethodsView } from '@/components/payment-methods-view';
 import { FinancialReportsView } from '@/components/financial-reports-view';
+import { OrganizationDashboardView } from '@/components/organization-dashboard-view';
+import { BranchesView } from '@/components/branches-view';
+import { ResellersView } from '@/components/resellers-view';
+import { WalletsView } from '@/components/wallets-view';
+import { ChannelPricingView } from '@/components/channel-pricing-view';
+import { ResellerCommissionView } from '@/components/reseller-commission-view';
 import { GlobalSearchDialog } from '@/components/global-search-dialog';
 import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
@@ -328,6 +334,21 @@ export default function DashboardPage() {
                 setActiveTab('sessions');
               }}
             />
+          ) : activeTab === 'organization_dashboard' ? (
+            <OrganizationDashboardView
+              onNavigate={(tab) => setActiveTab(tab)}
+              currentUser={currentUser}
+            />
+          ) : activeTab === 'branches' ? (
+            <BranchesView currentUser={currentUser} />
+          ) : activeTab === 'resellers' ? (
+            <ResellersView currentUser={currentUser} />
+          ) : activeTab === 'wallets' ? (
+            <WalletsView currentUser={currentUser} />
+          ) : activeTab === 'channel_pricing' ? (
+            <ChannelPricingView />
+          ) : activeTab === 'commission_report' ? (
+            <ResellerCommissionView />
           ) : activeTab === 'subscribers' ? (
             <SubscribersView />
           ) : activeTab === 'packages' ? (

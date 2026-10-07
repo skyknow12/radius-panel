@@ -11,6 +11,10 @@ export interface AuthSession {
   username: string;
   role: string;
   permissions: string[];
+  userType?: string;
+  organizationId?: number | null;
+  branchId?: number | null;
+  resellerId?: number | null;
 }
 
 export const authService = {
@@ -88,6 +92,10 @@ export const authService = {
       username: user.username,
       role: user.role_name,
       permissions,
+      userType: user.user_type,
+      organizationId: user.organization_id,
+      branchId: user.branch_id,
+      resellerId: user.reseller_id,
     };
 
     const token = jwt.sign(payload, config.JWT_SECRET, {
@@ -115,6 +123,10 @@ export const authService = {
         role: user.role_name,
         roleDisplay: user.role_display_name,
         permissions,
+        userType: user.user_type || 'isp',
+        organizationId: user.organization_id || null,
+        branchId: user.branch_id || null,
+        resellerId: user.reseller_id || null,
       },
     };
   },

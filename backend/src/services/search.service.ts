@@ -1,7 +1,7 @@
 import { query } from '../db/pool';
 
 export interface GlobalSearchResultItem {
-  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice';
+  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice' | 'branch' | 'reseller' | 'wallet';
   title: string;
   subtitle: string;
   id: string | number;
@@ -35,7 +35,51 @@ export const searchService = {
       });
     }
 
-    // 2. Active Sessions
+    // 2. Branches
+    const brRes = await query<{ id: number; name: string; code: string; status: string }>(
+      `SELECT id, name, code, status FROM branches WHERE name ILIKE $1 OR code ILIKE $1 LIMIT 3`,
+      [pattern],
+    );
+    for (const b of brRes.rows) {
+      results.push({
+        type: 'branch',
+        id: b.id,
+        title: `Branch: ${b.name}`,
+        subtitle: `Code: ${b.code}`,
+        badge: b.status,
+      });
+    }
+
+    // 3. Resellers
+    const resRes = await query<{ id: number; name: string; code: string; contact_person: string; status: string }>(
+      `SELECT id, name, code, contact_person, status FROM resellers WHERE name ILIKE $1 OR code ILIKE $1 OR contact_person ILIKE $1 LIMIT 3`,
+      [pattern],
+    );
+    for (const r of resRes.rows) {
+      results.push({
+        type: 'reseller',
+        id: r.id,
+        title: `Reseller: ${r.name}`,
+        subtitle: `Code: ${r.code} • Contact: ${r.contact_person || 'N/A'}`,
+        badge: r.status,
+      });
+    }
+
+    // 4. Wallets
+    const wltRes = await query<{ id: number; wallet_number: string; entity_type: string; balance: string }>(
+      `SELECT id, wallet_number, entity_type, balance FROM wallets WHERE wallet_number ILIKE $1 LIMIT 3`,
+      [pattern],
+    );
+    for (const w of wltRes.rows) {
+      results.push({
+        type: 'wallet',
+        id: w.id,
+        title: `Wallet: ${w.wallet_number}`,
+        subtitle: `${w.entity_type.toUpperCase()} • Balance: NPR ${w.balance}`,
+      });
+    }
+
+    // 5. Active Sessions
     const sessRes = await query<{ radacctid: number; username: string; framedipaddress: string; acctsessionid: string; nasipaddress: string }>(
       `SELECT radacctid, username, host(framedipaddress) as framedipaddress, acctsessionid, host(nasipaddress) as nasipaddress
          FROM radacct
@@ -53,12 +97,12 @@ export const searchService = {
       });
     }
 
-    // 3. NAS Devices
+    // 6. NAS Devices
     const nasRes = await query<{ id: number; name: string; ip_address: string; nas_type: string; status: string }>(
       `SELECT id, name, host(ip_address) as ip_address, nas_type, status
          FROM nas_devices
         WHERE name ILIKE $1 OR host(ip_address) ILIKE $1
-        LIMIT 4`,
+        LIMIT 3`,
       [pattern],
     );
     for (const n of nasRes.rows) {
@@ -71,12 +115,12 @@ export const searchService = {
       });
     }
 
-    // 4. Packages
+    // 7. Packages
     const pkgRes = await query<{ id: number; name: string; rate_limit: string; price: string }>(
       `SELECT id, name, rate_limit, price
          FROM packages
         WHERE name ILIKE $1
-        LIMIT 4`,
+        LIMIT 3`,
       [pattern],
     );
     for (const p of pkgRes.rows) {
@@ -88,7 +132,7 @@ export const searchService = {
       });
     }
 
-    // 5. Billing Transactions & Invoices
+    // 8. Billing Transactions
     const txRes = await query<{ transaction_id: string; username: string; final_amount: string; currency: string; status: string; package_name: string }>(
       `SELECT transaction_id, username, final_amount, currency, status, package_name
          FROM recharge_transactions
