@@ -308,6 +308,7 @@ export function SubscriberProfileModal({
 
         {/* Quick Action Ribbon */}
         <div className="px-5 py-2.5 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setRechargeModalOpen(true)}
               className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
@@ -1076,30 +1077,6 @@ export function SubscriberProfileModal({
             </>
           )}
         </div>
-
-        {/* Recharge Modal */}
-        <RechargeModal
-          isOpen={rechargeModalOpen}
-          onClose={() => setRechargeModalOpen(false)}
-          subscriber={
-            sub
-              ? {
-                  id: sub.id,
-                  username: sub.username,
-                  customer_id: sub.customer_id,
-                  full_name: sub.full_name,
-                  current_package_id: sub.current_package_id,
-                  package_name: sub.package_name,
-                  expiry_date: sub.expiry_date,
-                }
-              : null
-          }
-          packages={packages}
-          onRechargeSuccess={() => {
-            fetchProfile();
-            onUpdate();
-          }}
-        />
 
         {/* Change Password Modal */}
         {passwordModalOpen && (
