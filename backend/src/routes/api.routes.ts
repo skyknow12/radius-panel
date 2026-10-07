@@ -1348,7 +1348,7 @@ apiRouter.post(
       entityType: 'session',
       entityId: body.username,
       status: result.status === 'SUCCESS' ? 'success' : 'failure',
-      metadata: result,
+      metadata: { status: result.status, vendor: result.vendor, details: result.details },
     });
 
     res.json(envelope(result, 'live'));
@@ -1380,7 +1380,7 @@ apiRouter.post(
       entityType: 'session',
       entityId: body.username,
       status: result.status === 'SUCCESS' ? 'success' : 'failure',
-      metadata: result,
+      metadata: { status: result.status, vendor: result.vendor, details: result.details },
     });
 
     res.json(envelope(result, 'live'));

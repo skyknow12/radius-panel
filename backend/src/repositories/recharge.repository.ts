@@ -1,6 +1,5 @@
 import { query } from '../db/pool';
 import { subscriberRepository } from './subscriber.repository';
-import { auditRepository } from './audit.repository';
 import { HttpError } from '../lib/http-error';
 
 export interface PackagePriceRecord {

@@ -1,5 +1,5 @@
 import { query } from '../db/pool';
-import { RadiusClient } from '../radius/client';
+import { RadiusClient } from '../radius/radius-client';
 import { config } from '../config/env';
 import { logger } from '../lib/logger';
 
@@ -142,18 +142,17 @@ export const nocService = {
     const secret = nasRows[0]?.secret || config.RADIUS_SECRET;
     const authPort = nasRows[0]?.auth_port || config.RADIUS_AUTH_PORT;
 
-    logger.info({ nasIp, authPort, username }, 'Executing safe NAS test authentication probe');
+    logger.info({ nasIp, authPort, username, authMethod }, 'Executing safe NAS test authentication probe');
 
     const client = new RadiusClient({
       host: nasIp,
-      port: authPort,
       secret,
       timeoutMs: 3000,
     });
 
     const start = Date.now();
     try {
-      const res = await client.authenticate(username, password);
+      const res = await client.accessRequest(authPort, username, password);
       const latency = Date.now() - start;
 
       // Update NAS telemetry in database
@@ -174,9 +173,12 @@ export const nocService = {
         nas_name: nasName,
         nas_ip: nasIp,
         auth_port: authPort,
-        result: res.code === 'Access-Accept' ? 'ACCEPT' : 'REJECT',
+        result: res.codeName === 'Access-Accept' ? 'ACCEPT' : 'REJECT',
         response_time_ms: latency,
-        attributes: res.attributes,
+        attributes: res.attributes.map((a) => ({
+          attribute: String(a.type),
+          value: a.textValue || a.value.toString('utf8'),
+        })),
       };
     } catch (err: any) {
       const latency = Date.now() - start;

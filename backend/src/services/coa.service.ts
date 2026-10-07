@@ -1,5 +1,5 @@
 import { query } from '../db/pool';
-import { RadiusClient } from '../radius/client';
+import { RadiusClient, RadiusAttribute, RadiusAttr } from '../radius/radius-client';
 import { logger } from '../lib/logger';
 import { config } from '../config/env';
 
@@ -49,21 +49,14 @@ export const coaService = {
         const secret = nasRows[0]?.secret || config.RADIUS_SECRET;
         const port = nasRows[0]?.coa_port || 3799;
 
-        // Build vendor attributes
-        const attributes: { attribute: string; value: string }[] = [
-          { attribute: 'User-Name', value: username },
-        ];
-        if (sessionId) attributes.push({ attribute: 'Acct-Session-Id', value: sessionId });
-        if (framedIp) attributes.push({ attribute: 'Framed-IP-Address', value: framedIp });
-
         // Dispatch RFC 3576 Disconnect-Request
-        const client = new RadiusClient({ host: nasIp, port, secret, timeoutMs: 2500 });
-        const res = await client.disconnect(attributes);
+        const client = new RadiusClient({ host: nasIp, secret, timeoutMs: 2500 });
+        const res = await client.disconnectRequest(port, username, sessionId, framedIp);
 
-        if (res.code === 'Disconnect-ACK') {
+        if (res.codeName === 'Disconnect-ACK') {
           status = 'SUCCESS';
           details = `Received Disconnect-ACK from ${vendor} NAS (${nasIp}:${port})`;
-        } else if (res.code === 'Disconnect-NAK') {
+        } else if (res.codeName === 'Disconnect-NAK') {
           status = 'FAILED';
           details = `Received Disconnect-NAK from ${vendor} NAS (${nasIp}:${port})`;
         }
@@ -123,29 +116,36 @@ export const coaService = {
         const port = nasRows[0]?.coa_port || 3799;
 
         // Build vendor-specific CoA attributes
-        const attributes: { attribute: string; value: string }[] = [
-          { attribute: 'User-Name', value: username },
+        const attributes: RadiusAttribute[] = [
+          { type: RadiusAttr.UserName, value: Buffer.from(username, 'utf8') },
         ];
-        if (sessionId) attributes.push({ attribute: 'Acct-Session-Id', value: sessionId });
-        if (framedIp) attributes.push({ attribute: 'Framed-IP-Address', value: framedIp });
-
-        if (vendor === 'MikroTik') {
-          attributes.push({ attribute: 'Mikrotik-Rate-Limit', value: rateLimit });
-        } else if (vendor === 'Cisco') {
-          attributes.push({ attribute: 'Cisco-AVPair', value: `subscriber:sub-qos-policy-out=${rateLimit}` });
-        } else if (vendor === 'Juniper') {
-          attributes.push({ attribute: 'ERX-Service-Activate', value: `Rate-Limit(${rateLimit})` });
-        } else {
-          attributes.push({ attribute: 'Filter-Id', value: rateLimit });
+        if (sessionId) attributes.push({ type: RadiusAttr.AcctSessionId, value: Buffer.from(sessionId, 'utf8') });
+        if (framedIp) {
+          const parts = framedIp.split('.').map((p) => parseInt(p, 10));
+          if (parts.length === 4) {
+            attributes.push({ type: RadiusAttr.FramedIpAddress, value: Buffer.from(parts) });
+          }
         }
 
-        const client = new RadiusClient({ host: nasIp, port, secret, timeoutMs: 2500 });
-        const res = await client.coa(attributes);
+        if (vendor === 'MikroTik') {
+          const valBuf = Buffer.from(rateLimit, 'utf8');
+          const vsa = Buffer.alloc(6 + valBuf.length);
+          vsa.writeUInt32BE(14988, 0);
+          vsa[4] = 8;
+          vsa[5] = 2 + valBuf.length;
+          valBuf.copy(vsa, 6);
+          attributes.push({ type: RadiusAttr.VendorSpecific, value: vsa });
+        } else {
+          attributes.push({ type: RadiusAttr.ReplyMessage, value: Buffer.from(rateLimit, 'utf8') });
+        }
 
-        if (res.code === 'CoA-ACK') {
+        const client = new RadiusClient({ host: nasIp, secret, timeoutMs: 2500 });
+        const res = await client.coaRequest(port, attributes);
+
+        if (res.codeName === 'CoA-ACK') {
           status = 'SUCCESS';
           details = `Received CoA-ACK from ${vendor} NAS: rate limit set to ${rateLimit}`;
-        } else if (res.code === 'CoA-NAK') {
+        } else if (res.codeName === 'CoA-NAK') {
           status = 'FAILED';
           details = `Received CoA-NAK from ${vendor} NAS (${nasIp}:${port})`;
         }

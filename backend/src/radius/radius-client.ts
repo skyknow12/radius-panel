@@ -149,6 +149,14 @@ export class RadiusClient {
     return this.send(port, RadiusCode.DisconnectRequest, attrs);
   }
 
+  /** RFC 3576 / RFC 5176 CoA-Request. Default port 3799. */
+  coaRequest(
+    port = 3799,
+    attrs: RadiusAttribute[],
+  ): Promise<RadiusResponse> {
+    return this.send(port, RadiusCode.CoARequest, attrs);
+  }
+
   private async send(port: number, code: RadiusCode, attrs: RadiusAttribute[]): Promise<RadiusResponse> {
     const attempts = (this.opts.retries ?? 0) + 1;
     let lastError: Error | undefined;
