@@ -81,7 +81,7 @@ export const dashboardService = {
       {
         key: 'active_packages',
         label: 'Active Packages',
-        value: livePackages.filter((p) => p.is_active).length,
+        value: livePackages.filter((p: any) => p.is_active).length,
         unit: 'count',
         changePct: null,
         positiveIsGood: true,

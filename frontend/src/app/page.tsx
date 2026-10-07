@@ -18,6 +18,9 @@ import { SubscribersView } from '@/components/subscribers-view';
 import { PackagesView } from '@/components/packages-view';
 import { OnlineUsersView } from '@/components/online-users-view';
 import { AuthLogsView } from '@/components/auth-logs-view';
+import { RadiusProfilesView } from '@/components/radius-profiles-view';
+import { IpPoolsView } from '@/components/ip-pools-view';
+import { IpAddressesView } from '@/components/ip-addresses-view';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
 import type { TimeRange } from '@/types/api';
 
@@ -225,7 +228,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Conditional View: Dashboard vs Phase 2 Tabs */}
+          {/* Conditional View: Dashboard vs Phase 2 & Phase 3 Tabs */}
           {activeTab === 'nas_devices' ? (
             <NasView
               onViewSessions={(ip) => {
@@ -237,6 +240,12 @@ export default function DashboardPage() {
             <SubscribersView />
           ) : activeTab === 'packages' ? (
             <PackagesView />
+          ) : activeTab === 'radius_profiles' ? (
+            <RadiusProfilesView />
+          ) : activeTab === 'ip_pools' ? (
+            <IpPoolsView />
+          ) : activeTab === 'ip_addresses' ? (
+            <IpAddressesView />
           ) : activeTab === 'sessions' ? (
             <OnlineUsersView
               filterNasIp={nasFilterForSessions}
@@ -244,7 +253,7 @@ export default function DashboardPage() {
             />
           ) : activeTab === 'auth_logs' ? (
             <AuthLogsView />
-          ) : activeTab === 'radius' ? (
+          ) : activeTab === 'radius' || activeTab === 'radius_overview' ? (
             dashboardData && (
               <RadiusOverviewView
                 authStats={dashboardData.authStatistics}

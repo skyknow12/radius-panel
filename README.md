@@ -248,6 +248,37 @@ Enable interim accounting updates so live bandwidth graphs and online sessions s
 
 ---
 
+## Phase 3 — ISP Service Management Features
+
+The system extends ISP management with full lifecycle service operations:
+
+### 1. Comprehensive Subscriber Profiles
+- **Profile Header**: Quick overview of customer ID, status badge, active plan, connection type (PPPoE, IPoE, Static IP), and live online state.
+- **Service Lifecycle History**: Retains historical service records (`subscriber_services`) across plan changes and upgrades with start/expiry dates and IP assignments.
+- **Connection Details**: VLAN ID, MAC address, OLT PON port, ONU MAC/Serial, ONU Model, and IPv6 prefix `/64` or `/56` delegation.
+- **Usage & Telemetry**: Aggregated download/upload volume metrics, 7-day usage trends, and session history directly linked to FreeRADIUS `radacct`.
+- **Staff Notes & Timeline**: Internal NOC staff notes with timestamps, alongside automated audit timeline tracking for package changes, status toggles, and CoA requests.
+
+### 2. IP Pools & Static IP Inventory
+- **IP Pool Management**: Subnet/CIDR pool tracking (`ip_pools`), gateway assignment, IP range, and live utilization calculation.
+- **Static IP Collision Protection**: Database-level partial unique index ensuring no two active subscribers can be assigned colliding static IPv4 addresses while permitting historical IP reuse.
+- **IP Address Inventory**: Allocation view showing assigned, available, and reserved IPs with subscriber linkages.
+
+### 3. RADIUS Attribute Engine & Profile Templates
+- **Generic Attribute Store**: Standard FreeRADIUS check and reply attributes supporting any vendor dictionary (MikroTik, Cisco, Juniper, RFC standard).
+- **Reusable Profiles**: Template groups (`radius_profiles` & `radius_attributes`) assignable to packages or individual subscriber plans.
+
+### 4. Advanced Bandwidth & Burst Control
+- **MikroTik Burst Limits**: Configurable burst download/upload speeds, burst thresholds, and burst durations automatically formatted into `Mikrotik-Rate-Limit` syntax (e.g., `100M/100M 150M/150M 80M/80M 16/16`).
+- **Dynamic CoA Speed Updates**: Real-time CoA packet delivery (RFC 3576 / RFC 5176) to NAS devices upon subscriber package upgrade without service interruption.
+
+### 5. Automated Expiry & Bulk Management
+- **Background Expiry Daemon**: Automated scheduler (`autoExpiryService`) running periodic scans to mark expired services, update `radcheck` to reject expired logins, and log activity events.
+- **Bulk Operations**: Bulk suspend, bulk resume, and bulk package change operations across filtered subscriber lists.
+- **CSV Data Export**: Streamed NOC report generator exporting complete subscriber lists with IP, package, connection, and contact metadata.
+
+---
+
 ## FreeRADIUS SQL Data Flow
 
 ```text
@@ -256,7 +287,7 @@ Subscriber Created / Modified (Web UI)
         ├──> PostgreSQL `subscribers` & `packages`
         │
         ├──> PostgreSQL `radcheck` (Cleartext-Password, Expiration, Auth-Type)
-        ├──> PostgreSQL `radreply` (Framed-IP-Address)
+        ├──> PostgreSQL `radreply` (Framed-IP-Address, Framed-IPv6-Prefix)
         ├──> PostgreSQL `radusergroup` (Group assignment)
         └──> PostgreSQL `radgroupreply` (Mikrotik-Rate-Limit, Acct-Interim-Interval)
         │
@@ -267,7 +298,7 @@ Access-Request (MikroTik / BNG) ──> FreeRADIUS (UDP 1812) ──> PostgreSQL
         │
 Accounting-Start/Interim/Stop ──> FreeRADIUS (UDP 1813) ──> PostgreSQL `radacct`
         │
-Disconnect User Button (Web UI) ──> Backend RFC 3576 Client ──> NAS UDP 3799 (Disconnect-Request)
+Disconnect / CoA (Web UI) ──> Backend RFC 3576 Client ──> NAS UDP 3799 (Disconnect-Request / CoA-Request)
 ```
 
 ---

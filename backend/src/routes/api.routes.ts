@@ -6,6 +6,8 @@ import { authService } from '../services/auth.service';
 import { nasRepository } from '../repositories/nas.repository';
 import { packageRepository } from '../repositories/package.repository';
 import { subscriberRepository } from '../repositories/subscriber.repository';
+import { radiusProfileRepository } from '../repositories/radius-profile.repository';
+import { ipPoolRepository } from '../repositories/ip-pool.repository';
 import { radAcctRepository } from '../repositories/radacct.repository';
 import { radPostAuthRepository } from '../repositories/radpostauth.repository';
 import { auditRepository } from '../repositories/audit.repository';
@@ -256,6 +258,12 @@ const createPackageSchema = z.object({
   download_speed_mbps: z.number().int().positive(),
   upload_speed_mbps: z.number().int().positive(),
   rate_limit: z.string().optional(),
+  burst_download_mbps: z.number().int().positive().optional(),
+  burst_upload_mbps: z.number().int().positive().optional(),
+  burst_threshold_dl_mbps: z.number().int().positive().optional(),
+  burst_threshold_ul_mbps: z.number().int().positive().optional(),
+  burst_time_seconds: z.number().int().positive().optional(),
+  radius_profile_id: z.number().int().optional(),
   validity_days: z.number().int().positive().default(30),
   price: z.number().nonnegative().default(0),
   currency: z.string().default('NPR'),
@@ -268,6 +276,12 @@ const updatePackageSchema = z.object({
   download_speed_mbps: z.number().int().positive().optional(),
   upload_speed_mbps: z.number().int().positive().optional(),
   rate_limit: z.string().optional(),
+  burst_download_mbps: z.number().int().positive().nullable().optional(),
+  burst_upload_mbps: z.number().int().positive().nullable().optional(),
+  burst_threshold_dl_mbps: z.number().int().positive().nullable().optional(),
+  burst_threshold_ul_mbps: z.number().int().positive().nullable().optional(),
+  burst_time_seconds: z.number().int().positive().nullable().optional(),
+  radius_profile_id: z.number().int().nullable().optional(),
   validity_days: z.number().int().positive().optional(),
   price: z.number().nonnegative().optional(),
   currency: z.string().optional(),
@@ -375,12 +389,24 @@ const createSubscriberSchema = z.object({
   full_name: z.string().min(1).max(128),
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional(),
-  status: z.enum(['enabled', 'disabled', 'suspended']).default('enabled'),
+  status: z.enum(['active', 'suspended', 'expired', 'disabled', 'pending', 'terminated', 'enabled']).default('active'),
+  connection_type: z.enum(['PPPoE', 'IPoE', 'Static IP', 'Other']).default('PPPoE'),
+  address: z.string().optional(),
+  area: z.string().optional(),
+  branch: z.string().optional(),
+  installation_date: z.string().optional(),
   current_package_id: z.number().int().optional(),
+  ip_pool_id: z.number().int().optional(),
   static_ip: z.string().optional().or(z.literal('')),
+  ipv6_address: z.string().optional().or(z.literal('')),
+  ipv6_prefix: z.string().optional().or(z.literal('')),
+  ipv6_prefix_length: z.number().int().optional(),
   mac_address: z.string().optional(),
   vlan_id: z.number().int().optional(),
   nas_restriction_id: z.number().int().optional(),
+  olt_pon_port: z.string().optional(),
+  onu_mac_sn: z.string().optional(),
+  onu_model: z.string().optional(),
   expiry_date: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -391,12 +417,24 @@ const updateSubscriberSchema = z.object({
   full_name: z.string().min(1).max(128).optional(),
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional(),
-  status: z.enum(['enabled', 'disabled', 'suspended']).optional(),
+  status: z.enum(['active', 'suspended', 'expired', 'disabled', 'pending', 'terminated', 'enabled']).optional(),
+  connection_type: z.enum(['PPPoE', 'IPoE', 'Static IP', 'Other']).optional(),
+  address: z.string().optional(),
+  area: z.string().optional(),
+  branch: z.string().optional(),
+  installation_date: z.string().nullable().optional(),
   current_package_id: z.number().int().nullable().optional(),
+  ip_pool_id: z.number().int().nullable().optional(),
   static_ip: z.string().optional().or(z.literal('')),
+  ipv6_address: z.string().optional().or(z.literal('')),
+  ipv6_prefix: z.string().optional().or(z.literal('')),
+  ipv6_prefix_length: z.number().int().nullable().optional(),
   mac_address: z.string().optional(),
   vlan_id: z.number().int().nullable().optional(),
   nas_restriction_id: z.number().int().nullable().optional(),
+  olt_pon_port: z.string().optional(),
+  onu_mac_sn: z.string().optional(),
+  onu_model: z.string().optional(),
   expiry_date: z.string().nullable().optional(),
   notes: z.string().optional(),
 });
@@ -411,6 +449,9 @@ apiRouter.get(
     const package_id = req.query.package_id ? Number(req.query.package_id) : undefined;
     const is_online = req.query.is_online === 'true' ? true : req.query.is_online === 'false' ? false : undefined;
     const nas_id = req.query.nas_id ? Number(req.query.nas_id) : undefined;
+    const connection_type = req.query.connection_type as string;
+    const branch = req.query.branch as string;
+    const ip_pool_id = req.query.ip_pool_id ? Number(req.query.ip_pool_id) : undefined;
     const sort_by = req.query.sort_by as string;
     const sort_dir = (req.query.sort_dir as 'asc' | 'desc') || 'desc';
 
@@ -422,6 +463,9 @@ apiRouter.get(
       package_id,
       is_online,
       nas_id,
+      connection_type,
+      branch,
+      ip_pool_id,
       sort_by,
       sort_dir,
     });
@@ -430,12 +474,69 @@ apiRouter.get(
   })
 );
 
+apiRouter.get(
+  '/subscribers/export/csv',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const search = req.query.search as string;
+    const status = req.query.status as string;
+    const package_id = req.query.package_id ? Number(req.query.package_id) : undefined;
+    const nas_id = req.query.nas_id ? Number(req.query.nas_id) : undefined;
+
+    const csvContent = await subscriberRepository.exportCsv({ search, status, package_id, nas_id });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="subscribers_${Date.now()}.csv"`);
+    res.send(csvContent);
+  })
+);
+
+apiRouter.get(
+  '/subscribers/expiring',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const filter = (req.query.filter as any) || '7days';
+    const list = await subscriberRepository.getExpiringSoon(filter);
+    res.json(envelope(list, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/bulk',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const bulkSchema = z.object({
+      action: z.enum(['suspend', 'resume', 'enable', 'disable', 'change_package']),
+      subscriber_ids: z.array(z.number().int()).min(1),
+      package_id: z.number().int().optional(),
+    });
+    const { action, subscriber_ids, package_id } = bulkSchema.parse(req.body);
+    const result = await subscriberRepository.bulkAction(
+      action,
+      subscriber_ids,
+      package_id,
+      req.user?.username || 'admin',
+    );
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: `subscriber.bulk_${action}`,
+      entityType: 'subscriber',
+      entityId: `bulk_${subscriber_ids.length}`,
+      status: 'success',
+      metadata: { action, count: subscriber_ids.length, successful: result.successful, failed: result.failed },
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
 apiRouter.post(
   '/subscribers',
   authMiddleware,
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const body = createSubscriberSchema.parse(req.body);
-    const created = await subscriberRepository.create(body);
+    const created = await subscriberRepository.create(body, req.user?.username || 'admin');
 
     await auditRepository.insert({
       userId: req.user?.userId,
@@ -448,6 +549,19 @@ apiRouter.post(
     });
 
     res.status(201).json(envelope(created, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/profile',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const profile = await subscriberRepository.getProfile(id);
+    if (!profile) {
+      res.status(404).json(envelope(null, 'live'));
+      return;
+    }
+    res.json(envelope(profile, 'live'));
   })
 );
 
@@ -470,7 +584,7 @@ apiRouter.put(
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
     const body = updateSubscriberSchema.parse(req.body);
-    const updated = await subscriberRepository.update(id, body);
+    const updated = await subscriberRepository.update(id, body, req.user?.username || 'admin');
     if (!updated) {
       res.status(404).json(envelope(null, 'live'));
       return;
@@ -491,39 +605,151 @@ apiRouter.put(
 );
 
 apiRouter.post(
-  '/subscribers/:id/status',
+  '/subscribers/:id/suspend',
   authMiddleware,
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
-    const statusSchema = z.object({
-      status: z.enum(['enabled', 'disabled', 'suspended']),
-      disconnect_active: z.boolean().optional(),
-    });
-    const { status, disconnect_active } = statusSchema.parse(req.body);
-
-    const updated = await subscriberRepository.updateStatus(id, status);
-    if (!updated) {
-      res.status(404).json(envelope(null, 'live'));
-      return;
-    }
-
-    if (disconnect_active && (status === 'suspended' || status === 'disabled') && updated.current_session_id) {
-      try {
-        await radAcctRepository.disconnect(updated.current_session_id);
-      } catch {}
-    }
+    await subscriberRepository.suspend(id, req.user?.username || 'admin');
+    const updated = await subscriberRepository.findById(id);
 
     await auditRepository.insert({
       userId: req.user?.userId,
       username: req.user?.username,
-      action: `subscriber.${status}`,
+      action: 'subscriber.suspend',
       entityType: 'subscriber',
       entityId: String(id),
       status: 'success',
-      metadata: { username: updated.username, status },
+      metadata: { username: updated?.username },
     });
 
     res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/resume',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    await subscriberRepository.resume(id, req.user?.username || 'admin');
+    const updated = await subscriberRepository.findById(id);
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.resume',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: { username: updated?.username },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/password',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const passwordSchema = z.object({
+      new_password: z.string().min(4),
+      disconnect_session: z.boolean().default(false),
+    });
+    const { new_password, disconnect_session } = passwordSchema.parse(req.body);
+    await subscriberRepository.changePassword(id, new_password, disconnect_session, req.user?.username || 'admin');
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.password_change',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+    });
+
+    res.json(envelope({ success: true, message: 'Password changed successfully' }, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/change-package',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const pkgChangeSchema = z.object({
+      new_package_id: z.number().int().positive(),
+      apply_coa: z.boolean().default(true),
+    });
+    const { new_package_id, apply_coa } = pkgChangeSchema.parse(req.body);
+    const result = await subscriberRepository.changePackage(
+      id,
+      new_package_id,
+      apply_coa,
+      req.user?.username || 'admin',
+    );
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.change_package',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: { new_package_id, apply_coa, coaApplied: result.coaApplied },
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/usage',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const range = (req.query.range as any) || '30d';
+    const usage = await subscriberRepository.getUsage(id, range);
+    res.json(envelope(usage, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/notes',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const profile = await subscriberRepository.getProfile(id);
+    res.json(envelope(profile?.notes || [], 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/notes',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const noteSchema = z.object({ content: z.string().min(1) });
+    const { content } = noteSchema.parse(req.body);
+
+    const createdNote = await subscriberRepository.addNote(
+      id,
+      req.user?.username || 'Admin',
+      content,
+      req.user?.userId,
+    );
+
+    await subscriberRepository.logActivity(id, 'note_added', `Note added: "${content.slice(0, 30)}..."`, req.user?.username);
+
+    res.status(201).json(envelope(createdNote, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/activity',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const profile = await subscriberRepository.getProfile(id);
+    res.json(envelope(profile?.activity || [], 'live'));
   })
 );
 
@@ -537,7 +763,7 @@ apiRouter.get(
       return;
     }
 
-    const history = await radAcctRepository.userSessionHistory(sub.username, 20);
+    const history = await radAcctRepository.userSessionHistory(sub.username, 50);
     res.json(envelope(history, 'live'));
   })
 );
@@ -552,7 +778,7 @@ apiRouter.get(
       return;
     }
 
-    const history = await radPostAuthRepository.userAuthHistory(sub.username, 20);
+    const history = await radPostAuthRepository.userAuthHistory(sub.username, 50);
     res.json(envelope(history, 'live'));
   })
 );
@@ -731,5 +957,254 @@ apiRouter.post(
         )
       );
     }
+  })
+);
+
+// ---- RADIUS Profiles & Generic Attributes Routes ----
+const createProfileSchema = z.object({
+  name: z.string().min(1).max(64),
+  description: z.string().optional(),
+  is_active: z.boolean().default(true),
+  attributes: z
+    .array(
+      z.object({
+        vendor: z.string().default('Standard'),
+        attribute_name: z.string().min(1),
+        attribute_type: z.string().default('string'),
+        op: z.string().default(':='),
+        value: z.string(),
+      })
+    )
+    .optional(),
+});
+
+const updateProfileSchema = z.object({
+  name: z.string().min(1).max(64).optional(),
+  description: z.string().optional(),
+  is_active: z.boolean().optional(),
+  attributes: z
+    .array(
+      z.object({
+        vendor: z.string().default('Standard'),
+        attribute_name: z.string().min(1),
+        attribute_type: z.string().default('string'),
+        op: z.string().default(':='),
+        value: z.string(),
+      })
+    )
+    .optional(),
+});
+
+apiRouter.get(
+  '/radius-profiles',
+  asyncHandler(async (_req, res) => {
+    const profiles = await radiusProfileRepository.list();
+    res.json(envelope(profiles, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/radius-profiles',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = createProfileSchema.parse(req.body);
+    const created = await radiusProfileRepository.create(body);
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'radius_profile.create',
+      entityType: 'radius_profile',
+      entityId: String(created.id),
+      status: 'success',
+      metadata: { name: created.name },
+    });
+
+    res.status(201).json(envelope(created, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/radius-profiles/:id',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const profile = await radiusProfileRepository.findById(id);
+    if (!profile) {
+      res.status(404).json(envelope(null, 'live'));
+      return;
+    }
+    res.json(envelope(profile, 'live'));
+  })
+);
+
+apiRouter.put(
+  '/radius-profiles/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const body = updateProfileSchema.parse(req.body);
+    const updated = await radiusProfileRepository.update(id, body);
+    if (!updated) {
+      res.status(404).json(envelope(null, 'live'));
+      return;
+    }
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'radius_profile.update',
+      entityType: 'radius_profile',
+      entityId: String(id),
+      status: 'success',
+      metadata: { name: updated.name },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/radius-profiles/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const success = await radiusProfileRepository.delete(id);
+    if (success) {
+      await auditRepository.insert({
+        userId: req.user?.userId,
+        username: req.user?.username,
+        action: 'radius_profile.delete',
+        entityType: 'radius_profile',
+        entityId: String(id),
+        status: 'success',
+      });
+    }
+    res.json(envelope({ success }, 'live'));
+  })
+);
+
+// ---- IP Pools Management Routes ----
+const createPoolSchema = z.object({
+  name: z.string().min(1).max(64),
+  network: z.string().min(1),
+  gateway: z.string().ip({ version: 'v4' }),
+  start_ip: z.string().ip({ version: 'v4' }),
+  end_ip: z.string().ip({ version: 'v4' }),
+  subnet: z.string().default('255.255.0.0'),
+  description: z.string().optional(),
+  total_ips: z.number().int().positive().default(240),
+  status: z.enum(['active', 'inactive']).default('active'),
+});
+
+const updatePoolSchema = z.object({
+  name: z.string().min(1).max(64).optional(),
+  network: z.string().optional(),
+  gateway: z.string().ip({ version: 'v4' }).optional(),
+  start_ip: z.string().ip({ version: 'v4' }).optional(),
+  end_ip: z.string().ip({ version: 'v4' }).optional(),
+  subnet: z.string().optional(),
+  description: z.string().optional(),
+  total_ips: z.number().int().positive().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+});
+
+apiRouter.get(
+  '/ip-pools',
+  asyncHandler(async (_req, res) => {
+    const pools = await ipPoolRepository.list();
+    res.json(envelope(pools, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/ip-pools',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = createPoolSchema.parse(req.body);
+    const created = await ipPoolRepository.create(body);
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'ip_pool.create',
+      entityType: 'ip_pool',
+      entityId: String(created.id),
+      status: 'success',
+      metadata: { name: created.name, network: created.network },
+    });
+
+    res.status(201).json(envelope(created, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/ip-pools/:id',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const pool = await ipPoolRepository.findById(id);
+    if (!pool) {
+      res.status(404).json(envelope(null, 'live'));
+      return;
+    }
+    res.json(envelope(pool, 'live'));
+  })
+);
+
+apiRouter.put(
+  '/ip-pools/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const body = updatePoolSchema.parse(req.body);
+    const updated = await ipPoolRepository.update(id, body);
+    if (!updated) {
+      res.status(404).json(envelope(null, 'live'));
+      return;
+    }
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'ip_pool.update',
+      entityType: 'ip_pool',
+      entityId: String(id),
+      status: 'success',
+      metadata: { name: updated.name },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/ip-pools/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const success = await ipPoolRepository.delete(id);
+    if (success) {
+      await auditRepository.insert({
+        userId: req.user?.userId,
+        username: req.user?.username,
+        action: 'ip_pool.delete',
+        entityType: 'ip_pool',
+        entityId: String(id),
+        status: 'success',
+      });
+    }
+    res.json(envelope({ success }, 'live'));
+  })
+);
+
+// ---- IP Addresses Allocation Route ----
+apiRouter.get(
+  '/ip-addresses',
+  asyncHandler(async (req, res) => {
+    const pool_id = req.query.pool_id ? Number(req.query.pool_id) : undefined;
+    const status = req.query.status as string;
+    const search = req.query.search as string;
+
+    const list = await ipPoolRepository.listAddresses({ pool_id, status, search });
+    res.json(envelope(list, 'live'));
   })
 );

@@ -114,17 +114,17 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
               </button>
 
               <button
-                onClick={() => setActiveTab('auth_logs')}
+                onClick={() => setActiveTab('radius_profiles')}
                 className={cn(
                   'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
-                  activeTab === 'auth_logs'
+                  activeTab === 'radius_profiles'
                     ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
-                title="Authentication Logs"
+                title="RADIUS Profiles"
               >
-                <Activity className="w-4 h-4 flex-shrink-0" />
-                {!collapsed && <span>Authentication Logs</span>}
+                <Layers className="w-4 h-4 flex-shrink-0 text-primary" />
+                {!collapsed && <span>RADIUS Profiles</span>}
               </button>
 
               <button
@@ -137,8 +137,22 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
                 )}
                 title="Online Sessions"
               >
-                <Layers className="w-4 h-4 flex-shrink-0" />
+                <Users className="w-4 h-4 flex-shrink-0" />
                 {!collapsed && <span>Online Sessions</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('auth_logs')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'auth_logs'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Authentication Logs"
+              >
+                <Activity className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>Auth Logs</span>}
               </button>
             </div>
           )}
@@ -177,15 +191,31 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
               </button>
 
               <button
-                onClick={() => handleNextModule('IP Pools')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                onClick={() => setActiveTab('ip_pools')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'ip_pools'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
                 title="IP Pools"
               >
-                <div className="flex items-center gap-3">
-                  <Box className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>IP Pools</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+                <Box className="w-4 h-4 flex-shrink-0 text-blue-400" />
+                {!collapsed && <span>IP Pools</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('ip_addresses')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'ip_addresses'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="IP Addresses"
+              >
+                <Network className="w-4 h-4 flex-shrink-0 text-cyan-400" />
+                {!collapsed && <span>IP Addresses</span>}
               </button>
             </div>
           )}

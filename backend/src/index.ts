@@ -9,6 +9,7 @@ import { logger } from './lib/logger';
 import { waitForDatabase } from './db/pool';
 import { runMigrations } from './db/migrate';
 import { authService } from './services/auth.service';
+import { autoExpiryService } from './services/auto-expiry.service';
 import { apiRouter } from './routes/api.routes';
 import { errorHandler } from './middleware/error.middleware';
 
@@ -71,10 +72,12 @@ async function bootstrap() {
 
   const server = app.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, `RADIUS PRO Backend listening on http://0.0.0.0:${config.PORT}`);
+    autoExpiryService.start();
   });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down gracefully...');
+    autoExpiryService.stop();
     server.close(() => {
       logger.info('HTTP server closed');
       process.exit(0);

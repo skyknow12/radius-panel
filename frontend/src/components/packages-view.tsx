@@ -35,6 +35,16 @@ export function PackagesView() {
   const [formDesc, setFormDesc] = React.useState('');
   const [formActive, setFormActive] = React.useState(true);
   const [formInterim, setFormInterim] = React.useState('300');
+  
+  // Phase 3 Burst & Profile
+  const [formBurstDl, setFormBurstDl] = React.useState<string>('');
+  const [formBurstUl, setFormBurstUl] = React.useState<string>('');
+  const [formBurstThDl, setFormBurstThDl] = React.useState<string>('');
+  const [formBurstThUl, setFormBurstThUl] = React.useState<string>('');
+  const [formBurstTime, setFormBurstTime] = React.useState<string>('16');
+  const [formRadiusProfileId, setFormRadiusProfileId] = React.useState<string>('');
+  const [radiusProfiles, setRadiusProfiles] = React.useState<any[]>([]);
+
   const [formError, setFormError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -52,16 +62,34 @@ export function PackagesView() {
     }
   };
 
+  const fetchProfiles = async () => {
+    try {
+      const res = await fetch('/api/radius-profiles');
+      if (res.ok) {
+        const json = await res.json();
+        setRadiusProfiles(json.data || []);
+      }
+    } catch {}
+  };
+
   React.useEffect(() => {
     fetchPackages();
+    fetchProfiles();
   }, []);
 
-  // Auto-update rate limit when dl or ul change
+  // Auto-update rate limit when dl, ul or burst change
   React.useEffect(() => {
     if (!editingPkg) {
-      setFormRateLimit(`${formDl}M/${formUl}M`);
+      if (formBurstDl && formBurstUl) {
+        const thDl = formBurstThDl || Math.round(formDl * 0.8);
+        const thUl = formBurstThUl || Math.round(formUl * 0.8);
+        const time = formBurstTime || '16';
+        setFormRateLimit(`${formDl}M/${formUl}M ${formBurstDl}M/${formBurstUl}M ${thDl}M/${thUl}M ${time}/${time}`);
+      } else {
+        setFormRateLimit(`${formDl}M/${formUl}M`);
+      }
     }
-  }, [formDl, formUl, editingPkg]);
+  }, [formDl, formUl, formBurstDl, formBurstUl, formBurstThDl, formBurstThUl, formBurstTime, editingPkg]);
 
   const openAddModal = () => {
     setEditingPkg(null);
@@ -75,6 +103,12 @@ export function PackagesView() {
     setFormDesc('');
     setFormActive(true);
     setFormInterim('300');
+    setFormBurstDl('');
+    setFormBurstUl('');
+    setFormBurstThDl('');
+    setFormBurstThUl('');
+    setFormBurstTime('16');
+    setFormRadiusProfileId('');
     setFormError(null);
     setModalOpen(true);
   };
@@ -90,6 +124,13 @@ export function PackagesView() {
     setFormCurrency(pkg.currency || 'NPR');
     setFormDesc(pkg.description || '');
     setFormActive(pkg.is_active);
+    setFormBurstDl(pkg.burst_download_mbps ? String(pkg.burst_download_mbps) : '');
+    setFormBurstUl(pkg.burst_upload_mbps ? String(pkg.burst_upload_mbps) : '');
+    setFormBurstThDl(pkg.burst_threshold_dl_mbps ? String(pkg.burst_threshold_dl_mbps) : '');
+    setFormBurstThUl(pkg.burst_threshold_ul_mbps ? String(pkg.burst_threshold_ul_mbps) : '');
+    setFormBurstTime(pkg.burst_time_seconds ? String(pkg.burst_time_seconds) : '16');
+    setFormRadiusProfileId(pkg.radius_profile_id ? String(pkg.radius_profile_id) : '');
+
     const interimAttr = pkg.attributes?.find((a) => a.attribute === 'Acct-Interim-Interval');
     setFormInterim(interimAttr?.value || '300');
     setFormError(null);
@@ -119,6 +160,12 @@ export function PackagesView() {
         name: formName.trim(),
         download_speed_mbps: Number(formDl),
         upload_speed_mbps: Number(formUl),
+        burst_download_mbps: formBurstDl ? Number(formBurstDl) : null,
+        burst_upload_mbps: formBurstUl ? Number(formBurstUl) : null,
+        burst_threshold_dl_mbps: formBurstThDl ? Number(formBurstThDl) : null,
+        burst_threshold_ul_mbps: formBurstThUl ? Number(formBurstThUl) : null,
+        burst_time_seconds: formBurstTime ? Number(formBurstTime) : null,
+        radius_profile_id: formRadiusProfileId ? Number(formRadiusProfileId) : null,
         rate_limit: formRateLimit.trim() || `${formDl}M/${formUl}M`,
         validity_days: Number(formValidity),
         price: Number(formPrice),
@@ -253,12 +300,28 @@ export function PackagesView() {
                       {pkg.download_speed_mbps}M / {pkg.upload_speed_mbps}M
                     </span>
                   </div>
+                  {pkg.burst_download_mbps && pkg.burst_upload_mbps ? (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-amber-500 font-medium">Burst Limit</span>
+                      <span className="font-mono text-amber-500 font-semibold">
+                        {pkg.burst_download_mbps}M / {pkg.burst_upload_mbps}M ({pkg.burst_time_seconds || 16}s)
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">MikroTik Attribute</span>
-                    <span className="font-mono text-primary font-semibold">
+                    <span className="font-mono text-primary font-semibold truncate max-w-[150px]" title={pkg.rate_limit}>
                       {pkg.rate_limit}
                     </span>
                   </div>
+                  {pkg.radius_profile_name && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-muted-foreground">RADIUS Profile</span>
+                      <span className="font-semibold text-indigo-400">
+                        {pkg.radius_profile_name}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Interim Accounting</span>
                     <span className="font-mono text-muted-foreground">300s (5m)</span>
@@ -433,6 +496,108 @@ export function PackagesView() {
                     className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                   />
                 </div>
+              </div>
+
+              {/* Phase 3: Burst Configuration */}
+              <div className="p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-500">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>MikroTik Burst Bandwidth (Optional)</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">Auto-updates rate-limit</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-foreground mb-1">
+                      Burst DL (Mbps)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 150"
+                      value={formBurstDl}
+                      onChange={(e) => setFormBurstDl(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-foreground font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-foreground mb-1">
+                      Burst UL (Mbps)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 150"
+                      value={formBurstUl}
+                      onChange={(e) => setFormBurstUl(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-foreground font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-foreground mb-1">
+                      Burst Time (sec)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="16"
+                      value={formBurstTime}
+                      onChange={(e) => setFormBurstTime(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-foreground font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-muted-foreground mb-1">
+                      Threshold DL (Mbps) (optional)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={formBurstDl ? String(Math.round(formDl * 0.8)) : 'e.g. 80'}
+                      value={formBurstThDl}
+                      onChange={(e) => setFormBurstThDl(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-foreground font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-muted-foreground mb-1">
+                      Threshold UL (Mbps) (optional)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={formBurstUl ? String(Math.round(formUl * 0.8)) : 'e.g. 80'}
+                      value={formBurstThUl}
+                      onChange={(e) => setFormBurstThUl(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-foreground font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Phase 3: RADIUS Profile Link */}
+              <div>
+                <label className="block font-medium text-foreground mb-1">
+                  RADIUS Attribute Profile (Optional)
+                </label>
+                <select
+                  value={formRadiusProfileId}
+                  onChange={(e) => setFormRadiusProfileId(e.target.value)}
+                  className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                >
+                  <option value="">None (Use default package attributes)</option>
+                  {radiusProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.vendor ? `(${p.vendor})` : ''} - {p.attributes?.length || 0} attributes
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Applies additional generic FreeRADIUS reply/check attributes defined in RADIUS Profiles.
+                </p>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
