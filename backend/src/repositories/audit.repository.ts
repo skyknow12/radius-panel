@@ -30,4 +30,16 @@ export const auditRepository = {
       ],
     );
   },
+
+  async recent(limit = 50): Promise<any[]> {
+    const { rows } = await query(
+      `SELECT id, user_id, username, action, entity_type, entity_id, status,
+              host(ip_address) AS ip_address, user_agent, metadata, created_at
+         FROM audit_logs
+        ORDER BY created_at DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return rows;
+  },
 };

@@ -28,7 +28,7 @@ interface SidebarProps {
 export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }: SidebarProps) {
   const [radiusOpen, setRadiusOpen] = React.useState(true);
   const [networkOpen, setNetworkOpen] = React.useState(true);
-  const [managementOpen, setManagementOpen] = React.useState(false);
+  const [managementOpen, setManagementOpen] = React.useState(true);
   const [systemOpen, setSystemOpen] = React.useState(true);
 
   const handleNextModule = (title: string) => {
@@ -114,39 +114,31 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
               </button>
 
               <button
-                onClick={() => handleNextModule('RADIUS Authentication')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
-                title="Authentication (Coming in next module)"
+                onClick={() => setActiveTab('auth_logs')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'auth_logs'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Authentication Logs"
               >
-                <div className="flex items-center gap-3">
-                  <Activity className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>Authentication</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+                <Activity className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>Authentication Logs</span>}
               </button>
 
               <button
-                onClick={() => handleNextModule('RADIUS Accounting')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
-                title="Accounting (Coming in next module)"
+                onClick={() => setActiveTab('sessions')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'sessions'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Online Sessions"
               >
-                <div className="flex items-center gap-3">
-                  <FileBarChart className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>Accounting</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
-              </button>
-
-              <button
-                onClick={() => handleNextModule('Sessions Management')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
-                title="Sessions (Coming in next module)"
-              >
-                <div className="flex items-center gap-3">
-                  <Layers className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>Sessions</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+                <Layers className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>Online Sessions</span>}
               </button>
             </div>
           )}
@@ -171,15 +163,17 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
           {(!collapsed ? networkOpen : true) && (
             <div className="mt-1 space-y-0.5">
               <button
-                onClick={() => handleNextModule('NAS Devices')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                onClick={() => setActiveTab('nas_devices')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'nas_devices'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
                 title="NAS Devices"
               >
-                <div className="flex items-center gap-3">
-                  <Server className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>NAS Devices</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+                <Server className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>NAS Devices</span>}
               </button>
 
               <button
@@ -216,25 +210,31 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
           {(!collapsed ? managementOpen : true) && (
             <div className="mt-1 space-y-0.5">
               <button
-                onClick={() => handleNextModule('Customers Management')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+                onClick={() => setActiveTab('subscribers')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'subscribers'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Subscribers"
               >
-                <div className="flex items-center gap-3">
-                  <Users className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>Customers</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+                <Users className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>Subscribers</span>}
               </button>
 
               <button
-                onClick={() => handleNextModule('Packages & Bandwidth')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+                onClick={() => setActiveTab('packages')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'packages'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Service Packages"
               >
-                <div className="flex items-center gap-3">
-                  <Box className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span>Packages</span>}
-                </div>
-                {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+                <Box className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>Packages</span>}
               </button>
 
               <button

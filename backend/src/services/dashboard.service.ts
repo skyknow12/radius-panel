@@ -1,6 +1,8 @@
 import { radAcctRepository } from '../repositories/radacct.repository';
 import { radPostAuthRepository } from '../repositories/radpostauth.repository';
 import { nasRepository } from '../repositories/nas.repository';
+import { subscriberRepository } from '../repositories/subscriber.repository';
+import { packageRepository } from '../repositories/package.repository';
 import type {
   StatCard,
   NetworkOverviewPoint,
@@ -33,13 +35,17 @@ export const dashboardService = {
   },
 
   async getStats(): Promise<StatCard[]> {
-    const liveOnlineCount = await radAcctRepository.countActive();
-    const liveNasCount = await nasRepository.countDevices();
-    const liveHasPostAuth = await radPostAuthRepository.hasAnyRows();
+    const [liveSubscribersCount, liveOnlineCount, liveNasCount, livePackages, liveHasPostAuth] = await Promise.all([
+      subscriberRepository.countSubscribers(),
+      radAcctRepository.countActive(),
+      nasRepository.countDevices(),
+      packageRepository.list(),
+      radPostAuthRepository.hasAnyRows(),
+    ]);
 
-    let authSuccessRate = 98.7;
-    let authFailureRate = 1.3;
-    let requestsTotal = 284921;
+    let authSuccessRate = 0;
+    let authFailureRate = 0;
+    let requestsTotal = 0;
 
     if (liveHasPostAuth) {
       const counts = await radPostAuthRepository.countsSince(new Date(Date.now() - 24 * 3600 * 1000));
@@ -51,90 +57,87 @@ export const dashboardService = {
       }
     }
 
-    const onlineUsersValue = liveOnlineCount > 0 ? liveOnlineCount : 8421;
-    const nasCountValue = liveNasCount > 0 ? liveNasCount : 18;
-
     return [
       {
         key: 'total_subscribers',
         label: 'Total Subscribers',
-        value: 12845,
+        value: liveSubscribersCount,
         unit: 'count',
-        changePct: 8.2,
+        changePct: null,
         positiveIsGood: true,
-        sparkline: [11800, 11950, 12100, 12350, 12500, 12720, 12845],
-        source: 'demo',
+        sparkline: null,
+        source: 'live',
       },
       {
         key: 'online_users',
         label: 'Online Users',
-        value: onlineUsersValue,
+        value: liveOnlineCount,
         unit: 'count',
-        changePct: 4.6,
+        changePct: null,
         positiveIsGood: true,
-        sparkline: [7600, 7820, 8100, 7950, 8240, 8310, onlineUsersValue],
-        source: liveOnlineCount > 0 ? 'live' : 'demo',
+        sparkline: null,
+        source: 'live',
       },
       {
         key: 'active_packages',
         label: 'Active Packages',
-        value: 24,
+        value: livePackages.filter((p) => p.is_active).length,
         unit: 'count',
         changePct: null,
         positiveIsGood: true,
         sparkline: null,
-        source: 'demo',
+        source: 'live',
       },
       {
         key: 'todays_revenue',
         label: "Today's Revenue",
-        value: 485240,
+        value: 0,
         unit: 'currency',
         currency: 'NPR',
-        changePct: 12.4,
+        changePct: null,
         positiveIsGood: true,
-        sparkline: [410000, 425000, 440000, 460000, 472000, 485240],
-        source: 'demo',
+        sparkline: null,
+        source: 'live',
       },
       {
         key: 'radius_requests',
-        label: 'RADIUS Requests',
+        label: 'RADIUS Requests (24h)',
         value: requestsTotal,
-        unit: 'count',
-        changePct: 3.1,
-        positiveIsGood: true,
-        sparkline: [260000, 268000, 275000, 280000, 282500, requestsTotal],
-        source: liveHasPostAuth ? 'live' : 'demo',
-      },
-      {
-        key: 'auth_success_rate',
-        label: 'Auth Success Rate',
-        value: authSuccessRate,
-        unit: 'percent',
-        changePct: 0.4,
-        positiveIsGood: true,
-        sparkline: [98.1, 98.3, 98.2, 98.5, 98.6, authSuccessRate],
-        source: liveHasPostAuth ? 'live' : 'demo',
-      },
-      {
-        key: 'auth_failure_rate',
-        label: 'Auth Failure Rate',
-        value: authFailureRate,
-        unit: 'percent',
-        changePct: -0.4,
-        positiveIsGood: false,
-        sparkline: [1.9, 1.7, 1.8, 1.5, 1.4, authFailureRate],
-        source: liveHasPostAuth ? 'live' : 'demo',
-      },
-      {
-        key: 'nas_devices',
-        label: 'NAS Devices',
-        value: nasCountValue,
         unit: 'count',
         changePct: null,
         positiveIsGood: true,
         sparkline: null,
-        source: liveNasCount > 0 ? 'live' : 'demo',
+        source: 'live',
+      },
+      {
+        key: 'auth_success_rate',
+        label: 'Auth Success Rate',
+        value: requestsTotal > 0 ? authSuccessRate : 100,
+        unit: 'percent',
+        changePct: null,
+        positiveIsGood: true,
+        sparkline: null,
+        source: 'live',
+      },
+      {
+        key: 'auth_failure_rate',
+        label: 'Auth Failure Rate',
+        value: requestsTotal > 0 ? authFailureRate : 0,
+        unit: 'percent',
+        changePct: null,
+        positiveIsGood: false,
+        sparkline: null,
+        source: 'live',
+      },
+      {
+        key: 'nas_devices',
+        label: 'NAS Devices',
+        value: liveNasCount,
+        unit: 'count',
+        changePct: null,
+        positiveIsGood: true,
+        sparkline: null,
+        source: 'live',
       },
     ];
   },
@@ -329,7 +332,7 @@ export const dashboardService = {
         name: n.name,
         ipAddress: n.ip_address,
         type: n.nas_type,
-        location: n.location,
+        location: n.location ?? null,
         status: n.status,
         sessions: Number(n.sessions) || 12000,
         lastSeenAt: n.last_seen_at ? new Date(n.last_seen_at).toISOString() : new Date().toISOString(),

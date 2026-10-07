@@ -52,9 +52,8 @@ sql {
 	}
 
 	# ---- Dynamic clients ---------------------------------------------------
-	# Phase 2 (NAS Management) will switch this on so NAS devices added in the
-	# panel are loaded from the "nas" table at startup.
-	read_clients = no
+	# Phase 2 (NAS Management) reads NAS devices dynamically from PostgreSQL
+	read_clients = yes
 	client_table = "nas"
 
 	group_attribute = "SQL-Group"

@@ -47,23 +47,29 @@ export const RADIUS_CODE_NAMES: Record<number, string> = {
   45: 'CoA-NAK',
 };
 
-/** Standard attribute numbers used by this client. */
 export enum RadiusAttr {
   UserName = 1,
   UserPassword = 2,
   NasIpAddress = 4,
   NasPort = 5,
   ServiceType = 6,
+  FramedIpAddress = 8,
   ReplyMessage = 18,
+  VendorSpecific = 26,
   CalledStationId = 30,
   CallingStationId = 31,
   NasIdentifier = 32,
+  AcctSessionId = 44,
+  AcctInterimInterval = 85,
   MessageAuthenticator = 80,
 }
 
 export interface RadiusAttribute {
   type: number;
   value: Buffer;
+  vendorId?: number;
+  vendorType?: number;
+  textValue?: string;
 }
 
 export interface RadiusResponse {
@@ -72,6 +78,7 @@ export interface RadiusResponse {
   identifier: number;
   attributes: RadiusAttribute[];
   replyMessage: string | null;
+  mikrotikRateLimit?: string | null;
   latencyMs: number;
 }
 
@@ -120,6 +127,28 @@ export class RadiusClient {
     ]);
   }
 
+  /** RFC 3576 / RFC 5176 Disconnect-Request (PoD). Default port 3799. */
+  disconnectRequest(
+    port = 3799,
+    username: string,
+    sessionId?: string,
+    framedIp?: string,
+  ): Promise<RadiusResponse> {
+    const attrs: RadiusAttribute[] = [
+      { type: RadiusAttr.UserName, value: Buffer.from(username, 'utf8') },
+    ];
+    if (sessionId) {
+      attrs.push({ type: RadiusAttr.AcctSessionId, value: Buffer.from(sessionId, 'utf8') });
+    }
+    if (framedIp) {
+      const parts = framedIp.split('.').map((p) => parseInt(p, 10));
+      if (parts.length === 4) {
+        attrs.push({ type: RadiusAttr.FramedIpAddress, value: Buffer.from(parts) });
+      }
+    }
+    return this.send(port, RadiusCode.DisconnectRequest, attrs);
+  }
+
   private async send(port: number, code: RadiusCode, attrs: RadiusAttribute[]): Promise<RadiusResponse> {
     const attempts = (this.opts.retries ?? 0) + 1;
     let lastError: Error | undefined;
@@ -139,7 +168,7 @@ export class RadiusClient {
     const secretBuf = Buffer.from(secret, 'utf8');
     const identifier = crypto.randomInt(0, 256);
     const requestAuth = crypto.randomBytes(16);
-    const packet = encodePacket(code, identifier, requestAuth, attrs, secretBuf);
+    const { packet, actualRequestAuth } = encodePacket(code, identifier, requestAuth, attrs, secretBuf);
 
     return new Promise<RadiusResponse>((resolve, reject) => {
       const socket = dgram.createSocket('udp4');
@@ -165,7 +194,7 @@ export class RadiusClient {
         const response = msg.subarray(0, length);
 
         // Verify Response Authenticator: MD5(Code+ID+Length+RequestAuth+Attributes+Secret)
-        const expected = md5(response.subarray(0, 4), requestAuth, response.subarray(20), secretBuf);
+        const expected = md5(response.subarray(0, 4), actualRequestAuth, response.subarray(20), secretBuf);
         if (!crypto.timingSafeEqual(expected, response.subarray(4, 20))) {
           finish(() => reject(new Error('Invalid response authenticator (shared secret mismatch?)')));
           return;
@@ -173,6 +202,9 @@ export class RadiusClient {
 
         const attributes = decodeAttributes(response.subarray(20));
         const reply = attributes.find((a) => a.type === RadiusAttr.ReplyMessage);
+        const mikrotikVsa = attributes.find(
+          (a) => a.vendorId === 14988 && (a.vendorType === 8 || a.textValue?.includes('M/')),
+        );
         const latencyMs = Number(process.hrtime.bigint() - started) / 1e6;
         finish(() =>
           resolve({
@@ -181,6 +213,7 @@ export class RadiusClient {
             identifier,
             attributes,
             replyMessage: reply ? reply.value.toString('utf8') : null,
+            mikrotikRateLimit: mikrotikVsa?.textValue || null,
             latencyMs: Math.round(latencyMs * 10) / 10,
           }),
         );
@@ -229,9 +262,14 @@ function encodePacket(
   requestAuth: Buffer,
   attrs: RadiusAttribute[],
   secret: Buffer,
-): Buffer {
+): { packet: Buffer; actualRequestAuth: Buffer } {
+  let actualRequestAuth = requestAuth;
+
   const encoded: Buffer[] = attrs.map((a) =>
-    encodeAttribute(a.type, a.type === RadiusAttr.UserPassword ? encryptPassword(a.value, secret, requestAuth) : a.value),
+    encodeAttribute(
+      a.type,
+      a.type === RadiusAttr.UserPassword ? encryptPassword(a.value, secret, actualRequestAuth) : a.value,
+    ),
   );
 
   // Message-Authenticator placeholder (16 zero bytes), filled after HMAC
@@ -247,13 +285,25 @@ function encodePacket(
   header[1] = identifier;
   header.writeUInt16BE(length, 2);
 
-  const packet = Buffer.concat([header, requestAuth, body]);
+  // For RFC 3576 Disconnect-Request and CoA-Request:
+  // Request Authenticator = MD5(Code + Identifier + Length + 16 zero octets + Attributes + Secret)
+  if (code === RadiusCode.DisconnectRequest || code === RadiusCode.CoARequest) {
+    const zeroAuth = Buffer.alloc(16);
+    actualRequestAuth = crypto.createHash('md5')
+      .update(header)
+      .update(zeroAuth)
+      .update(body)
+      .update(secret)
+      .digest();
+  }
+
+  const packet = Buffer.concat([header, actualRequestAuth, body]);
 
   // HMAC-MD5 over the whole packet with the MA value zeroed (RFC 3579 §3.2)
   const maOffset = 20 + encoded.slice(0, maIndex).reduce((n, b) => n + b.length, 0) + 2;
   const hmac = crypto.createHmac('md5', secret).update(packet).digest();
   hmac.copy(packet, maOffset);
-  return packet;
+  return { packet, actualRequestAuth };
 }
 
 function decodeAttributes(buf: Buffer): RadiusAttribute[] {
@@ -263,7 +313,25 @@ function decodeAttributes(buf: Buffer): RadiusAttribute[] {
     const type = buf[offset];
     const len = buf[offset + 1];
     if (len < 2 || offset + len > buf.length) break;
-    attrs.push({ type, value: buf.subarray(offset + 2, offset + len) });
+    const value = buf.subarray(offset + 2, offset + len);
+
+    let vendorId: number | undefined;
+    let vendorType: number | undefined;
+    let textValue: string | undefined;
+
+    // Vendor-Specific Attribute (Type 26) RFC 2865 §5.26
+    if (type === RadiusAttr.VendorSpecific && value.length >= 6) {
+      vendorId = value.readUInt32BE(0);
+      vendorType = value[4];
+      const vendorLen = value[5];
+      if (vendorLen <= value.length - 4) {
+        textValue = value.subarray(6, 4 + vendorLen).toString('utf8');
+      }
+    } else {
+      textValue = value.toString('utf8');
+    }
+
+    attrs.push({ type, value, vendorId, vendorType, textValue });
     offset += len;
   }
   return attrs;

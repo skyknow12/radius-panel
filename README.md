@@ -200,12 +200,115 @@ All database tables, accounting sessions, and PostgreSQL state persist safely in
 
 ---
 
+---
+
+## Phase 2 — Real ISP Operations & MikroTik Integration
+
+Phase 2 elevates the platform into an enterprise-grade ISP RADIUS management system with real SQL-backed authentication, bandwidth throttling, accounting, and disconnect automation.
+
+### MikroTik RouterOS Configuration Guide
+
+To configure your MikroTik BNG / PPPoE / Hotspot router to authenticate against this RADIUS server:
+
+#### 1. Add RADIUS Client
+Replace `<RADIUS_SERVER_IP>` with your server IP and `<YOUR_NAS_SECRET>` with the secret entered in **RADIUS → NAS Devices**:
+```routeros
+/radius add service=ppp,hotspot \
+    address=<RADIUS_SERVER_IP> \
+    secret="<YOUR_NAS_SECRET>" \
+    authentication-port=1812 \
+    accounting-port=1813 \
+    timeout=3000ms \
+    comment="SKY RADIUS Main AAA"
+```
+
+#### 2. Enable RADIUS Incoming (RFC 3576 Disconnect / CoA)
+This allows the panel to disconnect users or apply speed changes in real-time:
+```routeros
+/radius incoming set accept=yes port=3799
+```
+
+#### 3. Enable RADIUS on PPP / PPPoE Server
+Enable interim accounting updates so live bandwidth graphs and online sessions stay synchronized:
+```routeros
+/ppp aaa set use-radius=yes \
+    accounting=yes \
+    interim-update=5m
+```
+
+#### 4. Configure PPPoE Server Profile
+```routeros
+/interface pppoe-server server add \
+    service-name=SKY-FIBER \
+    interface=ether2 \
+    default-profile=default \
+    one-session-per-host=yes \
+    disabled=no
+```
+
+---
+
+## FreeRADIUS SQL Data Flow
+
+```text
+Subscriber Created / Modified (Web UI)
+        │
+        ├──> PostgreSQL `subscribers` & `packages`
+        │
+        ├──> PostgreSQL `radcheck` (Cleartext-Password, Expiration, Auth-Type)
+        ├──> PostgreSQL `radreply` (Framed-IP-Address)
+        ├──> PostgreSQL `radusergroup` (Group assignment)
+        └──> PostgreSQL `radgroupreply` (Mikrotik-Rate-Limit, Acct-Interim-Interval)
+        │
+Access-Request (MikroTik / BNG) ──> FreeRADIUS (UDP 1812) ──> PostgreSQL (rlm_sql)
+        │
+        ├── Accept: returns Mikrotik-Rate-Limit (e.g. 100M/100M), Acct-Interim-Interval (300)
+        └── Reject: returned immediately if invalid password, suspended, or expired
+        │
+Accounting-Start/Interim/Stop ──> FreeRADIUS (UDP 1813) ──> PostgreSQL `radacct`
+        │
+Disconnect User Button (Web UI) ──> Backend RFC 3576 Client ──> NAS UDP 3799 (Disconnect-Request)
+```
+
+---
+
+## Verification & Testing Guide
+
+### 1. Test Valid Subscriber Authentication
+```bash
+printf 'User-Name=radius-test\nUser-Password=ChangeMe123!\n' | \
+  radclient -x 127.0.0.1:1812 auth testing123
+```
+*Expected Reply:*
+`Received Access-Accept` containing `Mikrotik-Rate-Limit = "10M/10M"`, `Acct-Interim-Interval = 300`, and `Framed-IP-Address = 100.111.99.10`.
+
+### 2. Test Suspended Subscriber
+```bash
+printf 'User-Name=suspended_user\nUser-Password=Suspend123\n' | \
+  radclient 127.0.0.1:1812 auth testing123
+```
+*Expected Reply:*
+`Received Access-Reject`.
+
+### 3. Test Expired Subscriber
+```bash
+printf 'User-Name=expired_user\nUser-Password=Expired123\n' | \
+  radclient 127.0.0.1:1812 auth testing123
+```
+*Expected Reply:*
+`Received Access-Reject`.
+
+---
+
 ## Troubleshooting
 
 - **FreeRADIUS container fails to start:**
   Check logs: `docker compose logs freeradius`
   Verify PostgreSQL is ready and reachable on port 5432.
 - **Access-Reject on radtest:**
-  Verify password in `freeradius/users` or `radcheck` table.
+  Verify password in `radcheck` table or subscriber details in the web UI.
 - **Backend cannot reach FreeRADIUS:**
   Check `RADIUS_SECRET` in `.env` matches between backend and FreeRADIUS.
+- **MikroTik Disconnect / CoA timeout:**
+  Verify UDP port 3799 is open on your firewall and `/radius incoming set accept=yes port=3799` is enabled on RouterOS.
+

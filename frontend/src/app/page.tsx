@@ -13,6 +13,11 @@ import { SystemHealthSection } from '@/components/system-health-section';
 import { RadiusOverviewView } from '@/components/radius-overview-view';
 import { RadiusTestModal } from '@/components/radius-test-modal';
 import { LoginView } from '@/components/login-view';
+import { NasView } from '@/components/nas-view';
+import { SubscribersView } from '@/components/subscribers-view';
+import { PackagesView } from '@/components/packages-view';
+import { OnlineUsersView } from '@/components/online-users-view';
+import { AuthLogsView } from '@/components/auth-logs-view';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
 import type { TimeRange } from '@/types/api';
 
@@ -26,6 +31,7 @@ export default function DashboardPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [testModalOpen, setTestModalOpen] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [nasFilterForSessions, setNasFilterForSessions] = React.useState<string | null>(null);
 
   // Live state from backend
   const [dashboardData, setDashboardData] = React.useState<any>(null);
@@ -219,8 +225,36 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Conditional View: Dashboard vs RADIUS Overview */}
-          {activeTab === 'dashboard' ? (
+          {/* Conditional View: Dashboard vs Phase 2 Tabs */}
+          {activeTab === 'nas_devices' ? (
+            <NasView
+              onViewSessions={(ip) => {
+                setNasFilterForSessions(ip);
+                setActiveTab('sessions');
+              }}
+            />
+          ) : activeTab === 'subscribers' ? (
+            <SubscribersView />
+          ) : activeTab === 'packages' ? (
+            <PackagesView />
+          ) : activeTab === 'sessions' ? (
+            <OnlineUsersView
+              filterNasIp={nasFilterForSessions}
+              onClearNasFilter={() => setNasFilterForSessions(null)}
+            />
+          ) : activeTab === 'auth_logs' ? (
+            <AuthLogsView />
+          ) : activeTab === 'radius' ? (
+            dashboardData && (
+              <RadiusOverviewView
+                authStats={dashboardData.authStatistics}
+                nasDevices={dashboardData.nasDevices}
+                systemHealth={healthData}
+                onOpenTestModal={() => setTestModalOpen(true)}
+              />
+            )
+          ) : (
+            /* Dashboard tab */
             loading && !dashboardData ? (
               /* Loading Skeletons */
               <div className="space-y-6 animate-pulse">
@@ -269,16 +303,6 @@ export default function DashboardPage() {
                 )}
               </>
             ) : null
-          ) : (
-            /* Functional RADIUS Overview tab */
-            dashboardData && (
-              <RadiusOverviewView
-                authStats={dashboardData.authStatistics}
-                nasDevices={dashboardData.nasDevices}
-                systemHealth={healthData}
-                onOpenTestModal={() => setTestModalOpen(true)}
-              />
-            )
           )}
         </main>
       </div>
