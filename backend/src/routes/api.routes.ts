@@ -1504,7 +1504,7 @@ apiRouter.get(
 // ---- 1. Billing Dashboard ----
 apiRouter.get(
   '/billing/dashboard',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (_req, res) => {
     const metrics = await billingRepository.getDashboardMetrics();
     res.json(envelope(metrics, 'live'));
   })
@@ -1718,7 +1718,8 @@ apiRouter.get(
     if (!Array.isArray(data) || data.length === 0) {
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="billing_${reportType}_empty.csv"`);
-      return res.send('No records found\n');
+      res.send('No records found\n');
+      return;
     }
 
     const headers = Object.keys(data[0]);

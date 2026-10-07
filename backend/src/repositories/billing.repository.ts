@@ -1071,6 +1071,8 @@ export const billingRepository = {
     paymentMethod?: string;
   }): Promise<any> {
     const { reportType, dateFrom, dateTo, packageId, paymentMethod } = options;
+    const pkgClause = packageId ? `AND rt.package_id = ${Number(packageId)}` : '';
+    const methodClause = paymentMethod ? `AND rt.payment_method = '${paymentMethod.replace(/'/g, "''")}'` : '';
 
     if (reportType === 'daily') {
       const { rows } = await query(
@@ -1079,10 +1081,12 @@ export const billingRepository = {
                 COALESCE(SUM(original_price), 0) as gross_revenue,
                 COALESCE(SUM(discount_amount), 0) as total_discounts,
                 COALESCE(SUM(final_amount), 0) as net_revenue
-           FROM recharge_transactions
-          WHERE status = 'COMPLETED'
-            ${dateFrom ? `AND recharge_date >= '${dateFrom}'` : `AND recharge_date >= CURRENT_DATE - INTERVAL '30 days'`}
-            ${dateTo ? `AND recharge_date <= '${dateTo}'` : ''}
+           FROM recharge_transactions rt
+          WHERE rt.status = 'COMPLETED'
+            ${dateFrom ? `AND rt.recharge_date >= '${dateFrom}'` : `AND rt.recharge_date >= CURRENT_DATE - INTERVAL '30 days'`}
+            ${dateTo ? `AND rt.recharge_date <= '${dateTo}'` : ''}
+            ${pkgClause}
+            ${methodClause}
           GROUP BY 1
           ORDER BY 1 DESC`,
       );
@@ -1096,10 +1100,12 @@ export const billingRepository = {
                 COALESCE(SUM(original_price), 0) as gross_revenue,
                 COALESCE(SUM(discount_amount), 0) as total_discounts,
                 COALESCE(SUM(final_amount), 0) as net_revenue
-           FROM recharge_transactions
-          WHERE status = 'COMPLETED'
-            ${dateFrom ? `AND recharge_date >= '${dateFrom}'` : `AND recharge_date >= CURRENT_DATE - INTERVAL '12 months'`}
-            ${dateTo ? `AND recharge_date <= '${dateTo}'` : ''}
+           FROM recharge_transactions rt
+          WHERE rt.status = 'COMPLETED'
+            ${dateFrom ? `AND rt.recharge_date >= '${dateFrom}'` : `AND rt.recharge_date >= CURRENT_DATE - INTERVAL '12 months'`}
+            ${dateTo ? `AND rt.recharge_date <= '${dateTo}'` : ''}
+            ${pkgClause}
+            ${methodClause}
           GROUP BY 1
           ORDER BY 1 DESC`,
       );
@@ -1116,6 +1122,8 @@ export const billingRepository = {
           WHERE rt.status = 'COMPLETED'
             ${dateFrom ? `AND rt.recharge_date >= '${dateFrom}'` : ''}
             ${dateTo ? `AND rt.recharge_date <= '${dateTo}'` : ''}
+            ${pkgClause}
+            ${methodClause}
           GROUP BY p.name
           ORDER BY total_revenue DESC`,
       );
@@ -1127,10 +1135,12 @@ export const billingRepository = {
         `SELECT payment_method,
                 count(*) as count,
                 COALESCE(SUM(final_amount), 0) as total_amount
-           FROM recharge_transactions
-          WHERE status = 'COMPLETED'
-            ${dateFrom ? `AND recharge_date >= '${dateFrom}'` : ''}
-            ${dateTo ? `AND recharge_date <= '${dateTo}'` : ''}
+           FROM recharge_transactions rt
+          WHERE rt.status = 'COMPLETED'
+            ${dateFrom ? `AND rt.recharge_date >= '${dateFrom}'` : ''}
+            ${dateTo ? `AND rt.recharge_date <= '${dateTo}'` : ''}
+            ${pkgClause}
+            ${methodClause}
           GROUP BY payment_method
           ORDER BY total_amount DESC`,
       );
@@ -1142,11 +1152,13 @@ export const billingRepository = {
         `SELECT transaction_id, username, customer_id, package_name,
                 original_price, discount_type, discount_value, discount_amount,
                 final_amount, created_by, recharge_date
-           FROM recharge_transactions
-          WHERE discount_amount > 0
-            ${dateFrom ? `AND recharge_date >= '${dateFrom}'` : ''}
-            ${dateTo ? `AND recharge_date <= '${dateTo}'` : ''}
-          ORDER BY recharge_date DESC
+           FROM recharge_transactions rt
+          WHERE rt.discount_amount > 0
+            ${dateFrom ? `AND rt.recharge_date >= '${dateFrom}'` : ''}
+            ${dateTo ? `AND rt.recharge_date <= '${dateTo}'` : ''}
+            ${pkgClause}
+            ${methodClause}
+          ORDER BY rt.recharge_date DESC
           LIMIT 100`,
       );
       return rows;
