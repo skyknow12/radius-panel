@@ -9,6 +9,7 @@ RUN npm install
 FROM deps AS builder
 WORKDIR /app
 COPY . .
+RUN mkdir -p /app/public
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
