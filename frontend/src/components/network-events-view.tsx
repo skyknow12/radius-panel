@@ -4,7 +4,11 @@ import React from 'react';
 import { Activity, Clock, RefreshCw, Filter, Layers, User, Zap } from 'lucide-react';
 import type { NetworkEventItem } from '@/types/api';
 
-export function NetworkEventsView() {
+interface NetworkEventsViewProps {
+  onViewSubscriber?: (username: string) => void;
+}
+
+export function NetworkEventsView({ onViewSubscriber }: NetworkEventsViewProps = {}) {
   const [events, setEvents] = React.useState<NetworkEventItem[]>([]);
   const [loading, setLoading] = React.useState<boolean>(true);
   const [severityFilter, setSeverityFilter] = React.useState<string>('all');
@@ -136,7 +140,16 @@ export function NetworkEventsView() {
                       {e.actor}
                     </td>
                     <td className="py-3 px-4 text-foreground font-medium">
-                      {e.target || '—'}
+                      {e.target && onViewSubscriber ? (
+                        <button
+                          onClick={() => onViewSubscriber(e.target!)}
+                          className="text-primary hover:underline font-semibold text-left"
+                        >
+                          {e.target}
+                        </button>
+                      ) : (
+                        e.target || '—'
+                      )}
                     </td>
                     <td className="py-3 px-4 text-muted-foreground max-w-md">
                       {e.description}

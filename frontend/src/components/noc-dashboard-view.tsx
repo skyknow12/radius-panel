@@ -24,16 +24,19 @@ import {
 import type { NocMetrics } from '@/types/api';
 
 interface NocDashboardViewProps {
-  onNavigate: (tab: string) => void;
-  onViewSubscriberByUsername: (username: string) => void;
-  onOpenTestModal: () => void;
+  onNavigate?: (tab: string) => void;
+  onViewSubscriber?: (username: string) => void;
+  onViewSubscriberByUsername?: (username: string) => void;
+  onOpenTestModal?: () => void;
 }
 
 export function NocDashboardView({
-  onNavigate,
+  onNavigate = () => {},
+  onViewSubscriber,
   onViewSubscriberByUsername,
-  onOpenTestModal,
+  onOpenTestModal = () => {},
 }: NocDashboardViewProps) {
+  const handleViewSubscriber = onViewSubscriber || onViewSubscriberByUsername || (() => {});
   const [metrics, setMetrics] = React.useState<NocMetrics | null>(null);
   const [onlineSessions, setOnlineSessions] = React.useState<any[]>([]);
   const [recentAuth, setRecentAuth] = React.useState<any[]>([]);
@@ -333,7 +336,7 @@ export function NocDashboardView({
                     <tr key={idx} className="hover:bg-muted/40 transition-colors">
                       <td className="py-2.5 font-medium">
                         <button
-                          onClick={() => onViewSubscriberByUsername(s.username)}
+                          onClick={() => handleViewSubscriber(s.username)}
                           className="font-bold text-primary hover:underline flex items-center gap-1"
                         >
                           {s.username}
@@ -540,7 +543,7 @@ export function NocDashboardView({
                 <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/60">
                   <div className="overflow-hidden">
                     <button
-                      onClick={() => onViewSubscriberByUsername(l.username)}
+                      onClick={() => handleViewSubscriber(l.username)}
                       className="font-bold text-primary hover:underline truncate block max-w-[120px] text-xs"
                     >
                       {l.username}
