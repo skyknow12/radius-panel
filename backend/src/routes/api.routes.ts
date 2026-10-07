@@ -24,6 +24,7 @@ import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
 import { envelope } from '../lib/response';
+import { HttpError } from '../lib/http-error';
 import { authMiddleware, type AuthenticatedRequest } from '../middleware/auth.middleware';
 import type { TimeRange } from '../types/api';
 

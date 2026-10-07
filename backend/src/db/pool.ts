@@ -23,6 +23,11 @@ export async function query<T extends QueryResultRow = QueryResultRow>(text: str
   return pool.query<T>(text, params);
 }
 
+/** Get a pool client for manual transactions */
+export async function getClient(): Promise<PoolClient> {
+  return pool.connect();
+}
+
 /** Run a function inside a transaction. */
 export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();

@@ -1,6 +1,5 @@
 import { query, getClient } from '../db/pool';
 import { HttpError } from '../lib/http-error';
-import { logger } from '../lib/logger';
 import { auditRepository } from '../repositories/audit.repository';
 
 export interface OrganizationItem {
