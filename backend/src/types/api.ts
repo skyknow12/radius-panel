@@ -100,3 +100,98 @@ export interface AuthStatistics {
   rejectPct: number;
   timeoutPct: number;
 }
+
+export interface PackagePriceItem {
+  id: number;
+  package_id: number;
+  duration_months: number;
+  price: number;
+  currency: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RechargeTransactionItem {
+  id: number;
+  receipt_no: string;
+  subscriber_id: number;
+  username?: string;
+  customer_id?: string;
+  full_name?: string;
+  package_id: number;
+  package_name?: string;
+  duration_months: number;
+  amount: number;
+  currency: string;
+  payment_method: string;
+  recharge_date: string;
+  previous_expiry: string | null;
+  new_expiry: string;
+  created_by: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface SessionActionItem {
+  id: number;
+  subscriber_id?: number | null;
+  username: string;
+  session_id?: string | null;
+  nas_ip?: string | null;
+  action: 'disconnect' | 'coa_rate_limit' | 'suspend' | 'resume';
+  vendor: string;
+  status: 'SUCCESS' | 'FAILED' | 'NOT SUPPORTED' | 'TIMEOUT';
+  details?: string | null;
+  operator_username: string;
+  created_at: string;
+}
+
+export interface NetworkEventItem {
+  id: number;
+  event_type: string;
+  severity: 'info' | 'warning' | 'critical';
+  actor: string;
+  target?: string | null;
+  description: string;
+  metadata?: any;
+  created_at: string;
+}
+
+export interface AlertItem {
+  id: number;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  description: string;
+  source: string;
+  status: 'active' | 'acknowledged' | 'resolved';
+  metadata?: any;
+  created_at: string;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+}
+
+export interface NasTestResult {
+  nas_id: number;
+  nas_name: string;
+  nas_ip: string;
+  auth_port: number;
+  result: 'ACCEPT' | 'REJECT' | 'ERROR' | 'TIMEOUT';
+  response_time_ms: number;
+  attributes: { attribute: string; value: string }[];
+  error?: string;
+}
+
+export interface CoaResult {
+  status: 'SUCCESS' | 'FAILED' | 'NOT SUPPORTED' | 'TIMEOUT';
+  vendor: string;
+  details: string;
+}
+
+export interface GlobalSearchResult {
+  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip';
+  title: string;
+  subtitle: string;
+  id: string | number;
+  url?: string;
+  badge?: string;
+}

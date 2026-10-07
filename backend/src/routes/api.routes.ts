@@ -11,6 +11,13 @@ import { ipPoolRepository } from '../repositories/ip-pool.repository';
 import { radAcctRepository } from '../repositories/radacct.repository';
 import { radPostAuthRepository } from '../repositories/radpostauth.repository';
 import { auditRepository } from '../repositories/audit.repository';
+import { rechargeRepository } from '../repositories/recharge.repository';
+import { alertRepository } from '../repositories/alert.repository';
+import { networkEventRepository } from '../repositories/network-event.repository';
+import { coaService } from '../services/coa.service';
+import { nocService } from '../services/noc.service';
+import { searchService } from '../services/search.service';
+import { reportsService } from '../services/reports.service';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
@@ -562,6 +569,19 @@ apiRouter.get(
       return;
     }
     res.json(envelope(profile, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/by-username/:username',
+  asyncHandler(async (req, res) => {
+    const username = req.params.username;
+    const sub = await subscriberRepository.findByUsername(username);
+    if (!sub) {
+      res.status(404).json(envelope(null, 'live'));
+      return;
+    }
+    res.json(envelope(sub, 'live'));
   })
 );
 
@@ -1208,3 +1228,271 @@ apiRouter.get(
     res.json(envelope(list, 'live'));
   })
 );
+
+// =============================================================================
+// PHASE 4: ISP NETWORK CONTROL, NOC & RECHARGE OPERATIONS
+// =============================================================================
+
+// ---- 1. Multi-Duration Package Prices ----
+apiRouter.get(
+  '/packages/:id/prices',
+  asyncHandler(async (req, res) => {
+    const packageId = parseInt(req.params.id, 10);
+    const prices = await rechargeRepository.getPackagePrices(packageId);
+    res.json(envelope(prices, 'live'));
+  })
+);
+
+const setPriceSchema = z.object({
+  duration_months: z.number().int().positive(),
+  price: z.number().nonnegative(),
+  currency: z.string().default('NPR'),
+});
+
+apiRouter.post(
+  '/packages/:id/prices',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const packageId = parseInt(req.params.id, 10);
+    const body = setPriceSchema.parse(req.body);
+    const saved = await rechargeRepository.setPackagePrice(
+      packageId,
+      body.duration_months,
+      body.price,
+      body.currency,
+    );
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'package.set_price',
+      entityType: 'package',
+      entityId: String(packageId),
+      status: 'success',
+      metadata: body,
+    });
+
+    res.json(envelope(saved, 'live'));
+  })
+);
+
+// ---- 2. Recharge Operations ----
+const rechargeSchema = z.object({
+  subscriber_id: z.number().int().positive(),
+  package_id: z.number().int().positive(),
+  duration_months: z.number().int().positive(),
+  amount: z.number().nonnegative(),
+  currency: z.string().default('NPR'),
+  payment_method: z.string().default('Cash'),
+  notes: z.string().optional(),
+});
+
+apiRouter.post(
+  '/recharge',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = rechargeSchema.parse(req.body);
+    const result = await rechargeRepository.processRecharge({
+      ...body,
+      created_by: req.user?.username || 'admin',
+    });
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.recharge',
+      entityType: 'subscriber',
+      entityId: String(body.subscriber_id),
+      status: 'success',
+      metadata: { receipt_no: result.receipt_no, amount: body.amount, duration_months: body.duration_months },
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/recharge',
+  asyncHandler(async (req, res) => {
+    const subscriberId = req.query.subscriber_id ? Number(req.query.subscriber_id) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const list = await rechargeRepository.listTransactions({ subscriberId, limit, offset });
+    res.json(envelope(list, 'live'));
+  })
+);
+
+// ---- 3. Session Control & Vendor-aware CoA ----
+const disconnectSessionSchema = z.object({
+  username: z.string().min(1),
+  sessionId: z.string().optional(),
+  nasIp: z.string().optional(),
+  framedIp: z.string().optional(),
+});
+
+apiRouter.post(
+  '/sessions/disconnect',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = disconnectSessionSchema.parse(req.body);
+    const result = await coaService.disconnectSession({
+      ...body,
+      operatorUsername: req.user?.username || 'admin',
+    });
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'session.disconnect',
+      entityType: 'session',
+      entityId: body.username,
+      status: result.status === 'SUCCESS' ? 'success' : 'failure',
+      metadata: result,
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+const changeSpeedSchema = z.object({
+  username: z.string().min(1),
+  rateLimit: z.string().min(1),
+  sessionId: z.string().optional(),
+  nasIp: z.string().optional(),
+  framedIp: z.string().optional(),
+});
+
+apiRouter.post(
+  '/sessions/change-speed',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = changeSpeedSchema.parse(req.body);
+    const result = await coaService.changeSessionSpeed({
+      ...body,
+      operatorUsername: req.user?.username || 'admin',
+    });
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'session.coa_speed',
+      entityType: 'session',
+      entityId: body.username,
+      status: result.status === 'SUCCESS' ? 'success' : 'failure',
+      metadata: result,
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// ---- 4. NOC Operational Dashboard & Monitoring ----
+apiRouter.get(
+  '/noc/dashboard',
+  asyncHandler(async (_req, res) => {
+    const data = await nocService.getMetrics();
+    res.json(envelope(data, 'live'));
+  })
+);
+
+const testNasDirectSchema = z.object({
+  nasIp: z.string(),
+  username: z.string().default('radius-test'),
+  password: z.string().default('ChangeMe123!'),
+  authMethod: z.enum(['PAP', 'CHAP']).default('PAP'),
+});
+
+apiRouter.post(
+  '/nas-devices/test-direct',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = testNasDirectSchema.parse(req.body);
+    const result = await nocService.testNasConnectivity(body);
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'nas.test_probe',
+      entityType: 'nas',
+      entityId: body.nasIp,
+      status: result.result === 'ACCEPT' ? 'success' : 'failure',
+      metadata: { result: result.result, latency: result.response_time_ms },
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// ---- 5. Network Events & Alerts ----
+apiRouter.get(
+  '/network-events',
+  asyncHandler(async (req, res) => {
+    const severity = req.query.severity as string;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const list = await networkEventRepository.list({ severity, limit, offset });
+    res.json(envelope(list, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/alerts',
+  asyncHandler(async (req, res) => {
+    const status = req.query.status as string;
+    const severity = req.query.severity as string;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const list = await alertRepository.list({ status, severity, limit, offset });
+    res.json(envelope(list, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/alerts/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const status = req.body.status as 'acknowledged' | 'resolved';
+    const updated = await alertRepository.updateStatus(id, status, req.user?.username || 'admin');
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+// ---- 6. Global Search ----
+apiRouter.get(
+  '/search',
+  asyncHandler(async (req, res) => {
+    const q = (req.query.q as string) || '';
+    const results = await searchService.search(q);
+    res.json(envelope(results, 'live'));
+  })
+);
+
+// ---- 7. Reports ----
+apiRouter.get(
+  '/reports/summary',
+  asyncHandler(async (req, res) => {
+    const startDate = req.query.start_date as string;
+    const endDate = req.query.end_date as string;
+    const summary = await reportsService.getSummary(startDate, endDate);
+    res.json(envelope(summary, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/reports/export/csv',
+  asyncHandler(async (req, res) => {
+    const type = (req.query.type as string) || 'subscribers';
+    const startDate = req.query.start_date as string;
+    const endDate = req.query.end_date as string;
+    const csvContent = await reportsService.exportReportCsv(type, startDate, endDate);
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${type}_report_${Date.now()}.csv"`);
+    res.send(csvContent);
+  })
+);
+

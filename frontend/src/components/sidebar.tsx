@@ -15,6 +15,10 @@ import {
   Layers,
   Server,
   Zap,
+  Monitor,
+  Bell,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -78,6 +82,25 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
           >
             <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
             {!collapsed && <span>Dashboard</span>}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('noc_dashboard')}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group mt-1',
+              activeTab === 'noc_dashboard'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            )}
+            title="NOC Operations"
+          >
+            <Monitor className="w-4 h-4 flex-shrink-0 text-cyan-400" />
+            {!collapsed && (
+              <span className="flex items-center justify-between w-full">
+                <span>NOC Operations</span>
+                <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.2 rounded font-semibold uppercase">Live</span>
+              </span>
+            )}
           </button>
         </div>
 
@@ -217,6 +240,34 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
                 <Network className="w-4 h-4 flex-shrink-0 text-cyan-400" />
                 {!collapsed && <span>IP Addresses</span>}
               </button>
+
+              <button
+                onClick={() => setActiveTab('network_events')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'network_events'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Network Events Log"
+              >
+                <History className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                {!collapsed && <span>Network Events</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('alerts')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'alerts'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="NOC Alerts"
+              >
+                <Bell className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                {!collapsed && <span>NOC Alerts</span>}
+              </button>
             </div>
           )}
         </div>
@@ -284,14 +335,20 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
         {/* REPORTS */}
         <div>
           <button
-            onClick={() => handleNextModule('Reports & Analytics')}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted"
+            onClick={() => setActiveTab('reports')}
+            className={cn(
+              'w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+              activeTab === 'reports'
+                ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            )}
+            title="Reports & Analytics"
           >
             <div className="flex items-center gap-3">
-              <FileBarChart className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>Reports</span>}
+              <FileBarChart className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+              {!collapsed && <span>Reports & Export</span>}
             </div>
-            {!collapsed && <span className="text-[10px] text-muted-foreground/60">Soon</span>}
+            {!collapsed && <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1 rounded font-medium">CSV</span>}
           </button>
         </div>
 

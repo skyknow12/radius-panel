@@ -5,7 +5,15 @@ import { Users, ArrowRight, Download, Upload, Clock } from 'lucide-react';
 import { formatBytes, formatSeconds } from '@/lib/utils';
 import type { OnlineSession } from '@/types/api';
 
-export function OnlineUsersWidget({ sessions }: { sessions: OnlineSession[] }) {
+export function OnlineUsersWidget({
+  sessions,
+  onViewSubscriber,
+  onViewAll,
+}: {
+  sessions: OnlineSession[];
+  onViewSubscriber?: (username: string) => void;
+  onViewAll?: () => void;
+}) {
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col justify-between">
       <div className="p-4 border-b border-border flex items-center justify-between">
@@ -16,7 +24,10 @@ export function OnlineUsersWidget({ sessions }: { sessions: OnlineSession[] }) {
           </h3>
           <p className="text-xs text-muted-foreground">Active PPPoE / IPoE accounting sessions</p>
         </div>
-        <button className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1">
+        <button
+          onClick={onViewAll}
+          className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1"
+        >
           View All <ArrowRight className="w-3 h-3" />
         </button>
       </div>
@@ -36,7 +47,18 @@ export function OnlineUsersWidget({ sessions }: { sessions: OnlineSession[] }) {
           <tbody className="divide-y divide-border/60">
             {sessions.map((sess) => (
               <tr key={sess.id} className="hover:bg-muted/40 transition-colors">
-                <td className="py-2.5 px-3 font-semibold text-foreground">{sess.username}</td>
+                <td className="py-2.5 px-3 font-semibold text-foreground">
+                  {onViewSubscriber ? (
+                    <button
+                      onClick={() => onViewSubscriber(sess.username)}
+                      className="text-primary hover:underline font-semibold text-left"
+                    >
+                      {sess.username}
+                    </button>
+                  ) : (
+                    sess.username
+                  )}
+                </td>
                 <td className="py-2.5 px-3 font-mono text-muted-foreground">{sess.ipAddress}</td>
                 <td className="py-2.5 px-3 font-mono text-muted-foreground">{sess.nas}</td>
                 <td className="py-2.5 px-3 font-mono text-muted-foreground flex items-center gap-1">

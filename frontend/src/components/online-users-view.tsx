@@ -20,9 +20,14 @@ import type { SessionItem } from '@/types/api';
 interface OnlineUsersViewProps {
   filterNasIp?: string | null;
   onClearNasFilter?: () => void;
+  onViewSubscriber?: (username: string) => void;
 }
 
-export function OnlineUsersView({ filterNasIp, onClearNasFilter }: OnlineUsersViewProps) {
+export function OnlineUsersView({
+  filterNasIp,
+  onClearNasFilter,
+  onViewSubscriber,
+}: OnlineUsersViewProps) {
   const [sessions, setSessions] = React.useState<SessionItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
@@ -230,8 +235,17 @@ export function OnlineUsersView({ filterNasIp, onClearNasFilter }: OnlineUsersVi
                 sessions.map((s) => (
                   <tr key={s.radacctid} className="hover:bg-muted/40 transition-colors group">
                     <td className="py-3 px-4 font-semibold text-foreground flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>{s.username}</span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                      {onViewSubscriber ? (
+                        <button
+                          onClick={() => onViewSubscriber(s.username)}
+                          className="text-primary hover:underline font-semibold text-left"
+                        >
+                          {s.username}
+                        </button>
+                      ) : (
+                        <span>{s.username}</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-muted-foreground">
                       {s.customer_name || '-'}

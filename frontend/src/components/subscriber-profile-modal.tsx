@@ -24,6 +24,7 @@ import {
   Send,
   Plus,
   RefreshCw,
+  CreditCard,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -34,11 +35,13 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { RechargeModal } from './recharge-modal';
 import type {
   SubscriberItem,
   SubscriberProfileData,
   SubscriberUsageData,
   PackageItem,
+  RechargeTransactionItem,
 } from '@/types/api';
 
 interface SubscriberProfileModalProps {
@@ -57,11 +60,13 @@ export function SubscriberProfileModal({
   const [packages, setPackages] = React.useState<PackageItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState<
-    'overview' | 'service' | 'radius' | 'sessions' | 'usage' | 'auth' | 'activity' | 'notes'
+    'overview' | 'service' | 'radius' | 'sessions' | 'usage' | 'auth' | 'recharge' | 'activity' | 'notes'
   >('overview');
   const [usageRange, setUsageRange] = React.useState<'today' | '7d' | '30d'>('30d');
 
   // Modals inside profile
+  const [rechargeModalOpen, setRechargeModalOpen] = React.useState(false);
+  const [recharges, setRecharges] = React.useState<RechargeTransactionItem[]>([]);
   const [passwordModalOpen, setPasswordModalOpen] = React.useState(false);
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -78,10 +83,11 @@ export function SubscriberProfileModal({
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const [profRes, usageRes, pkgRes] = await Promise.all([
+      const [profRes, usageRes, pkgRes, recRes] = await Promise.all([
         fetch(`/api/subscribers/${subscriberId}/profile`),
         fetch(`/api/subscribers/${subscriberId}/usage?range=${usageRange}`),
         fetch('/api/packages'),
+        fetch(`/api/recharge?subscriber_id=${subscriberId}`),
       ]);
 
       if (profRes.ok) {
@@ -95,6 +101,10 @@ export function SubscriberProfileModal({
       if (pkgRes.ok) {
         const json = await pkgRes.json();
         setPackages(json.data || []);
+      }
+      if (recRes.ok) {
+        const json = await recRes.json();
+        setRecharges(json.data?.items || json.data || []);
       }
     } catch {} finally {
       setLoading(false);
@@ -298,7 +308,13 @@ export function SubscriberProfileModal({
 
         {/* Quick Action Ribbon */}
         <div className="px-5 py-2.5 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setRechargeModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              <CreditCard className="w-3.5 h-3.5" /> Recharge / Renew
+            </button>
+
             {sub?.status === 'suspended' ? (
               <button
                 onClick={() => handleSuspendResume('resume')}
@@ -355,6 +371,7 @@ export function SubscriberProfileModal({
               { key: 'sessions', label: 'Session History', icon: Radio },
               { key: 'usage', label: 'Usage & Analytics', icon: TrendingUp },
               { key: 'auth', label: 'Authentication Logs', icon: Activity },
+              { key: 'recharge', label: `Recharges (${recharges.length})`, icon: CreditCard },
               { key: 'activity', label: 'Activity Timeline', icon: Clock },
               { key: 'notes', label: `Staff Notes (${profile?.notes.length || 0})`, icon: FileText },
             ] as const
@@ -979,9 +996,110 @@ export function SubscriberProfileModal({
                   </div>
                 </div>
               )}
+
+              {/* 9. Recharge History Tab */}
+              {activeTab === 'recharge' && (
+                <div className="space-y-4 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-foreground">Recharge & Renewal History</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Chronological record of packages, payments, and calculated validity extensions.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setRechargeModalOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" /> New Recharge
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-muted/40 border-b border-border text-muted-foreground">
+                        <tr>
+                          <th className="py-2.5 px-3 font-medium">Receipt No</th>
+                          <th className="py-2.5 px-3 font-medium">Package</th>
+                          <th className="py-2.5 px-3 font-medium">Duration</th>
+                          <th className="py-2.5 px-3 font-medium">Amount</th>
+                          <th className="py-2.5 px-3 font-medium">Method</th>
+                          <th className="py-2.5 px-3 font-medium">Recharge Date</th>
+                          <th className="py-2.5 px-3 font-medium">New Expiry</th>
+                          <th className="py-2.5 px-3 font-medium">Operator</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {recharges.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-muted-foreground">
+                              No recharge records found for this subscriber.
+                            </td>
+                          </tr>
+                        ) : (
+                          recharges.map((rec) => (
+                            <tr key={rec.id} className="hover:bg-muted/30">
+                              <td className="py-2.5 px-3 font-mono font-semibold text-primary">
+                                {rec.receipt_no}
+                              </td>
+                              <td className="py-2.5 px-3 font-medium text-foreground">
+                                {rec.package_name || 'Standard Package'}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                                  {rec.duration_months} Month{rec.duration_months > 1 ? 's' : ''}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-foreground">
+                                {rec.currency} {Number(rec.amount).toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-muted-foreground">
+                                {rec.payment_method}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-muted-foreground">
+                                {new Date(rec.recharge_date).toLocaleDateString()}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono font-semibold text-emerald-500">
+                                {new Date(rec.new_expiry).toLocaleDateString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-muted-foreground font-mono">
+                                {rec.created_by}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
+
+        {/* Recharge Modal */}
+        <RechargeModal
+          isOpen={rechargeModalOpen}
+          onClose={() => setRechargeModalOpen(false)}
+          subscriber={
+            sub
+              ? {
+                  id: sub.id,
+                  username: sub.username,
+                  customer_id: sub.customer_id,
+                  full_name: sub.full_name,
+                  current_package_id: sub.current_package_id,
+                  package_name: sub.package_name,
+                  expiry_date: sub.expiry_date,
+                }
+              : null
+          }
+          packages={packages}
+          onRechargeSuccess={() => {
+            fetchProfile();
+            onUpdate();
+          }}
+        />
 
         {/* Change Password Modal */}
         {passwordModalOpen && (
@@ -1125,6 +1243,23 @@ export function SubscriberProfileModal({
               </form>
             </div>
           </div>
+        )}
+
+        {/* Multi-duration Recharge Modal */}
+        {profile && (
+          <RechargeModal
+            isOpen={rechargeModalOpen}
+            onClose={() => setRechargeModalOpen(false)}
+            subscriberId={subscriberId}
+            username={profile.subscriber.username}
+            currentPackageId={profile.subscriber.current_package_id}
+            onSuccess={() => {
+              setRechargeModalOpen(false);
+              fetchProfile();
+              onUpdate();
+              showNotice('Recharge applied successfully!');
+            }}
+          />
         )}
       </div>
     </div>

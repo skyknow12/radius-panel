@@ -27,22 +27,54 @@ const ICONS: Record<string, React.ElementType> = {
   nas_devices: Server,
 };
 
-export function StatCardsGrid({ stats }: { stats: StatCardType[] }) {
+const TAB_MAP: Record<string, string> = {
+  total_subscribers: 'subscribers',
+  online_users: 'sessions',
+  active_packages: 'packages',
+  todays_revenue: 'reports',
+  radius_requests: 'auth_logs',
+  auth_success_rate: 'auth_logs',
+  auth_failure_rate: 'auth_logs',
+  nas_devices: 'nas_devices',
+};
+
+export function StatCardsGrid({
+  stats,
+  onNavigate,
+}: {
+  stats: StatCardType[];
+  onNavigate?: (tab: string) => void;
+}) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {stats.map((stat) => {
         const IconComponent = ICONS[stat.key] || Radio;
         const isUp = (stat.changePct ?? 0) >= 0;
         const isPositiveTone = stat.positiveIsGood ? isUp : !isUp;
+        const targetTab = TAB_MAP[stat.key];
 
         return (
           <div
             key={stat.key}
-            className="rounded-xl border border-border bg-card p-4 shadow-sm hover:border-primary/40 hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden"
+            role={onNavigate && targetTab ? 'button' : undefined}
+            tabIndex={onNavigate && targetTab ? 0 : undefined}
+            onClick={() => onNavigate && targetTab && onNavigate(targetTab)}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && onNavigate && targetTab) {
+                onNavigate(targetTab);
+              }
+            }}
+            className={cn(
+              'rounded-xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden text-left',
+              onNavigate && targetTab && 'cursor-pointer hover:scale-[1.01]'
+            )}
+            title={targetTab ? `Click to view ${targetTab.replace('_', ' ')}` : undefined}
           >
             {/* Top row: Label & Icon */}
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">{stat.label}</span>
+              <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                {stat.label}
+              </span>
               <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
                 <IconComponent className="w-4 h-4" />
               </div>

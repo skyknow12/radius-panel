@@ -23,6 +23,7 @@ interface TopbarProps {
   currentUser?: { username: string; roleDisplay?: string } | null;
   onLogout?: () => void;
   onOpenTestModal?: () => void;
+  onOpenSearch?: () => void;
 }
 
 export function Topbar({
@@ -32,6 +33,7 @@ export function Topbar({
   currentUser,
   onLogout,
   onOpenTestModal,
+  onOpenSearch,
 }: TopbarProps) {
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
@@ -52,14 +54,30 @@ export function Topbar({
           <Menu className="w-4 h-4" />
         </button>
 
-        <div className="relative w-full max-w-sm hidden sm:block">
+        {/* Global Search Dialog trigger */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onOpenSearch}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') onOpenSearch?.();
+          }}
+          className="relative w-full max-w-sm hidden sm:flex items-center bg-muted/60 hover:bg-muted/90 border border-border rounded-lg pl-9 pr-2.5 py-1.5 text-xs text-muted-foreground cursor-pointer transition-all"
+        >
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search subscriber, IP, MAC or NAS..."
-            className="w-full bg-muted/60 border border-border rounded-lg pl-9 pr-4 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition-all"
-          />
+          <span className="truncate">Search subscriber, IP, MAC, NAS...</span>
+          <kbd className="ml-auto pointer-events-none inline-flex h-4.5 select-none items-center gap-0.5 rounded border border-border bg-card px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            ⌘K
+          </kbd>
         </div>
+
+        <button
+          onClick={onOpenSearch}
+          className="sm:hidden p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted border border-border/80"
+          title="Search"
+        >
+          <Search className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Right Controls */}

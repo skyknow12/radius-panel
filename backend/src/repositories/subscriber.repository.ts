@@ -387,6 +387,43 @@ export const subscriberRepository = {
     return rows[0] ?? null;
   },
 
+  async findByUsername(username: string): Promise<SubscriberRow | null> {
+    const { rows } = await query<SubscriberRow>(
+      `SELECT s.id, s.customer_id, s.username, s.full_name, s.email, s.phone,
+              s.status, s.connection_type, s.address, s.area, s.branch, s.installation_date,
+              s.current_package_id, p.name AS package_name, p.rate_limit AS package_speed,
+              s.ip_pool_id, pool.name AS ip_pool_name,
+              host(s.static_ip) AS static_ip,
+              host(s.ipv6_address) AS ipv6_address, s.ipv6_prefix, s.ipv6_prefix_length,
+              s.mac_address, s.vlan_id,
+              s.nas_restriction_id, n.name AS nas_name,
+              s.olt_pon_port, s.onu_mac_sn, s.onu_model,
+              s.expiry_date,
+              (s.expiry_date IS NOT NULL AND s.expiry_date < NOW()) AS is_expired,
+              (act.radacctid IS NOT NULL) AS is_online,
+              host(act.framedipaddress) AS current_ip,
+              host(act.nasipaddress) AS current_nas_ip,
+              act.acctsessionid AS current_session_id,
+              act.acctstarttime AS session_start_time,
+              s.notes, s.created_at, s.updated_at
+         FROM subscribers s
+         LEFT JOIN packages p ON p.id = s.current_package_id
+         LEFT JOIN ip_pools pool ON pool.id = s.ip_pool_id
+         LEFT JOIN nas_devices n ON n.id = s.nas_restriction_id
+         LEFT JOIN (
+           SELECT DISTINCT ON (lower(username))
+                  username, radacctid, framedipaddress, nasipaddress,
+                  acctsessionid, acctstarttime
+             FROM radacct
+            WHERE acctstoptime IS NULL
+            ORDER BY lower(username), acctstarttime DESC
+         ) act ON lower(act.username) = lower(s.username)
+        WHERE lower(s.username) = lower($1)`,
+      [username],
+    );
+    return rows[0] ?? null;
+  },
+
   async getProfile(id: number) {
     const subscriber = await this.findById(id);
     if (!subscriber) return null;

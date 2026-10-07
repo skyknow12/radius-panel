@@ -21,6 +21,12 @@ import { AuthLogsView } from '@/components/auth-logs-view';
 import { RadiusProfilesView } from '@/components/radius-profiles-view';
 import { IpPoolsView } from '@/components/ip-pools-view';
 import { IpAddressesView } from '@/components/ip-addresses-view';
+import { NocDashboardView } from '@/components/noc-dashboard-view';
+import { AlertsView } from '@/components/alerts-view';
+import { NetworkEventsView } from '@/components/network-events-view';
+import { ReportsView } from '@/components/reports-view';
+import { GlobalSearchDialog } from '@/components/global-search-dialog';
+import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
 import type { TimeRange } from '@/types/api';
 
@@ -33,6 +39,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [testModalOpen, setTestModalOpen] = React.useState(false);
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [subscriberProfileId, setSubscriberProfileId] = React.useState<number | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [nasFilterForSessions, setNasFilterForSessions] = React.useState<string | null>(null);
 
@@ -137,6 +145,51 @@ export default function DashboardPage() {
     }
   }, [range, currentUser]);
 
+  // Global search keyboard shortcut (Cmd+K / Ctrl+K)
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleOpenSubscriberByUsername = async (username: string) => {
+    if (!username || username === '-') return;
+    try {
+      const res = await fetch(`/api/subscribers/by-username/${encodeURIComponent(username)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data?.id) {
+          setSubscriberProfileId(json.data.id);
+          return;
+        }
+      }
+      // If not exact match, search
+      const sRes = await fetch(`/api/subscribers?search=${encodeURIComponent(username)}`);
+      if (sRes.ok) {
+        const sJson = await sRes.json();
+        const found = sJson.data?.items?.[0] || sJson.data?.[0];
+        if (found?.id) {
+          setSubscriberProfileId(found.id);
+          return;
+        }
+      }
+      setNotice(`Subscriber "${username}" not found in database.`);
+      setTimeout(() => setNotice(null), 3500);
+    } catch {
+      setNotice(`Could not fetch details for "${username}".`);
+      setTimeout(() => setNotice(null), 3500);
+    }
+  };
+
+  const handleOpenSubscriberById = (id: number) => {
+    setSubscriberProfileId(id);
+  };
+
   const handleNextModuleNotice = (moduleName: string) => {
     setNotice(`The module "${moduleName}" is coming in the next phase.`);
     setTimeout(() => setNotice(null), 4000);
@@ -176,6 +229,7 @@ export default function DashboardPage() {
           currentUser={currentUser}
           onLogout={handleLogout}
           onOpenTestModal={() => setTestModalOpen(true)}
+          onOpenSearch={() => setSearchOpen(true)}
         />
 
         {/* Notice toast banner */}
@@ -228,8 +282,19 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Conditional View: Dashboard vs Phase 2 & Phase 3 Tabs */}
-          {activeTab === 'nas_devices' ? (
+          {/* Conditional View: Dashboard vs Phase 2, 3 & 4 Tabs */}
+          {activeTab === 'noc_dashboard' ? (
+            <NocDashboardView
+              onViewSubscriber={handleOpenSubscriberByUsername}
+              onNavigate={(tab) => setActiveTab(tab)}
+            />
+          ) : activeTab === 'alerts' ? (
+            <AlertsView />
+          ) : activeTab === 'network_events' ? (
+            <NetworkEventsView onViewSubscriber={handleOpenSubscriberByUsername} />
+          ) : activeTab === 'reports' ? (
+            <ReportsView />
+          ) : activeTab === 'nas_devices' ? (
             <NasView
               onViewSessions={(ip) => {
                 setNasFilterForSessions(ip);
@@ -250,9 +315,10 @@ export default function DashboardPage() {
             <OnlineUsersView
               filterNasIp={nasFilterForSessions}
               onClearNasFilter={() => setNasFilterForSessions(null)}
+              onViewSubscriber={handleOpenSubscriberByUsername}
             />
           ) : activeTab === 'auth_logs' ? (
-            <AuthLogsView />
+            <AuthLogsView onViewSubscriber={handleOpenSubscriberByUsername} />
           ) : activeTab === 'radius' || activeTab === 'radius_overview' ? (
             dashboardData && (
               <RadiusOverviewView
@@ -277,7 +343,10 @@ export default function DashboardPage() {
             ) : dashboardData ? (
               <>
                 {/* 1. Statistic Cards */}
-                <StatCardsGrid stats={dashboardData.stats} />
+                <StatCardsGrid
+                  stats={dashboardData.stats}
+                  onNavigate={(tab) => setActiveTab(tab)}
+                />
 
                 {/* 2. Network Overview Chart & Authentication Statistics */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -295,8 +364,15 @@ export default function DashboardPage() {
 
                 {/* 3. Recent RADIUS Activity & Online Users */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <RadiusActivityTable items={dashboardData.activity} />
-                  <OnlineUsersWidget sessions={dashboardData.onlineUsers} />
+                  <RadiusActivityTable
+                    items={dashboardData.activity}
+                    onViewSubscriber={handleOpenSubscriberByUsername}
+                  />
+                  <OnlineUsersWidget
+                    sessions={dashboardData.onlineUsers}
+                    onViewSubscriber={handleOpenSubscriberByUsername}
+                    onViewAll={() => setActiveTab('sessions')}
+                  />
                 </div>
 
                 {/* 4. NAS Devices */}
@@ -318,6 +394,30 @@ export default function DashboardPage() {
 
       {/* Interactive radtest modal */}
       <RadiusTestModal isOpen={testModalOpen} onClose={() => setTestModalOpen(false)} />
+
+      {/* Global Search Dialog */}
+      <GlobalSearchDialog
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectSubscriber={handleOpenSubscriberById}
+        onSelectNas={() => {
+          setActiveTab('nas_devices');
+        }}
+        onSelectPackage={() => {
+          setActiveTab('packages');
+        }}
+      />
+
+      {/* Subscriber Profile Modal */}
+      {subscriberProfileId !== null && (
+        <SubscriberProfileModal
+          subscriberId={subscriberProfileId}
+          onClose={() => setSubscriberProfileId(null)}
+          onUpdate={() => {
+            fetchData();
+          }}
+        />
+      )}
     </div>
   );
 }

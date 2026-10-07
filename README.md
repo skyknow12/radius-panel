@@ -343,3 +343,36 @@ printf 'User-Name=expired_user\nUser-Password=Expired123\n' | \
 - **MikroTik Disconnect / CoA timeout:**
   Verify UDP port 3799 is open on your firewall and `/radius incoming set accept=yes port=3799` is enabled on RouterOS.
 
+---
+
+## Phase 4: ISP Network Control, NOC & RADIUS Operations
+
+Phase 4 turns the platform into a carrier-grade ISP Network Operations Center (NOC) system:
+
+### 1. Multi-Duration Package Pricing & Recharge
+- Packages support independent pricing for **1 Month**, **3 Months**, **6 Months**, and **12 Months**.
+- Recharge ledger tracks duration, amount, payment method, reference, and automatically recalculates expiry date from previous expiration or current timestamp.
+
+### 2. NOC Operations Dashboard
+- Live session counter, bandwidth consumption (Download/Upload), RADIUS authentication success/failure rates.
+- FreeRADIUS & PostgreSQL daemon health metrics.
+- Active live sessions table with real-time CoA disconnect action.
+- Direct quick links and interactive drill-down navigation.
+
+### 3. Vendor-Aware CoA / Disconnect Architecture
+- Dedicated support for **MikroTik RouterOS**, **Juniper JunOS**, **Cisco IOS/IOS-XE**, and **RFC 3576 / RFC 5176 Generic** NAS gateways.
+- Sends vendor-specific VSA attributes (`Mikrotik-Rate-Limit`, `ERX-Service-Activate`, `Cisco-AVPair`, etc.) or RFC 3576 Disconnect-Request / PoD packets.
+- Action logs recorded to `session_actions` and `network_events`.
+
+### 4. Network Events & NOC Alerts
+- Centralized event bus logging all operational actions (logins, session disconnects, speed modifications, recharges, failovers).
+- Alert management with severity levels (`critical`, `warning`, `info`), acknowledgement, and resolution workflows.
+
+### 5. Reporting & CSV Export
+- Period aggregation (Today, 7 Days, 30 Days, 90 Days) for recharge revenue, session accounting, and subscriber growth.
+- One-click streaming CSV exports for subscribers, transactions, and session history.
+
+### 6. Global Search & Interactive Navigation
+- `⌘K` / `Ctrl+K` global search modal indexing subscribers, active sessions, NAS gateways, packages, and IP addresses.
+- Usernames are clickable everywhere (Dashboard, Online Users, Session Tables, Auth Logs, Reports) opening the full subscriber profile with service management and recharge history.
+

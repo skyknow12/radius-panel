@@ -45,6 +45,12 @@ export function PackagesView() {
   const [formRadiusProfileId, setFormRadiusProfileId] = React.useState<string>('');
   const [radiusProfiles, setRadiusProfiles] = React.useState<any[]>([]);
 
+  // Phase 4 Multi-Duration Pricing
+  const [formPrice1M, setFormPrice1M] = React.useState<number>(2000);
+  const [formPrice3M, setFormPrice3M] = React.useState<number>(5700);
+  const [formPrice6M, setFormPrice6M] = React.useState<number>(10800);
+  const [formPrice12M, setFormPrice12M] = React.useState<number>(20000);
+
   const [formError, setFormError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -99,6 +105,10 @@ export function PackagesView() {
     setFormRateLimit('100M/100M');
     setFormValidity(30);
     setFormPrice(2000);
+    setFormPrice1M(2000);
+    setFormPrice3M(5700);
+    setFormPrice6M(10800);
+    setFormPrice12M(20000);
     setFormCurrency('NPR');
     setFormDesc('');
     setFormActive(true);
@@ -121,6 +131,10 @@ export function PackagesView() {
     setFormRateLimit(pkg.rate_limit);
     setFormValidity(pkg.validity_days);
     setFormPrice(Number(pkg.price));
+    setFormPrice1M(Number(pkg.price));
+    setFormPrice3M(Math.round(Number(pkg.price) * 2.85));
+    setFormPrice6M(Math.round(Number(pkg.price) * 5.4));
+    setFormPrice12M(Math.round(Number(pkg.price) * 10));
     setFormCurrency(pkg.currency || 'NPR');
     setFormDesc(pkg.description || '');
     setFormActive(pkg.is_active);
@@ -130,6 +144,21 @@ export function PackagesView() {
     setFormBurstThUl(pkg.burst_threshold_ul_mbps ? String(pkg.burst_threshold_ul_mbps) : '');
     setFormBurstTime(pkg.burst_time_seconds ? String(pkg.burst_time_seconds) : '16');
     setFormRadiusProfileId(pkg.radius_profile_id ? String(pkg.radius_profile_id) : '');
+
+    // Fetch existing custom duration prices
+    fetch(`/api/packages/${pkg.id}/prices`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.data?.length) {
+          j.data.forEach((p: any) => {
+            if (p.duration_months === 1) setFormPrice1M(Number(p.price));
+            if (p.duration_months === 3) setFormPrice3M(Number(p.price));
+            if (p.duration_months === 6) setFormPrice6M(Number(p.price));
+            if (p.duration_months === 12) setFormPrice12M(Number(p.price));
+          });
+        }
+      })
+      .catch(() => {});
 
     const interimAttr = pkg.attributes?.find((a) => a.attribute === 'Acct-Interim-Interval');
     setFormInterim(interimAttr?.value || '300');
@@ -168,7 +197,7 @@ export function PackagesView() {
         radius_profile_id: formRadiusProfileId ? Number(formRadiusProfileId) : null,
         rate_limit: formRateLimit.trim() || `${formDl}M/${formUl}M`,
         validity_days: Number(formValidity),
-        price: Number(formPrice),
+        price: Number(formPrice1M || formPrice),
         currency: formCurrency.trim(),
         description: formDesc.trim() || undefined,
         is_active: formActive,
@@ -192,6 +221,17 @@ export function PackagesView() {
       const json = await res.json();
       if (!res.ok) {
         throw new Error(json.error?.message || json.message || 'Failed to save package');
+      }
+
+      // Save independent multi-duration pricing tiers (1M, 3M, 6M, 12M)
+      const pkgId = json.data?.id || (editingPkg ? editingPkg.id : null);
+      if (pkgId) {
+        await Promise.all([
+          fetch(`/api/packages/${pkgId}/prices`, { method: 'POST', headers, body: JSON.stringify({ duration_months: 1, price: Number(formPrice1M), currency: formCurrency.trim() }) }),
+          fetch(`/api/packages/${pkgId}/prices`, { method: 'POST', headers, body: JSON.stringify({ duration_months: 3, price: Number(formPrice3M), currency: formCurrency.trim() }) }),
+          fetch(`/api/packages/${pkgId}/prices`, { method: 'POST', headers, body: JSON.stringify({ duration_months: 6, price: Number(formPrice6M), currency: formCurrency.trim() }) }),
+          fetch(`/api/packages/${pkgId}/prices`, { method: 'POST', headers, body: JSON.stringify({ duration_months: 12, price: Number(formPrice12M), currency: formCurrency.trim() }) }),
+        ]).catch(() => {});
       }
 
       setModalOpen(false);
@@ -640,6 +680,70 @@ export function PackagesView() {
                     onChange={(e) => setFormCurrency(e.target.value)}
                     className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                   />
+                </div>
+              </div>
+
+              {/* Multi-duration Pricing Grid */}
+              <div className="bg-muted/30 border border-border/80 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Multi-Duration Pricing ({formCurrency})
+                  </label>
+                  <span className="text-[11px] text-muted-foreground">Independently configured for recharge</span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">
+                      1 Month
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formPrice1M}
+                      onChange={(e) => setFormPrice1M(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">
+                      3 Months
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formPrice3M}
+                      onChange={(e) => setFormPrice3M(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">
+                      6 Months
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formPrice6M}
+                      onChange={(e) => setFormPrice6M(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">
+                      12 Months
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formPrice12M}
+                      onChange={(e) => setFormPrice12M(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
                 </div>
               </div>
 

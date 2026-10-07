@@ -5,7 +5,13 @@ import { Radio, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { RadiusActivityItem } from '@/types/api';
 
-export function RadiusActivityTable({ items }: { items: RadiusActivityItem[] }) {
+export function RadiusActivityTable({
+  items,
+  onViewSubscriber,
+}: {
+  items: RadiusActivityItem[];
+  onViewSubscriber?: (username: string) => void;
+}) {
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col justify-between">
       <div className="p-4 border-b border-border flex items-center justify-between">
@@ -37,7 +43,18 @@ export function RadiusActivityTable({ items }: { items: RadiusActivityItem[] }) 
               return (
                 <tr key={row.id} className="hover:bg-muted/40 transition-colors">
                   <td className="py-2.5 px-3 font-mono text-muted-foreground">{row.time}</td>
-                  <td className="py-2.5 px-3 font-semibold text-foreground">{row.username}</td>
+                  <td className="py-2.5 px-3 font-semibold text-foreground">
+                    {onViewSubscriber ? (
+                      <button
+                        onClick={() => onViewSubscriber(row.username)}
+                        className="text-primary hover:underline font-semibold text-left"
+                      >
+                        {row.username}
+                      </button>
+                    ) : (
+                      row.username
+                    )}
+                  </td>
                   <td className="py-2.5 px-3 font-mono text-muted-foreground">{row.nas}</td>
                   <td className="py-2.5 px-3 font-mono text-muted-foreground">{row.ipAddress}</td>
                   <td className="py-2.5 px-3">

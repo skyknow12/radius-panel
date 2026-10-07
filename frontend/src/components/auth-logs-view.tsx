@@ -16,7 +16,11 @@ import {
 } from 'lucide-react';
 import type { AuthLogItem } from '@/types/api';
 
-export function AuthLogsView() {
+interface AuthLogsViewProps {
+  onViewSubscriber?: (username: string) => void;
+}
+
+export function AuthLogsView({ onViewSubscriber }: AuthLogsViewProps = {}) {
   const [logs, setLogs] = React.useState<AuthLogItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
@@ -167,7 +171,16 @@ export function AuthLogsView() {
                         </div>
                       </td>
                       <td className="py-3 px-4 font-semibold text-foreground">
-                        {log.username}
+                        {onViewSubscriber ? (
+                          <button
+                            onClick={() => onViewSubscriber(log.username)}
+                            className="text-primary hover:underline font-semibold text-left"
+                          >
+                            {log.username}
+                          </button>
+                        ) : (
+                          <span>{log.username}</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 font-medium text-foreground">
                         {log.nas_name || log.calledstationid || '-'}
