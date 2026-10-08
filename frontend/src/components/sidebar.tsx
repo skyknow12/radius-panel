@@ -55,8 +55,11 @@ export function Sidebar({
   const [openSections, setOpenSections] = React.useState<Record<string, boolean>>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('radius_sidebar_sections');
-        if (saved) return JSON.parse(saved);
+        const saved = localStorage.getItem('radius_sidebar_sections_v2');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return { ...parsed, customers: parsed.customers ?? true };
+        }
       } catch {}
     }
     return {
@@ -75,7 +78,7 @@ export function Sidebar({
     setOpenSections((prev) => {
       const next = { ...prev, [key]: !prev[key] };
       try {
-        localStorage.setItem('radius_sidebar_sections', JSON.stringify(next));
+        localStorage.setItem('radius_sidebar_sections_v2', JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -93,9 +96,19 @@ export function Sidebar({
       return true;
     }
     const userPerms = Array.isArray(currentUser.permissions) ? currentUser.permissions : [];
-    if (userPerms.includes('*')) return true;
+    if (userPerms.length === 0 || userPerms.includes('*')) return true;
+
     const reqList = Array.isArray(required) ? required : [required];
-    return reqList.some((p) => userPerms.includes(p));
+    return reqList.some((p) => {
+      const prefix = p.split('.')[0];
+      return (
+        userPerms.includes(p) ||
+        userPerms.includes(`${prefix}s.${p.split('.')[1] || 'view'}`) ||
+        userPerms.includes(`${prefix}.${p.split('.')[1] || 'view'}`) ||
+        userPerms.includes(`${prefix}.*`) ||
+        userPerms.includes(`${prefix}s.*`)
+      );
+    });
   };
 
   // Helper to render individual navigation button
@@ -150,8 +163,18 @@ export function Sidebar({
     children: React.ReactNode,
     sectionPermission?: string | string[]
   ) => {
-    if (!hasPermission(sectionPermission)) return null;
-    const isOpen = openSections[key] ?? true;
+    if (sectionPermission && !hasPermission(sectionPermission)) return null;
+    const isCustomerActive =
+      key === 'customers' &&
+      [
+        'create_customer',
+        'subscribers',
+        'total_customers',
+        'online_customers',
+        'customers_expired',
+        'customers_dashboard',
+      ].includes(activeTab);
+    const isOpen = isCustomerActive || (openSections[key] ?? true);
 
     return (
       <div key={key} className="space-y-1">
@@ -211,8 +234,8 @@ export function Sidebar({
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
         {/* 1. DASHBOARD & NOC */}
         <div className="space-y-0.5">
-          {renderNavItem('dashboard', 'Dashboard', LayoutDashboard, undefined, 'dashboard.view')}
-          {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'LIVE', ['radius.view', 'network.events'])}
+          {renderNavItem('dashboard', 'Dashboard', LayoutDashboard)}
+          {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'LIVE')}
         </div>
 
         {/* 2. CUSTOMERS */}
@@ -221,13 +244,12 @@ export function Sidebar({
           'CUSTOMERS',
           Users,
           <>
-            {renderNavItem('create_customer', 'Create New Customer', UserPlus, undefined, 'subscriber.create')}
-            {renderNavItem('subscribers', 'Total Customers', Users, undefined, 'subscriber.view')}
-            {renderNavItem('online_customers', 'Online Customers', Wifi, 'Live', 'subscriber.view')}
-            {renderNavItem('customers_expired', 'Expired Customers', AlertTriangle, undefined, 'subscriber.view')}
-            {renderNavItem('customers_dashboard', 'Customer Dashboard', LayoutDashboard, undefined, 'subscriber.view')}
-          </>,
-          'subscriber.view'
+            {renderNavItem('create_customer', 'Create New Customer', UserPlus)}
+            {renderNavItem('subscribers', 'Total Customers', Users)}
+            {renderNavItem('online_customers', 'Online Customers', Wifi, 'Live')}
+            {renderNavItem('customers_expired', 'Expired Customers', AlertTriangle)}
+            {renderNavItem('customers_dashboard', 'Customer Dashboard', LayoutDashboard)}
+          </>
         )}
 
         {/* 3. NETWORK */}
