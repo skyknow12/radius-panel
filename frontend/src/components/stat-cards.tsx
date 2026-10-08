@@ -10,6 +10,7 @@ import {
   CheckCircle,
   XCircle,
   Server,
+  LifeBuoy,
   ArrowUpRight,
   ArrowDownRight,
 } from 'lucide-react';
@@ -21,21 +22,23 @@ const ICONS: Record<string, React.ElementType> = {
   online_users: Wifi,
   active_packages: Package,
   todays_revenue: DollarSign,
+  open_tickets: LifeBuoy,
   radius_requests: Radio,
   auth_success_rate: CheckCircle,
   auth_failure_rate: XCircle,
   nas_devices: Server,
 };
 
-const TAB_MAP: Record<string, string> = {
-  total_subscribers: 'subscribers',
-  online_users: 'sessions',
-  active_packages: 'packages',
-  todays_revenue: 'reports',
-  radius_requests: 'auth_logs',
-  auth_success_rate: 'auth_logs',
-  auth_failure_rate: 'auth_logs',
-  nas_devices: 'nas_devices',
+const TAB_MAP: Record<string, { tab: string; query?: Record<string, string> }> = {
+  total_subscribers: { tab: 'subscribers' },
+  online_users: { tab: 'online_customers' },
+  active_packages: { tab: 'packages' },
+  todays_revenue: { tab: 'billing_transactions', query: { period: 'today' } },
+  open_tickets: { tab: 'tickets', query: { status: 'OPEN' } },
+  radius_requests: { tab: 'auth_logs' },
+  auth_success_rate: { tab: 'auth_logs' },
+  auth_failure_rate: { tab: 'auth_logs' },
+  nas_devices: { tab: 'nas_devices' },
 };
 
 export function StatCardsGrid({
@@ -43,7 +46,7 @@ export function StatCardsGrid({
   onNavigate,
 }: {
   stats: StatCardType[];
-  onNavigate?: (tab: string) => void;
+  onNavigate?: (tab: string, query?: Record<string, string>) => void;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -51,24 +54,24 @@ export function StatCardsGrid({
         const IconComponent = ICONS[stat.key] || Radio;
         const isUp = (stat.changePct ?? 0) >= 0;
         const isPositiveTone = stat.positiveIsGood ? isUp : !isUp;
-        const targetTab = TAB_MAP[stat.key];
+        const target = TAB_MAP[stat.key];
 
         return (
           <div
             key={stat.key}
-            role={onNavigate && targetTab ? 'button' : undefined}
-            tabIndex={onNavigate && targetTab ? 0 : undefined}
-            onClick={() => onNavigate && targetTab && onNavigate(targetTab)}
+            role={onNavigate && target ? 'button' : undefined}
+            tabIndex={onNavigate && target ? 0 : undefined}
+            onClick={() => onNavigate && target && onNavigate(target.tab, target.query)}
             onKeyDown={(e) => {
-              if ((e.key === 'Enter' || e.key === ' ') && onNavigate && targetTab) {
-                onNavigate(targetTab);
+              if ((e.key === 'Enter' || e.key === ' ') && onNavigate && target) {
+                onNavigate(target.tab, target.query);
               }
             }}
             className={cn(
               'rounded-xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden text-left',
-              onNavigate && targetTab && 'cursor-pointer hover:scale-[1.01]'
+              onNavigate && target && 'cursor-pointer hover:scale-[1.01]'
             )}
-            title={targetTab ? `Click to view ${targetTab.replace('_', ' ')}` : undefined}
+            title={target ? `Click to view ${target.tab.replace(/_/g, ' ')}` : undefined}
           >
             {/* Top row: Label & Icon */}
             <div className="flex items-center justify-between">

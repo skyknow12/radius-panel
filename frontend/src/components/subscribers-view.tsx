@@ -39,9 +39,25 @@ import { SubscriberOwnershipModal } from './subscriber-ownership-modal';
 
 interface SubscribersViewProps {
   onOpenSubscriberDetails?: (sub: SubscriberItem) => void;
+  initialStatus?: string;
+  initialExpiry?: string;
+  initialOnline?: 'all' | 'true' | 'false';
+  initialBranch?: string;
+  initialPackage?: string;
+  initialSearch?: string;
+  autoOpenCreate?: boolean;
 }
 
-export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProps) {
+export function SubscribersView({
+  onOpenSubscriberDetails,
+  initialStatus,
+  initialExpiry,
+  initialOnline,
+  initialBranch,
+  initialPackage,
+  initialSearch,
+  autoOpenCreate,
+}: SubscribersViewProps) {
   const [subscribers, setSubscribers] = React.useState<SubscriberItem[]>([]);
   const [packages, setPackages] = React.useState<PackageItem[]>([]);
   const [nasDevices, setNasDevices] = React.useState<NasDeviceItem[]>([]);
@@ -50,13 +66,14 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
   const [meta, setMeta] = React.useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
 
   // Filters & Search
-  const [search, setSearch] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState('all');
-  const [packageFilter, setPackageFilter] = React.useState<string>('all');
+  const [search, setSearch] = React.useState(initialSearch || '');
+  const [statusFilter, setStatusFilter] = React.useState(initialStatus || 'all');
+  const [packageFilter, setPackageFilter] = React.useState<string>(initialPackage || 'all');
   const [ownershipFilter, setOwnershipFilter] = React.useState<string>('all');
-  const [onlineFilter, setOnlineFilter] = React.useState<'all' | 'true' | 'false'>('all');
+  const [onlineFilter, setOnlineFilter] = React.useState<'all' | 'true' | 'false'>(initialOnline || 'all');
   const [connTypeFilter, setConnTypeFilter] = React.useState('all');
-  const [expiryFilter, setExpiryFilter] = React.useState('all');
+  const [branchFilter, setBranchFilter] = React.useState(initialBranch || 'all');
+  const [expiryFilter, setExpiryFilter] = React.useState(initialExpiry || 'all');
   const [sortBy, setSortBy] = React.useState('created_at');
   const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc');
 
@@ -72,7 +89,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
   const [ownershipModalSub, setOwnershipModalSub] = React.useState<SubscriberItem | null>(null);
 
   // Modals & Actions
-  const [modalOpen, setModalOpen] = React.useState(false);
+  const [modalOpen, setModalOpen] = React.useState(autoOpenCreate || false);
   const [editingSub, setEditingSub] = React.useState<SubscriberItem | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<number | null>(null);
   const [actionNotice, setActionNotice] = React.useState<string | null>(null);
@@ -138,6 +155,8 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
       if (ownershipFilter !== 'all') params.set('ownership_type', ownershipFilter);
       if (onlineFilter !== 'all') params.set('is_online', onlineFilter);
       if (connTypeFilter !== 'all') params.set('connection_type', connTypeFilter);
+      if (branchFilter !== 'all') params.set('branch', branchFilter);
+      if (expiryFilter !== 'all') params.set('expiry_status', expiryFilter);
       params.set('sort_by', sortBy);
       params.set('sort_dir', sortDir);
 
@@ -159,7 +178,7 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
   React.useEffect(() => {
     fetchSubscribers(1);
     setSelectedIds([]);
-  }, [search, statusFilter, packageFilter, ownershipFilter, onlineFilter, connTypeFilter, sortBy, sortDir]);
+  }, [search, statusFilter, packageFilter, ownershipFilter, onlineFilter, connTypeFilter, branchFilter, expiryFilter, sortBy, sortDir]);
 
   const toggleSelectAll = () => {
     if (selectedIds.length === subscribers.length) {
@@ -528,6 +547,28 @@ export function SubscribersView({ onOpenSubscriberDetails }: SubscribersViewProp
           <option value="head_office">Head Office</option>
           <option value="branch">Branch Owned</option>
           <option value="reseller">Reseller Owned</option>
+        </select>
+
+        <select
+          value={onlineFilter}
+          onChange={(e) => setOnlineFilter(e.target.value as any)}
+          className="px-3 py-2 rounded-xl bg-card border border-border text-xs font-medium text-foreground outline-none"
+        >
+          <option value="all">All Online States</option>
+          <option value="true">Online Now</option>
+          <option value="false">Offline</option>
+        </select>
+
+        <select
+          value={expiryFilter}
+          onChange={(e) => setExpiryFilter(e.target.value)}
+          className="px-3 py-2 rounded-xl bg-card border border-border text-xs font-medium text-foreground outline-none"
+        >
+          <option value="all">All Expiries</option>
+          <option value="7days">Expiring Soon (7 Days)</option>
+          <option value="expired">Already Expired</option>
+          <option value="today">Expiring Today</option>
+          <option value="active">Active (Not Expired)</option>
         </select>
       </div>
 

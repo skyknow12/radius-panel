@@ -131,6 +131,9 @@ export interface SubscriberListQuery {
   reseller_id?: number;
   organization_id?: number;
   ownership_type?: string;
+  expiry_status?: string;
+  created_from?: string;
+  created_to?: string;
   sort_by?: string;
   sort_dir?: 'asc' | 'desc';
 }
@@ -224,6 +227,7 @@ export const subscriberRepository = {
         s.customer_id ILIKE $${idx} OR
         s.full_name ILIKE $${idx} OR
         s.phone ILIKE $${idx} OR
+        s.email ILIKE $${idx} OR
         s.mac_address ILIKE $${idx} OR
         host(s.static_ip) ILIKE $${idx}
       )`);
@@ -234,11 +238,37 @@ export const subscriberRepository = {
     if (params.status && params.status !== 'all') {
       if (params.status === 'active') {
         conditions.push(`s.status IN ('active', 'enabled')`);
+      } else if (params.status === 'expired') {
+        conditions.push(`(s.status = 'expired' OR (s.expiry_date IS NOT NULL AND s.expiry_date < NOW()))`);
       } else {
         conditions.push(`s.status = $${idx}`);
         values.push(params.status);
         idx++;
       }
+    }
+
+    if (params.expiry_status && params.expiry_status !== 'all') {
+      if (params.expiry_status === 'expiring_soon' || params.expiry_status === '7days') {
+        conditions.push(`s.expiry_date IS NOT NULL AND s.expiry_date >= NOW() AND s.expiry_date <= (NOW() + INTERVAL '7 days')`);
+      } else if (params.expiry_status === 'expired') {
+        conditions.push(`s.expiry_date IS NOT NULL AND s.expiry_date < NOW()`);
+      } else if (params.expiry_status === 'today') {
+        conditions.push(`s.expiry_date IS NOT NULL AND s.expiry_date >= CURRENT_DATE AND s.expiry_date < (CURRENT_DATE + INTERVAL '1 day')`);
+      } else if (params.expiry_status === 'active') {
+        conditions.push(`(s.expiry_date IS NULL OR s.expiry_date >= NOW())`);
+      }
+    }
+
+    if (params.created_from) {
+      conditions.push(`s.created_at >= $${idx}::timestamp`);
+      values.push(params.created_from);
+      idx++;
+    }
+
+    if (params.created_to) {
+      conditions.push(`s.created_at <= ($${idx}::date + INTERVAL '1 day')::timestamp`);
+      values.push(params.created_to);
+      idx++;
     }
 
     if (params.package_id) {
@@ -1209,5 +1239,131 @@ export const subscriberRepository = {
   async countSubscribers(): Promise<number> {
     const { rows } = await query<{ count: string }>('SELECT COUNT(*) AS count FROM subscribers');
     return Number(rows[0]?.count || 0);
+  },
+
+  async getCustomerDashboardMetrics(period = 'today', from?: string, to?: string) {
+    const [countsRes, onlineRes, expiringSoonRes] = await Promise.all([
+      query<{
+        total: string;
+        active: string;
+        suspended: string;
+        expired: string;
+      }>(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status IN ('active', 'enabled'))::int AS active,
+          COUNT(*) FILTER (WHERE status = 'suspended')::int AS suspended,
+          COUNT(*) FILTER (WHERE expiry_date IS NOT NULL AND expiry_date < NOW())::int AS expired
+        FROM subscribers
+      `),
+      query<{ online: string }>(`
+        SELECT COUNT(DISTINCT lower(username))::int AS online
+        FROM radacct
+        WHERE acctstoptime IS NULL
+      `),
+      query<{ expiring_soon: string }>(`
+        SELECT COUNT(*)::int AS expiring_soon
+        FROM subscribers
+        WHERE expiry_date IS NOT NULL
+          AND expiry_date >= NOW()
+          AND expiry_date <= (NOW() + INTERVAL '7 days')
+      `),
+    ]);
+
+    const counts = countsRes.rows[0] || { total: '0', active: '0', suspended: '0', expired: '0' };
+    const online = onlineRes.rows[0]?.online || '0';
+    const expiringSoon = expiringSoonRes.rows[0]?.expiring_soon || '0';
+
+    let subDateWhere = '1=1';
+    let rechDateWhere = '1=1';
+    const dateValues: any[] = [];
+
+    if (period === 'today') {
+      subDateWhere = `created_at >= CURRENT_DATE`;
+      rechDateWhere = `recharge_date >= CURRENT_DATE`;
+    } else if (period === 'yesterday') {
+      subDateWhere = `created_at >= CURRENT_DATE - INTERVAL '1 day' AND created_at < CURRENT_DATE`;
+      rechDateWhere = `recharge_date >= CURRENT_DATE - INTERVAL '1 day' AND recharge_date < CURRENT_DATE`;
+    } else if (period === 'this_week') {
+      subDateWhere = `created_at >= date_trunc('week', CURRENT_DATE)`;
+      rechDateWhere = `recharge_date >= date_trunc('week', CURRENT_DATE)`;
+    } else if (period === 'last_week') {
+      subDateWhere = `created_at >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week') AND created_at < date_trunc('week', CURRENT_DATE)`;
+      rechDateWhere = `recharge_date >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week') AND recharge_date < date_trunc('week', CURRENT_DATE)`;
+    } else if (period === 'this_month') {
+      subDateWhere = `created_at >= date_trunc('month', CURRENT_DATE)`;
+      rechDateWhere = `recharge_date >= date_trunc('month', CURRENT_DATE)`;
+    } else if (period === 'last_month') {
+      subDateWhere = `created_at >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND created_at < date_trunc('month', CURRENT_DATE)`;
+      rechDateWhere = `recharge_date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND recharge_date < date_trunc('month', CURRENT_DATE)`;
+    } else if (period === 'this_year') {
+      subDateWhere = `created_at >= date_trunc('year', CURRENT_DATE)`;
+      rechDateWhere = `recharge_date >= date_trunc('year', CURRENT_DATE)`;
+    } else if (period === 'custom' && from && to) {
+      subDateWhere = `created_at >= $1::date AND created_at < ($2::date + INTERVAL '1 day')`;
+      rechDateWhere = `recharge_date >= $1::date AND recharge_date < ($2::date + INTERVAL '1 day')`;
+      dateValues.push(from, to);
+    }
+
+    const [newSubsRes, rechargesRes, pkgBreakdownRes, branchBreakdownRes, connBreakdownRes, recentSubsRes] = await Promise.all([
+      query<{ count: string }>(`SELECT COUNT(*)::int AS count FROM subscribers WHERE ${subDateWhere}`, dateValues),
+      query<{ count: string; revenue: string }>(`
+        SELECT COUNT(*)::int AS count, COALESCE(SUM(final_amount), 0)::numeric AS revenue
+        FROM recharge_transactions
+        WHERE status = 'COMPLETED' AND ${rechDateWhere}
+      `, dateValues),
+      query<{ package_name: string; count: string }>(`
+        SELECT COALESCE(p.name, 'No Package') AS package_name, COUNT(s.id)::int AS count
+        FROM subscribers s
+        LEFT JOIN packages p ON p.id = s.current_package_id
+        GROUP BY p.name
+        ORDER BY count DESC
+        LIMIT 6
+      `),
+      query<{ branch_name: string; count: string }>(`
+        SELECT COALESCE(b.name, s.branch, 'Unassigned') AS branch_name, COUNT(s.id)::int AS count
+        FROM subscribers s
+        LEFT JOIN branches b ON b.id = s.branch_id
+        GROUP BY COALESCE(b.name, s.branch, 'Unassigned')
+        ORDER BY count DESC
+        LIMIT 6
+      `),
+      query<{ connection_type: string; count: string }>(`
+        SELECT COALESCE(connection_type, 'PPPoE') AS connection_type, COUNT(*)::int AS count
+        FROM subscribers
+        GROUP BY connection_type
+        ORDER BY count DESC
+      `),
+      query<SubscriberRow>(`
+        SELECT s.id, s.customer_id, s.username, s.full_name, s.status, s.connection_type,
+               s.created_at, s.expiry_date, p.name AS package_name
+        FROM subscribers s
+        LEFT JOIN packages p ON p.id = s.current_package_id
+        ORDER BY s.created_at DESC
+        LIMIT 5
+      `),
+    ]);
+
+    return {
+      // Real-time metrics
+      totalCustomers: Number(counts.total),
+      onlineCustomers: Number(online),
+      activeCustomers: Number(counts.active),
+      suspendedCustomers: Number(counts.suspended),
+      expiredCustomers: Number(counts.expired),
+      expiringSoonCustomers: Number(expiringSoon),
+      // Date-range metrics
+      period,
+      from,
+      to,
+      newCustomers: Number(newSubsRes.rows[0]?.count || 0),
+      newRecharges: Number(rechargesRes.rows[0]?.count || 0),
+      rechargeRevenue: Number(rechargesRes.rows[0]?.revenue || 0),
+      // Breakdowns
+      packageBreakdown: pkgBreakdownRes.rows.map((r) => ({ packageName: r.package_name, count: Number(r.count) })),
+      branchBreakdown: branchBreakdownRes.rows.map((r) => ({ branchName: r.branch_name, count: Number(r.count) })),
+      connectionTypeBreakdown: connBreakdownRes.rows.map((r) => ({ connectionType: r.connection_type, count: Number(r.count) })),
+      recentCustomers: recentSubsRes.rows,
+    };
   },
 };

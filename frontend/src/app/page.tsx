@@ -15,6 +15,8 @@ import { RadiusTestModal } from '@/components/radius-test-modal';
 import { LoginView } from '@/components/login-view';
 import { NasView } from '@/components/nas-view';
 import { SubscribersView } from '@/components/subscribers-view';
+import { CustomerDashboardView } from '@/components/customer-dashboard-view';
+import { OnlineCustomersView } from '@/components/online-customers-view';
 import { PackagesView } from '@/components/packages-view';
 import { OnlineUsersView } from '@/components/online-users-view';
 import { AuthLogsView } from '@/components/auth-logs-view';
@@ -51,6 +53,7 @@ export default function DashboardPage() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
   const [collapsed, setCollapsed] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState('dashboard');
+  const [urlParams, setUrlParams] = React.useState<Record<string, string>>({});
   const [range, setRange] = React.useState<TimeRange>('24h');
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -60,6 +63,43 @@ export default function DashboardPage() {
   const [notice, setNotice] = React.useState<string | null>(null);
   const [nasFilterForSessions, setNasFilterForSessions] = React.useState<string | null>(null);
   const [billingExpiryFilter, setBillingExpiryFilter] = React.useState<string>('today');
+
+  // Sync state with URL params on mount & popstate
+  React.useEffect(() => {
+    const handleUrlChange = () => {
+      if (typeof window === 'undefined') return;
+      const searchParams = new URLSearchParams(window.location.search);
+      const tab = searchParams.get('tab');
+      if (tab) setActiveTab(tab);
+
+      const paramsObj: Record<string, string> = {};
+      searchParams.forEach((val, key) => {
+        if (key !== 'tab') paramsObj[key] = val;
+      });
+      setUrlParams(paramsObj);
+    };
+
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
+
+  const handleNavigate = (tab: string, queryParams?: Record<string, string>) => {
+    setActiveTab(tab);
+    setUrlParams(queryParams || {});
+
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams();
+      sp.set('tab', tab);
+      if (queryParams) {
+        Object.entries(queryParams).forEach(([k, v]) => {
+          if (v) sp.set(k, v);
+        });
+      }
+      const newUrl = `${window.location.pathname}?${sp.toString()}`;
+      window.history.pushState(null, '', newUrl);
+    }
+  };
 
   // Live state from backend
   const [dashboardData, setDashboardData] = React.useState<any>(null);
@@ -232,8 +272,9 @@ export default function DashboardPage() {
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleNavigate}
         collapsed={collapsed}
+        currentUser={currentUser}
         onNavigateNotice={handleNextModuleNotice}
       />
 
@@ -300,11 +341,55 @@ export default function DashboardPage() {
           )}
 
           {/* Conditional View: Dashboard vs Operations vs Billing Tabs */}
-          {activeTab === 'billing_dashboard' ? (
+          {activeTab === 'customers_dashboard' ? (
+            <CustomerDashboardView
+              onNavigate={handleNavigate}
+              onOpenSubscriber={(id) => setSubscriberProfileId(id)}
+              onOpenCreateCustomer={() => handleNavigate('subscribers', { create: 'true' })}
+              onOpenSearch={() => setSearchOpen(true)}
+            />
+          ) : activeTab === 'online_customers' ? (
+            <OnlineCustomersView
+              filterNasIp={nasFilterForSessions}
+              onClearNasFilter={() => setNasFilterForSessions(null)}
+              onViewSubscriber={handleOpenSubscriberByUsername}
+            />
+          ) : activeTab === 'create_customer' ? (
+            <SubscribersView
+              autoOpenCreate={true}
+              onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
+            />
+          ) : activeTab === 'customers_expiring_soon' ? (
+            <SubscribersView
+              initialExpiry="7days"
+              onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
+            />
+          ) : activeTab === 'customers_expired' ? (
+            <SubscribersView
+              initialStatus="expired"
+              onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
+            />
+          ) : activeTab === 'customers_search' ? (
+            <SubscribersView
+              initialSearch={urlParams.search}
+              onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
+            />
+          ) : activeTab === 'subscribers' ? (
+            <SubscribersView
+              initialStatus={urlParams.status}
+              initialExpiry={urlParams.expiry_status}
+              initialOnline={urlParams.online as any}
+              initialBranch={urlParams.branch}
+              initialPackage={urlParams.package_id}
+              initialSearch={urlParams.search}
+              autoOpenCreate={urlParams.create === 'true'}
+              onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
+            />
+          ) : activeTab === 'billing_dashboard' ? (
             <BillingDashboardView
               onNavigate={(tab, filter) => {
                 if (filter) setBillingExpiryFilter(filter);
-                setActiveTab(tab);
+                handleNavigate(tab);
               }}
               onViewSubscriber={handleOpenSubscriberByUsername}
             />
@@ -324,36 +409,36 @@ export default function DashboardPage() {
           ) : activeTab === 'noc_dashboard' ? (
             <NocDashboardView
               onViewSubscriber={handleOpenSubscriberByUsername}
-              onNavigate={(tab) => setActiveTab(tab)}
+              onNavigate={(tab) => handleNavigate(tab)}
             />
           ) : activeTab === 'alerts' ? (
             <AlertsView />
           ) : activeTab === 'network_events' ? (
             <NetworkEventsView onViewSubscriber={handleOpenSubscriberByUsername} />
-          ) : activeTab === 'reports' ? (
-            <ReportsView />
+          ) : activeTab === 'reports' || activeTab === 'audit_logs' ? (
+            <ReportsView currentUser={currentUser} onNavigate={handleNavigate} />
           ) : activeTab === 'nas_devices' ? (
             <NasView
               onViewSessions={(ip) => {
                 setNasFilterForSessions(ip);
-                setActiveTab('sessions');
+                handleNavigate('sessions');
               }}
             />
           ) : activeTab === 'organization_dashboard' ? (
             <OrganizationDashboardView
-              onNavigate={(tab) => setActiveTab(tab)}
+              onNavigate={(tab) => handleNavigate(tab)}
               currentUser={currentUser}
             />
           ) : activeTab === 'branches' ? (
             <BranchesView
-              onViewSubscribers={() => setActiveTab('subscribers')}
-              onViewWallet={() => setActiveTab('wallets')}
+              onViewSubscribers={() => handleNavigate('subscribers')}
+              onViewWallet={() => handleNavigate('wallets')}
               currentUser={currentUser}
             />
           ) : activeTab === 'resellers' ? (
             <ResellersView
-              onViewCustomers={() => setActiveTab('subscribers')}
-              onViewWallet={() => setActiveTab('wallets')}
+              onViewCustomers={() => handleNavigate('subscribers')}
+              onViewWallet={() => handleNavigate('wallets')}
               currentUser={currentUser}
             />
           ) : activeTab === 'wallets' ? (
@@ -378,8 +463,6 @@ export default function DashboardPage() {
             <UserManagementView currentUser={currentUser} />
           ) : activeTab === 'roles' ? (
             <RolesPermissionsView currentUser={currentUser} />
-          ) : activeTab === 'subscribers' ? (
-            <SubscribersView />
           ) : activeTab === 'packages' ? (
             <PackagesView />
           ) : activeTab === 'radius_profiles' ? (
@@ -396,7 +479,7 @@ export default function DashboardPage() {
             />
           ) : activeTab === 'auth_logs' ? (
             <AuthLogsView onViewSubscriber={handleOpenSubscriberByUsername} />
-          ) : activeTab === 'radius' || activeTab === 'radius_overview' ? (
+          ) : activeTab === 'radius' || activeTab === 'radius_overview' || activeTab === 'system_health' ? (
             dashboardData && (
               <RadiusOverviewView
                 authStats={dashboardData.authStatistics}
@@ -422,7 +505,7 @@ export default function DashboardPage() {
                 {/* 1. Statistic Cards */}
                 <StatCardsGrid
                   stats={dashboardData.stats}
-                  onNavigate={(tab) => setActiveTab(tab)}
+                  onNavigate={handleNavigate}
                 />
 
                 {/* 2. Network Overview Chart & Authentication Statistics */}
@@ -448,7 +531,7 @@ export default function DashboardPage() {
                   <OnlineUsersWidget
                     sessions={dashboardData.onlineUsers}
                     onViewSubscriber={handleOpenSubscriberByUsername}
-                    onViewAll={() => setActiveTab('sessions')}
+                    onViewAll={() => handleNavigate('online_customers')}
                   />
                 </div>
 
@@ -476,7 +559,7 @@ export default function DashboardPage() {
       <GlobalSearchDialog
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onNavigate={setActiveTab}
+        onNavigate={handleNavigate}
         onSelectSubscriber={handleOpenSubscriberById}
         onSelectNas={() => {
           setActiveTab('nas_devices');

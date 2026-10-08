@@ -33,10 +33,12 @@ export interface StatCard {
     | 'online_users'
     | 'active_packages'
     | 'todays_revenue'
+    | 'open_tickets'
     | 'radius_requests'
     | 'auth_success_rate'
     | 'auth_failure_rate'
-    | 'nas_devices';
+    | 'nas_devices'
+    | string;
   label: string;
   value: number;
   unit?: 'percent' | 'currency' | 'count';

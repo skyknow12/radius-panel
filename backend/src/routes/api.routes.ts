@@ -454,6 +454,17 @@ const updateSubscriberSchema = z.object({
 });
 
 apiRouter.get(
+  '/customers/dashboard',
+  asyncHandler(async (req, res) => {
+    const period = (req.query.period as string) || 'today';
+    const from = req.query.from as string;
+    const to = req.query.to as string;
+    const metrics = await subscriberRepository.getCustomerDashboardMetrics(period, from, to);
+    res.json(envelope(metrics, 'live'));
+  })
+);
+
+apiRouter.get(
   '/subscribers',
   asyncHandler(async (req, res) => {
     const page = Number(req.query.page) || 1;
@@ -469,6 +480,9 @@ apiRouter.get(
     let reseller_id = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
     const ownership_type = req.query.ownership_type as string;
     const ip_pool_id = req.query.ip_pool_id ? Number(req.query.ip_pool_id) : undefined;
+    const expiry_status = req.query.expiry_status as string;
+    const created_from = req.query.created_from as string;
+    const created_to = req.query.created_to as string;
     const sort_by = req.query.sort_by as string;
     const sort_dir = (req.query.sort_dir as 'asc' | 'desc') || 'desc';
 
@@ -496,6 +510,9 @@ apiRouter.get(
       reseller_id,
       ownership_type,
       ip_pool_id,
+      expiry_status,
+      created_from,
+      created_to,
       sort_by,
       sort_dir,
     });

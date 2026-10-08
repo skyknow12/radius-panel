@@ -305,6 +305,10 @@ export interface SessionItem {
   username: string;
   customer_name: string | null;
   customer_id: string | null;
+  package_name?: string | null;
+  ipv6_prefix?: string | null;
+  branch?: string | null;
+  reseller_name?: string | null;
   framedipaddress: string | null;
   nasipaddress: string;
   nas_name: string | null;
@@ -315,6 +319,25 @@ export interface SessionItem {
   acctoutputoctets: number;
   callingstationid: string | null;
   status: 'online' | 'stopped';
+}
+
+export interface CustomerDashboardMetrics {
+  totalCustomers: number;
+  onlineCustomers: number;
+  activeCustomers: number;
+  suspendedCustomers: number;
+  expiredCustomers: number;
+  expiringSoonCustomers: number;
+  period: string;
+  from?: string;
+  to?: string;
+  newCustomers: number;
+  newRecharges: number;
+  rechargeRevenue: number;
+  packageBreakdown: { packageName: string; count: number }[];
+  branchBreakdown: { branchName: string; count: number }[];
+  connectionTypeBreakdown: { connectionType: string; count: number }[];
+  recentCustomers: SubscriberItem[];
 }
 
 export interface AuthLogItem {

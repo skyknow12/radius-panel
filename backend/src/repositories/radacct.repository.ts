@@ -9,6 +9,10 @@ export interface ActiveSessionRow {
   username: string;
   customer_name: string | null;
   customer_id: string | null;
+  package_name?: string | null;
+  ipv6_prefix?: string | null;
+  branch?: string | null;
+  reseller_name?: string | null;
   framedipaddress: string | null;
   nasipaddress: string;
   nas_name: string | null;
@@ -92,6 +96,10 @@ export const radAcctRepository = {
              r.username,
              s.full_name AS customer_name,
              s.customer_id,
+             p.name AS package_name,
+             s.ipv6_prefix,
+             s.branch,
+             res.name AS reseller_name,
              host(r.framedipaddress) AS framedipaddress,
              host(r.nasipaddress) AS nasipaddress,
              COALESCE(nd.name, host(r.nasipaddress)) AS nas_name,
@@ -104,6 +112,8 @@ export const radAcctRepository = {
              'online' AS status
         FROM radacct r
         LEFT JOIN subscribers s ON lower(s.username) = lower(r.username)
+        LEFT JOIN packages p ON p.id = s.current_package_id
+        LEFT JOIN resellers res ON res.id = s.reseller_id
         LEFT JOIN nas_devices nd ON nd.ip_address = r.nasipaddress
        WHERE ${whereClause}
        ORDER BY r.acctstarttime DESC NULLS LAST
@@ -136,6 +146,10 @@ export const radAcctRepository = {
               r.username,
               s.full_name AS customer_name,
               s.customer_id,
+              p.name AS package_name,
+              s.ipv6_prefix,
+              s.branch,
+              res.name AS reseller_name,
               host(r.framedipaddress) AS framedipaddress,
               host(r.nasipaddress) AS nasipaddress,
               COALESCE(nd.name, host(r.nasipaddress)) AS nas_name,
@@ -148,6 +162,8 @@ export const radAcctRepository = {
               CASE WHEN r.acctstoptime IS NULL THEN 'online' ELSE 'stopped' END AS status
          FROM radacct r
          LEFT JOIN subscribers s ON lower(s.username) = lower(r.username)
+         LEFT JOIN packages p ON p.id = s.current_package_id
+         LEFT JOIN resellers res ON res.id = s.reseller_id
          LEFT JOIN nas_devices nd ON nd.ip_address = r.nasipaddress
         WHERE r.radacctid = $1::bigint OR r.acctsessionid = $1`,
       [id],

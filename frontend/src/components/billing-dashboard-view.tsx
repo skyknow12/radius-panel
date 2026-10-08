@@ -330,6 +330,57 @@ export function BillingDashboardView({
             </div>
           </div>
 
+          {/* Wallets, Credit Lines, and Commissions Quick Navigation */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div
+              onClick={() => onNavigate('wallets')}
+              className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-400">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-foreground block group-hover:text-primary transition-colors">Channel Wallets</span>
+                  <span className="text-[11px] text-muted-foreground">Prepaid balances & top-ups</span>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+            </div>
+
+            <div
+              onClick={() => onNavigate('wallets')}
+              className="p-4 rounded-2xl bg-card border border-border hover:border-indigo-500/50 hover:shadow-md transition-all cursor-pointer group flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-foreground block group-hover:text-indigo-400 transition-colors">Outstanding Credit Lines</span>
+                  <span className="text-[11px] text-muted-foreground">Postpaid limits & exposure</span>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
+            </div>
+
+            <div
+              onClick={() => onNavigate('commission_report')}
+              className="p-4 rounded-2xl bg-card border border-border hover:border-emerald-500/50 hover:shadow-md transition-all cursor-pointer group flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-foreground block group-hover:text-emerald-400 transition-colors">Reseller Commissions</span>
+                  <span className="text-[11px] text-muted-foreground">Channel payouts & settlements</span>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+            </div>
+          </div>
+
           {/* Recent 10 Transactions Table */}
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between">

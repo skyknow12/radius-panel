@@ -3,6 +3,7 @@ import { radPostAuthRepository } from '../repositories/radpostauth.repository';
 import { nasRepository } from '../repositories/nas.repository';
 import { subscriberRepository } from '../repositories/subscriber.repository';
 import { packageRepository } from '../repositories/package.repository';
+import { query } from '../db/pool';
 import type {
   StatCard,
   NetworkOverviewPoint,
@@ -35,13 +36,30 @@ export const dashboardService = {
   },
 
   async getStats(): Promise<StatCard[]> {
-    const [liveSubscribersCount, liveOnlineCount, liveNasCount, livePackages, liveHasPostAuth] = await Promise.all([
+    const [
+      liveSubscribersCount,
+      liveOnlineCount,
+      liveNasCount,
+      livePackages,
+      liveHasPostAuth,
+      todayRevRes,
+      openTicketsRes,
+    ] = await Promise.all([
       subscriberRepository.countSubscribers(),
       radAcctRepository.countActive(),
       nasRepository.countDevices(),
       packageRepository.list(),
       radPostAuthRepository.hasAnyRows(),
+      query<{ sum: string }>(
+        `SELECT COALESCE(SUM(final_amount), 0)::text as sum FROM recharge_transactions WHERE status = 'COMPLETED' AND recharge_date >= CURRENT_DATE`
+      ).catch(() => ({ rows: [{ sum: '0' }] })),
+      query<{ count: string }>(
+        `SELECT COUNT(*)::text as count FROM tickets WHERE status = 'OPEN'`
+      ).catch(() => ({ rows: [{ count: '0' }] })),
     ]);
+
+    const todaysRevenue = parseFloat(todayRevRes.rows[0]?.sum || '0');
+    const openTicketsCount = parseInt(openTicketsRes.rows[0]?.count || '0', 10);
 
     let authSuccessRate = 0;
     let authFailureRate = 0;
@@ -91,11 +109,21 @@ export const dashboardService = {
       {
         key: 'todays_revenue',
         label: "Today's Revenue",
-        value: 0,
+        value: todaysRevenue,
         unit: 'currency',
         currency: 'NPR',
         changePct: null,
         positiveIsGood: true,
+        sparkline: null,
+        source: 'live',
+      },
+      {
+        key: 'open_tickets',
+        label: 'Open Support Tickets',
+        value: openTicketsCount,
+        unit: 'count',
+        changePct: null,
+        positiveIsGood: false,
         sparkline: null,
         source: 'live',
       },
