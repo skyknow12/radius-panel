@@ -345,7 +345,7 @@ export default function DashboardPage() {
             <CustomerDashboardView
               onNavigate={handleNavigate}
               onOpenSubscriber={(id) => setSubscriberProfileId(id)}
-              onOpenCreateCustomer={() => handleNavigate('subscribers', { create: 'true' })}
+              onOpenCreateCustomer={() => handleNavigate('create_customer')}
               onOpenSearch={() => setSearchOpen(true)}
             />
           ) : activeTab === 'online_customers' ? (
@@ -356,26 +356,31 @@ export default function DashboardPage() {
             />
           ) : activeTab === 'create_customer' ? (
             <SubscribersView
+              key="create_customer"
               autoOpenCreate={true}
               onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
             />
           ) : activeTab === 'customers_expiring_soon' ? (
             <SubscribersView
+              key="customers_expiring_soon"
               initialExpiry="7days"
               onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
             />
           ) : activeTab === 'customers_expired' ? (
             <SubscribersView
+              key="customers_expired"
               initialStatus="expired"
               onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
             />
           ) : activeTab === 'customers_search' ? (
             <SubscribersView
+              key="customers_search"
               initialSearch={urlParams.search}
               onOpenSubscriberDetails={(sub) => setSubscriberProfileId(sub.id)}
             />
-          ) : activeTab === 'subscribers' ? (
+          ) : activeTab === 'subscribers' || activeTab === 'total_customers' ? (
             <SubscribersView
+              key="subscribers"
               initialStatus={urlParams.status}
               initialExpiry={urlParams.expiry_status}
               initialOnline={urlParams.online as any}

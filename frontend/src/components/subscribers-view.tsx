@@ -32,6 +32,7 @@ import {
   Building2,
   Store,
   ShieldCheck,
+  RotateCcw,
 } from 'lucide-react';
 import type { SubscriberItem, PackageItem, NasDeviceItem, IpPoolItem } from '@/types/api';
 import { SubscriberProfileModal } from './subscriber-profile-modal';
@@ -62,6 +63,7 @@ export function SubscribersView({
   const [packages, setPackages] = React.useState<PackageItem[]>([]);
   const [nasDevices, setNasDevices] = React.useState<NasDeviceItem[]>([]);
   const [ipPools, setIpPools] = React.useState<IpPoolItem[]>([]);
+  const [branches, setBranches] = React.useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [meta, setMeta] = React.useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
 
@@ -123,10 +125,11 @@ export function SubscribersView({
 
   const fetchDependencies = async () => {
     try {
-      const [pkgRes, nasRes, poolRes] = await Promise.all([
+      const [pkgRes, nasRes, poolRes, branchRes] = await Promise.all([
         fetch('/api/packages'),
         fetch('/api/nas'),
         fetch('/api/ip-pools'),
+        fetch('/api/branches').catch(() => null),
       ]);
       if (pkgRes.ok) {
         const j = await pkgRes.json();
@@ -139,6 +142,10 @@ export function SubscribersView({
       if (poolRes.ok) {
         const j = await poolRes.json();
         setIpPools(j.data || []);
+      }
+      if (branchRes && branchRes.ok) {
+        const j = await branchRes.json();
+        setBranches(j.data || []);
       }
     } catch {}
   };
@@ -174,6 +181,37 @@ export function SubscribersView({
   React.useEffect(() => {
     fetchDependencies();
   }, []);
+
+  React.useEffect(() => {
+    if (initialStatus !== undefined) setStatusFilter(initialStatus || 'all');
+  }, [initialStatus]);
+
+  React.useEffect(() => {
+    if (initialExpiry !== undefined) setExpiryFilter(initialExpiry || 'all');
+  }, [initialExpiry]);
+
+  React.useEffect(() => {
+    if (initialOnline !== undefined) setOnlineFilter(initialOnline || 'all');
+  }, [initialOnline]);
+
+  React.useEffect(() => {
+    if (initialBranch !== undefined) setBranchFilter(initialBranch || 'all');
+  }, [initialBranch]);
+
+  React.useEffect(() => {
+    if (initialPackage !== undefined) setPackageFilter(initialPackage || 'all');
+  }, [initialPackage]);
+
+  React.useEffect(() => {
+    if (initialSearch !== undefined) setSearch(initialSearch || '');
+  }, [initialSearch]);
+
+  React.useEffect(() => {
+    if (autoOpenCreate) {
+      setEditingSub(null);
+      setModalOpen(true);
+    }
+  }, [autoOpenCreate]);
 
   React.useEffect(() => {
     fetchSubscribers(1);
@@ -410,13 +448,17 @@ export function SubscribersView({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold tracking-tight text-foreground">Subscribers Management</h2>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">
+              {statusFilter === 'expired' ? 'Expired Customers' : 'Total Customers'}
+            </h2>
             <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
-              {meta.total} Subscribers
+              {meta.total} {statusFilter === 'expired' ? 'Expired' : 'Customers'}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Full ISP subscriber profiles, package assignment, static IP provisioning, and FreeRADIUS authentication.
+            {statusFilter === 'expired'
+              ? 'Customer accounts with expired subscriptions pending renewal or follow-up.'
+              : 'Complete customer directory with package assignment, static IP provisioning, and FreeRADIUS authentication.'}
           </p>
         </div>
 
@@ -570,6 +612,46 @@ export function SubscribersView({
           <option value="today">Expiring Today</option>
           <option value="active">Active (Not Expired)</option>
         </select>
+
+        <select
+          value={branchFilter}
+          onChange={(e) => setBranchFilter(e.target.value)}
+          className="px-3 py-2 rounded-xl bg-card border border-border text-xs font-medium text-foreground outline-none"
+        >
+          <option value="all">All Branches</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.name}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+
+        {(search ||
+          statusFilter !== 'all' ||
+          packageFilter !== 'all' ||
+          connTypeFilter !== 'all' ||
+          ownershipFilter !== 'all' ||
+          onlineFilter !== 'all' ||
+          expiryFilter !== 'all' ||
+          branchFilter !== 'all') && (
+          <button
+            onClick={() => {
+              setSearch('');
+              setStatusFilter('all');
+              setPackageFilter('all');
+              setConnTypeFilter('all');
+              setOwnershipFilter('all');
+              setOnlineFilter('all');
+              setExpiryFilter('all');
+              setBranchFilter('all');
+            }}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border hover:bg-muted text-xs text-rose-500 font-medium transition-colors"
+            title="Reset all filters"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset Filters</span>
+          </button>
+        )}
       </div>
 
       {/* Subscribers Table */}

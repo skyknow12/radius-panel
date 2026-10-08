@@ -31,6 +31,9 @@ export interface SessionListQuery {
   search?: string;
   nas_ip?: string;
   username?: string;
+  package_id?: number | string;
+  branch?: string;
+  reseller_id?: number | string;
 }
 
 export const radAcctRepository = {
@@ -77,6 +80,24 @@ export const radAcctRepository = {
       idx++;
     }
 
+    if (params.package_id && params.package_id !== 'all') {
+      conditions.push(`s.current_package_id = $${idx}`);
+      values.push(Number(params.package_id));
+      idx++;
+    }
+
+    if (params.branch && params.branch !== 'all') {
+      conditions.push(`(s.branch ILIKE $${idx} OR br.name ILIKE $${idx})`);
+      values.push(params.branch);
+      idx++;
+    }
+
+    if (params.reseller_id && params.reseller_id !== 'all') {
+      conditions.push(`s.reseller_id = $${idx}`);
+      values.push(Number(params.reseller_id));
+      idx++;
+    }
+
     const whereClause = conditions.join(' AND ');
 
     // Total count
@@ -84,6 +105,7 @@ export const radAcctRepository = {
       SELECT COUNT(*) AS total
         FROM radacct r
         LEFT JOIN subscribers s ON lower(s.username) = lower(r.username)
+        LEFT JOIN branches br ON br.id = s.branch_id
        WHERE ${whereClause}
     `;
     const countRes = await query<{ total: string }>(countSql, values);
@@ -98,7 +120,7 @@ export const radAcctRepository = {
              s.customer_id,
              p.name AS package_name,
              s.ipv6_prefix,
-             s.branch,
+             COALESCE(br.name, s.branch) AS branch,
              res.name AS reseller_name,
              host(r.framedipaddress) AS framedipaddress,
              host(r.nasipaddress) AS nasipaddress,
@@ -113,6 +135,7 @@ export const radAcctRepository = {
         FROM radacct r
         LEFT JOIN subscribers s ON lower(s.username) = lower(r.username)
         LEFT JOIN packages p ON p.id = s.current_package_id
+        LEFT JOIN branches br ON br.id = s.branch_id
         LEFT JOIN resellers res ON res.id = s.reseller_id
         LEFT JOIN nas_devices nd ON nd.ip_address = r.nasipaddress
        WHERE ${whereClause}

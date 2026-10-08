@@ -874,8 +874,20 @@ apiRouter.get(
     const search = req.query.search as string;
     const nas_ip = req.query.nas_ip as string;
     const username = req.query.username as string;
+    const package_id = req.query.package_id as string;
+    const branch = req.query.branch as string;
+    const reseller_id = req.query.reseller_id as string;
 
-    const result = await radAcctRepository.listActiveSessions({ page, limit, search, nas_ip, username });
+    const result = await radAcctRepository.listActiveSessions({
+      page,
+      limit,
+      search,
+      nas_ip,
+      username,
+      package_id,
+      branch,
+      reseller_id,
+    });
     res.json(envelope(result.data, 'live', result.meta));
   })
 );

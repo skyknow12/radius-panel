@@ -209,9 +209,10 @@ export function Sidebar({
 
       {/* Nav List grouped by Business Sections */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
-        {/* 1. DASHBOARD */}
-        <div>
-          {renderNavItem('dashboard', 'Overview Dashboard', LayoutDashboard, undefined, 'dashboard.view')}
+        {/* 1. DASHBOARD & NOC */}
+        <div className="space-y-0.5">
+          {renderNavItem('dashboard', 'Dashboard', LayoutDashboard, undefined, 'dashboard.view')}
+          {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'LIVE', ['radius.view', 'network.events'])}
         </div>
 
         {/* 2. CUSTOMERS */}
@@ -220,13 +221,11 @@ export function Sidebar({
           'CUSTOMERS',
           Users,
           <>
-            {renderNavItem('customers_dashboard', 'Customer Dashboard', LayoutDashboard, undefined, 'subscriber.view')}
-            {renderNavItem('create_customer', 'Create Customer', UserPlus, undefined, 'subscriber.create')}
+            {renderNavItem('create_customer', 'Create New Customer', UserPlus, undefined, 'subscriber.create')}
+            {renderNavItem('subscribers', 'Total Customers', Users, undefined, 'subscriber.view')}
             {renderNavItem('online_customers', 'Online Customers', Wifi, 'Live', 'subscriber.view')}
-            {renderNavItem('subscribers', 'All Customers', Users, undefined, 'subscriber.view')}
-            {renderNavItem('customers_expiring_soon', 'Expiring Soon', Clock, undefined, 'subscriber.view')}
             {renderNavItem('customers_expired', 'Expired Customers', AlertTriangle, undefined, 'subscriber.view')}
-            {renderNavItem('customers_search', 'Customer Search', Search, undefined, 'subscriber.view')}
+            {renderNavItem('customers_dashboard', 'Customer Dashboard', LayoutDashboard, undefined, 'subscriber.view')}
           </>,
           'subscriber.view'
         )}
@@ -237,7 +236,6 @@ export function Sidebar({
           'NETWORK',
           Monitor,
           <>
-            {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'Live', ['radius.view', 'network.events'])}
             {renderNavItem('nas_devices', 'NAS / BNG Gateways', Server, undefined, 'radius.view')}
             {renderNavItem('radius_overview', 'RADIUS Overview', Radio, undefined, 'radius.view')}
             {renderNavItem('radius_profiles', 'RADIUS Profiles', ShieldCheck, undefined, 'radius.view')}

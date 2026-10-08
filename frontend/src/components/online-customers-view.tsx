@@ -23,6 +23,7 @@ import {
   ArrowUp,
   ArrowDown,
   X,
+  RotateCcw,
 } from 'lucide-react';
 import type { SessionItem } from '@/types/api';
 
@@ -41,11 +42,35 @@ export function OnlineCustomersView({
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
   const [nasFilter, setNasFilter] = React.useState<string>(filterNasIp || 'all');
+  const [packageFilter, setPackageFilter] = React.useState<string>('all');
+  const [branchFilter, setBranchFilter] = React.useState<string>('all');
+  const [resellerFilter, setResellerFilter] = React.useState<string>('all');
   const [autoRefreshInterval, setAutoRefreshInterval] = React.useState<number>(15); // 15s default for NOC/Online
   const [meta, setMeta] = React.useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [disconnectingId, setDisconnectingId] = React.useState<string | null>(null);
   const [disconnectConfirm, setDisconnectConfirm] = React.useState<SessionItem | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+
+  // Dropdown options
+  const [nasOptions, setNasOptions] = React.useState<{ id: number; name: string; ip_address: string }[]>([]);
+  const [packageOptions, setPackageOptions] = React.useState<{ id: number; name: string }[]>([]);
+  const [branchOptions, setBranchOptions] = React.useState<{ id: number; name: string }[]>([]);
+  const [resellerOptions, setResellerOptions] = React.useState<{ id: number; name: string }[]>([]);
+
+  React.useEffect(() => {
+    // Fetch filter options
+    Promise.all([
+      fetch('/api/nas').then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/packages').then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/branches').then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/resellers').then((r) => r.json()).catch(() => ({ data: [] })),
+    ]).then(([nasRes, pkgRes, brRes, resRes]) => {
+      if (nasRes.data) setNasOptions(nasRes.data);
+      if (pkgRes.data) setPackageOptions(pkgRes.data);
+      if (brRes.data) setBranchOptions(brRes.data);
+      if (resRes.data) setResellerOptions(resRes.data);
+    });
+  }, []);
 
   const fetchSessions = async (page = meta.page) => {
     try {
@@ -55,6 +80,9 @@ export function OnlineCustomersView({
       params.set('limit', String(meta.limit));
       if (search.trim()) params.set('search', search.trim());
       if (nasFilter !== 'all') params.set('nas_ip', nasFilter);
+      if (packageFilter !== 'all') params.set('package_id', packageFilter);
+      if (branchFilter !== 'all') params.set('branch', branchFilter);
+      if (resellerFilter !== 'all') params.set('reseller_id', resellerFilter);
 
       const res = await fetch(`/api/radius/sessions?${params.toString()}`);
       if (res.ok) {
@@ -69,7 +97,7 @@ export function OnlineCustomersView({
 
   React.useEffect(() => {
     fetchSessions(1);
-  }, [search, nasFilter]);
+  }, [search, nasFilter, packageFilter, branchFilter, resellerFilter]);
 
   // Auto-refresh timer
   React.useEffect(() => {
@@ -78,7 +106,7 @@ export function OnlineCustomersView({
       fetchSessions();
     }, autoRefreshInterval * 1000);
     return () => clearInterval(interval);
-  }, [autoRefreshInterval, search, nasFilter, meta.page]);
+  }, [autoRefreshInterval, search, nasFilter, packageFilter, branchFilter, resellerFilter, meta.page]);
 
   const handleDisconnect = async (session: SessionItem) => {
     try {
@@ -195,7 +223,8 @@ export function OnlineCustomersView({
       )}
 
       {/* Filter and Search Toolbar */}
-      <div className="p-4 rounded-2xl border border-border bg-card/70 backdrop-blur-md shadow-sm flex flex-wrap items-center justify-between gap-4">
+      <div className="p-4 rounded-2xl border border-border bg-card/70 backdrop-blur-md shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative flex-1 min-w-[260px] max-w-md">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -237,6 +266,113 @@ export function OnlineCustomersView({
           </div>
         </div>
       </div>
+
+      {/* Dropdown Filters Bar */}
+      <div className="flex flex-wrap items-center gap-2.5 pt-1">
+        {/* NAS Gateway Dropdown */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+            <Server className="w-3.5 h-3.5 text-primary" /> Gateway:
+          </span>
+          <select
+            value={nasFilter}
+            onChange={(e) => setNasFilter(e.target.value)}
+            className="bg-card border border-border rounded-xl px-2.5 py-1 text-xs text-foreground font-medium focus:outline-none focus:border-primary"
+          >
+            <option value="all">All Gateways</option>
+            {nasOptions.map((nas) => (
+              <option key={nas.id} value={nas.ip_address}>
+                {nas.name || nas.ip_address}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Package Dropdown */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+            <Package className="w-3.5 h-3.5 text-primary" /> Plan:
+          </span>
+          <select
+            value={packageFilter}
+            onChange={(e) => setPackageFilter(e.target.value)}
+            className="bg-card border border-border rounded-xl px-2.5 py-1 text-xs text-foreground font-medium focus:outline-none focus:border-primary"
+          >
+            <option value="all">All Packages</option>
+            {packageOptions.map((pkg) => (
+              <option key={pkg.id} value={String(pkg.id)}>
+                {pkg.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Branch Dropdown */}
+        {branchOptions.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5 text-primary" /> Branch:
+            </span>
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="bg-card border border-border rounded-xl px-2.5 py-1 text-xs text-foreground font-medium focus:outline-none focus:border-primary"
+            >
+              <option value="all">All Branches</option>
+              {branchOptions.map((b) => (
+                <option key={b.id} value={b.name}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Reseller Dropdown */}
+        {resellerOptions.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+              <Store className="w-3.5 h-3.5 text-primary" /> Reseller:
+            </span>
+            <select
+              value={resellerFilter}
+              onChange={(e) => setResellerFilter(e.target.value)}
+              className="bg-card border border-border rounded-xl px-2.5 py-1 text-xs text-foreground font-medium focus:outline-none focus:border-primary"
+            >
+              <option value="all">All Resellers</option>
+              {resellerOptions.map((r) => (
+                <option key={r.id} value={String(r.id)}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Reset Filters Button */}
+        {(search ||
+          nasFilter !== 'all' ||
+          packageFilter !== 'all' ||
+          branchFilter !== 'all' ||
+          resellerFilter !== 'all') && (
+          <button
+            onClick={() => {
+              setSearch('');
+              setNasFilter('all');
+              setPackageFilter('all');
+              setBranchFilter('all');
+              setResellerFilter('all');
+              onClearNasFilter?.();
+            }}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border hover:bg-muted text-xs text-rose-500 font-medium transition-colors ml-auto"
+            title="Reset all filters"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset</span>
+          </button>
+        )}
+      </div>
+    </div>
 
       {/* Sessions Operational Table */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
