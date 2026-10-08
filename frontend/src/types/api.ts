@@ -1210,5 +1210,28 @@ export interface NotificationItem {
   created_at: string;
 }
 
+export interface AppearanceSettingsData {
+  userTheme: string;
+  orgTheme: string;
+  effectiveTheme: string;
+  appearanceMode: string;
+  logoUrl: string | null;
+  brandName: string;
+  brandSubtitle: string;
+  orgName: string;
+  orgId?: number;
+}
+
+export interface UserPreferencesData {
+  id: number;
+  user_id: string;
+  theme: string;
+  appearance_mode: string;
+  sidebar_collapsed: boolean;
+  custom_settings: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
 
 

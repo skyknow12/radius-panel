@@ -33,8 +33,11 @@ import {
   UserCheck,
   ChevronDown,
   Zap,
+  Palette,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAppTheme } from '@/context/app-theme-context';
 
 interface SidebarProps {
   activeTab: string;
@@ -51,6 +54,8 @@ export function Sidebar({
   currentUser,
   onNavigateNotice,
 }: SidebarProps) {
+  const { logoUrl, brandName, brandSubtitle } = useAppTheme();
+
   // Collapsible section state with localStorage persistence
   const [openSections, setOpenSections] = React.useState<Record<string, boolean>>(() => {
     if (typeof window !== 'undefined') {
@@ -188,7 +193,10 @@ export function Sidebar({
         'reseller_credit',
         'reseller_reports',
       ].includes(activeTab);
-    const isOpen = isCustomerActive || isNetworkActive || isOrgActive || (openSections[key] ?? true);
+    const isSystemActive =
+      key === 'system' &&
+      ['system_health', 'audit_logs', 'settings_appearance', 'settings_branding', 'settings'].includes(activeTab);
+    const isOpen = isCustomerActive || isNetworkActive || isOrgActive || isSystemActive || (openSections[key] ?? true);
 
     return (
       <div key={key} className="space-y-1">
@@ -226,19 +234,27 @@ export function Sidebar({
     >
       {/* Brand Header */}
       <div className="h-16 flex items-center px-4 border-b border-border/80 gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 via-indigo-600 to-primary flex items-center justify-center text-white font-bold shadow-lg shadow-purple-500/20 flex-shrink-0">
-          <Zap className="w-5 h-5 fill-white/20 stroke-[2.5]" />
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 via-indigo-600 to-primary flex items-center justify-center text-white font-bold shadow-lg shadow-purple-500/20 flex-shrink-0 overflow-hidden relative border border-white/10">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={brandName || 'Logo'}
+              className="w-full h-full object-contain p-1 rounded-lg"
+            />
+          ) : (
+            <Zap className="w-5 h-5 fill-white/20 stroke-[2.5]" />
+          )}
         </div>
         {!collapsed && (
           <div className="flex flex-col overflow-hidden">
-            <span className="font-bold tracking-tight text-foreground text-sm uppercase flex items-center gap-1.5">
-              SKY RADIUS
-              <span className="text-[10px] bg-primary/10 text-primary font-semibold px-1.5 py-0.5 rounded border border-primary/20">
+            <span className="font-bold tracking-tight text-foreground text-sm uppercase flex items-center gap-1.5 truncate">
+              {brandName || 'SKY RADIUS'}
+              <span className="text-[10px] bg-primary/10 text-primary font-semibold px-1.5 py-0.5 rounded border border-primary/20 flex-shrink-0">
                 PRO
               </span>
             </span>
-            <span className="text-[10px] font-medium text-muted-foreground tracking-wider uppercase">
-              ISP Operations
+            <span className="text-[10px] font-medium text-muted-foreground tracking-wider uppercase truncate">
+              {brandSubtitle || 'ISP Operations'}
             </span>
           </div>
         )}
@@ -366,6 +382,8 @@ export function Sidebar({
           <>
             {renderNavItem('system_health', 'System Health & Probes', Activity, undefined, 'settings.view')}
             {renderNavItem('audit_logs', 'Audit Trail Logs', History, undefined, 'audit_logs.view')}
+            {renderNavItem('settings_appearance', 'Appearance & Themes', Palette, 'NEW', 'settings.view')}
+            {renderNavItem('settings_branding', 'Branding & Logo', Sparkles, undefined, 'settings.view')}
           </>,
           ['settings.view', 'audit_logs.view']
         )}

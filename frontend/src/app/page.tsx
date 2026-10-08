@@ -45,6 +45,7 @@ import { RolesPermissionsView } from '@/components/roles-permissions-view';
 import { TicketsView } from '@/components/tickets-view';
 import { CrmView } from '@/components/crm-view';
 import { SlaRulesView } from '@/components/sla-rules-view';
+import { SettingsAppearanceView } from '@/components/settings-appearance-view';
 import { GlobalSearchDialog } from '@/components/global-search-dialog';
 import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
@@ -291,6 +292,7 @@ export default function DashboardPage() {
           onLogout={handleLogout}
           onOpenTestModal={() => setTestModalOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
+          onNavigate={handleNavigate}
         />
 
         {/* Notice toast banner */}
@@ -511,6 +513,10 @@ export default function DashboardPage() {
             />
           ) : activeTab === 'auth_logs' ? (
             <AuthLogsView onViewSubscriber={handleOpenSubscriberByUsername} />
+          ) : activeTab === 'settings_appearance' || activeTab === 'settings' ? (
+            <SettingsAppearanceView initialTab="theme" currentUser={currentUser} />
+          ) : activeTab === 'settings_branding' ? (
+            <SettingsAppearanceView initialTab="branding" currentUser={currentUser} />
           ) : activeTab === 'radius' || activeTab === 'radius_overview' || activeTab === 'system_health' ? (
             dashboardData && (
               <RadiusOverviewView

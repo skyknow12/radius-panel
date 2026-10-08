@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
+import { AppThemeProvider } from '@/context/app-theme-context';
 
 export const metadata: Metadata = {
   title: 'RADIUS PRO — ISP Management Panel',
@@ -21,7 +22,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <AppThemeProvider>
+            {children}
+          </AppThemeProvider>
         </ThemeProvider>
       </body>
     </html>

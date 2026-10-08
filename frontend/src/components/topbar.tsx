@@ -12,6 +12,8 @@ import {
   LogOut,
   Shield,
   Activity,
+  Palette,
+  Sparkles,
 } from 'lucide-react';
 import { ThemeToggle } from './theme-toggle';
 import type { ServiceHealth } from '@/types/api';
@@ -24,6 +26,7 @@ interface TopbarProps {
   onLogout?: () => void;
   onOpenTestModal?: () => void;
   onOpenSearch?: () => void;
+  onNavigate?: (tab: string) => void;
 }
 
 export function Topbar({
@@ -34,6 +37,7 @@ export function Topbar({
   onLogout,
   onOpenTestModal,
   onOpenSearch,
+  onNavigate,
 }: TopbarProps) {
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
@@ -216,7 +220,7 @@ export function Topbar({
         </div>
 
         {/* Theme Switcher */}
-        <ThemeToggle />
+        <ThemeToggle onOpenAppearanceSettings={() => onNavigate?.('settings_appearance')} />
 
         {/* User Profile */}
         <div className="relative">
@@ -242,13 +246,35 @@ export function Topbar({
                 <p className="text-[11px] text-muted-foreground">NOC Engineering Team</p>
               </div>
               <div className="py-1">
-                <div className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground hover:bg-muted rounded-md cursor-pointer">
+                <div
+                  onClick={() => {
+                    setProfileOpen(false);
+                    onNavigate?.('settings_appearance');
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground hover:bg-muted rounded-md cursor-pointer hover:text-foreground transition-colors"
+                >
+                  <Palette className="w-3.5 h-3.5 text-primary" />
+                  <span>Appearance & Themes</span>
+                </div>
+                <div
+                  onClick={() => {
+                    setProfileOpen(false);
+                    onNavigate?.('settings_branding');
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground hover:bg-muted rounded-md cursor-pointer hover:text-foreground transition-colors"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Brand & Logo</span>
+                </div>
+                <div
+                  onClick={() => {
+                    setProfileOpen(false);
+                    onNavigate?.('roles');
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground hover:bg-muted rounded-md cursor-pointer hover:text-foreground transition-colors"
+                >
                   <Shield className="w-3.5 h-3.5" />
                   <span>Security & Roles</span>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground hover:bg-muted rounded-md cursor-pointer">
-                  <User className="w-3.5 h-3.5" />
-                  <span>Account Settings</span>
                 </div>
               </div>
               <div className="pt-1 border-t border-border/80">

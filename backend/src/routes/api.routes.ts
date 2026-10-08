@@ -25,6 +25,7 @@ import { userManagementRepository } from '../repositories/user-management.reposi
 import { crmRepository } from '../repositories/crm.repository';
 import { ticketRepository } from '../repositories/ticket.repository';
 import { notificationService } from '../services/notification.service';
+import { settingsRepository } from '../repositories/settings.repository';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
@@ -3464,6 +3465,122 @@ apiRouter.post(
     res.json(envelope({ deliveredCount: count, message: `Notification broadcasted to ${count} users` }, 'live'));
   })
 );
+
+// =============================================================================
+// Settings: Appearance, Multi-Theme System & Logo Customization
+// =============================================================================
+
+apiRouter.get(
+  '/settings/appearance',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.id;
+    const settings = await settingsRepository.getAppearanceSettings(userId);
+    res.json(envelope(settings, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/settings/appearance',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const perms = authReq.user?.permissions || [];
+    if (!isSuperOrOrg && !perms.includes('settings.edit') && !perms.includes('branding.edit')) {
+      throw HttpError.forbidden('Permission denied: settings.edit or branding.edit required');
+    }
+
+    const schema = z.object({
+      default_theme: z.enum(['default', 'dark-pro', 'light-pro', 'colorful', 'noc']).optional(),
+      logo_url: z.string().nullable().optional(),
+      brand_name: z.string().max(128).optional(),
+      brand_subtitle: z.string().max(128).optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const updated = await settingsRepository.updateOrganizationAppearance(
+      parsed,
+      authReq.user?.username || 'admin'
+    );
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/settings/logo',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const perms = authReq.user?.permissions || [];
+    if (!isSuperOrOrg && !perms.includes('branding.edit') && !perms.includes('settings.edit')) {
+      throw HttpError.forbidden('Permission denied: branding.edit or settings.edit required');
+    }
+
+    const schema = z.object({
+      logo: z.string().min(1, 'Logo data or URL is required'),
+    });
+    const parsed = schema.parse(req.body);
+
+    const updated = await settingsRepository.updateOrganizationAppearance(
+      { logo_url: parsed.logo },
+      authReq.user?.username || 'admin'
+    );
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/settings/logo',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const perms = authReq.user?.permissions || [];
+    if (!isSuperOrOrg && !perms.includes('branding.edit') && !perms.includes('settings.edit')) {
+      throw HttpError.forbidden('Permission denied: branding.edit or settings.edit required');
+    }
+
+    const updated = await settingsRepository.updateOrganizationAppearance(
+      { logo_url: null },
+      authReq.user?.username || 'admin'
+    );
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+// User preferences
+apiRouter.get(
+  '/users/preferences',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user?.id) {
+      return res.json(envelope({ theme: 'default', appearance_mode: 'dark', sidebar_collapsed: false }, 'live'));
+    }
+    const prefs = await settingsRepository.getUserPreferences(authReq.user.id);
+    res.json(envelope(prefs || { theme: 'default', appearance_mode: 'dark', sidebar_collapsed: false }, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/users/preferences',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user?.id) {
+      throw HttpError.unauthorized('Authentication required to save preferences');
+    }
+
+    const schema = z.object({
+      theme: z.enum(['default', 'dark-pro', 'light-pro', 'colorful', 'noc']).optional(),
+      appearance_mode: z.enum(['dark', 'light', 'system']).optional(),
+      sidebar_collapsed: z.boolean().optional(),
+      custom_settings: z.record(z.unknown()).optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const prefs = await settingsRepository.saveUserPreferences(authReq.user.id, parsed);
+    res.json(envelope(prefs, 'live'));
+  })
+);
+
 
 
 

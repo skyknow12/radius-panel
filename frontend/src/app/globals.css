@@ -3,25 +3,35 @@
 @tailwind utilities;
 
 @layer base {
+  /* Default Base (Light fallback or system light) */
   :root {
-    --background: 220 20% 98%;
-    --foreground: 224 71% 4%;
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
-    --muted: 220 14% 94%;
-    --muted-foreground: 220 9% 46%;
-    --border: 220 13% 90%;
-    --input: 220 13% 90%;
+    --card-foreground: 222 47% 11%;
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 9% 44%;
+    --border: 220 13% 86%;
+    --input: 220 13% 86%;
     --primary: 262 83% 58%;
     --primary-foreground: 210 40% 98%;
     --accent: 262 83% 96%;
     --accent-foreground: 262 83% 40%;
     --ring: 262 83% 58%;
     --radius: 0.75rem;
+
+    --status-healthy: 142 71% 45%;
+    --status-warning: 38 92% 50%;
+    --status-offline: 0 84% 60%;
+    --status-info: 217 91% 60%;
   }
 
-  .dark {
-    /* Very dark rich navy background & slate cards */
+  /* ------------------------------------------------------------------------- */
+  /* THEME 1: DEFAULT (Modern ISP Dashboard — Purple/Indigo Visual Identity)   */
+  /* ------------------------------------------------------------------------- */
+  .dark,
+  :root:not([data-theme="light-pro"]),
+  html[data-theme="default"] {
     --background: 222 47% 7%;
     --foreground: 210 40% 98%;
     --card: 222 42% 11%;
@@ -35,10 +45,111 @@
     --accent: 262 70% 18%;
     --accent-foreground: 263 70% 80%;
     --ring: 263 70% 64%;
+
+    --status-healthy: 152 76% 40%;
+    --status-warning: 43 96% 56%;
+    --status-offline: 0 84% 60%;
+    --status-info: 217 91% 60%;
+  }
+
+  /* ------------------------------------------------------------------------- */
+  /* THEME 2: DARK PRO (Deep Dark Charcoal / Near-Black NOC Dashboard)         */
+  /* ------------------------------------------------------------------------- */
+  html[data-theme="dark-pro"] {
+    --background: 224 71% 4%;
+    --foreground: 210 40% 98%;
+    --card: 220 18% 8%;
+    --card-foreground: 210 40% 98%;
+    --muted: 220 18% 13%;
+    --muted-foreground: 215 16% 56%;
+    --border: 220 16% 14%;
+    --input: 220 16% 14%;
+    --primary: 262 83% 66%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 262 60% 14%;
+    --accent-foreground: 263 70% 80%;
+    --ring: 262 83% 66%;
+
+    --status-healthy: 158 64% 45%;
+    --status-warning: 38 92% 50%;
+    --status-offline: 350 89% 60%;
+    --status-info: 199 89% 48%;
+  }
+
+  /* ------------------------------------------------------------------------- */
+  /* THEME 3: LIGHT PRO (Clean Crisp Enterprise Light)                         */
+  /* ------------------------------------------------------------------------- */
+  html[data-theme="light-pro"] {
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 9% 44%;
+    --border: 220 13% 86%;
+    --input: 220 13% 86%;
+    --primary: 262 83% 58%;
+    --primary-foreground: 210 40% 98%;
+    --accent: 262 83% 96%;
+    --accent-foreground: 262 83% 40%;
+    --ring: 262 83% 58%;
+
+    --status-healthy: 142 71% 45%;
+    --status-warning: 38 92% 50%;
+    --status-offline: 0 84% 60%;
+    --status-info: 217 91% 60%;
+  }
+
+  /* ------------------------------------------------------------------------- */
+  /* THEME 4: COLORFUL (Modern Multi-Color Coordinated Palette)                */
+  /* ------------------------------------------------------------------------- */
+  html[data-theme="colorful"] {
+    --background: 226 35% 8%;
+    --foreground: 210 40% 98%;
+    --card: 225 30% 12%;
+    --card-foreground: 210 40% 98%;
+    --muted: 225 25% 18%;
+    --muted-foreground: 217 25% 70%;
+    --border: 225 28% 20%;
+    --input: 225 28% 20%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+    --accent: 271 81% 65%;
+    --accent-foreground: 210 40% 98%;
+    --ring: 239 84% 67%;
+
+    --status-healthy: 160 84% 39%;
+    --status-warning: 38 92% 50%;
+    --status-offline: 347 77% 50%;
+    --status-info: 190 90% 50%;
+  }
+
+  /* ------------------------------------------------------------------------- */
+  /* THEME 5: NOC HIGH CONTRAST (High Visibility Operations Center)            */
+  /* ------------------------------------------------------------------------- */
+  html[data-theme="noc"] {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 100%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 82%;
+    --border: 0 0% 22%;
+    --input: 0 0% 22%;
+    --primary: 260 100% 70%;
+    --primary-foreground: 0 0% 0%;
+    --accent: 0 0% 16%;
+    --accent-foreground: 0 0% 100%;
+    --ring: 260 100% 70%;
+
+    --status-healthy: 145 100% 45%;
+    --status-warning: 35 100% 50%;
+    --status-offline: 350 100% 55%;
+    --status-info: 187 100% 50%;
   }
 }
 
 body {
-  @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary min-h-screen;
+  @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary min-h-screen transition-colors duration-200;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
