@@ -1646,12 +1646,7 @@ export function ResellerProfileView({
       <ResellerTopupModal
         isOpen={topupModalOpen}
         onClose={() => setTopupModalOpen(false)}
-        reseller={{
-          ...reseller,
-          commission_percent: reseller.commission_percent,
-          credit_limit: reseller.credit_limit,
-          used_credit: reseller.credit_used,
-        }}
+        reseller={reseller}
         currentUser={currentUser}
         onSuccess={() => {
           fetchProfile();

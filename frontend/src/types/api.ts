@@ -662,6 +662,26 @@ export interface ResellerItem {
   updated_at: string;
 }
 
+export interface ResellerTopupTarget {
+  id: number;
+  name: string;
+  code: string;
+  commission_percent?: number;
+  credit_limit?: number;
+  used_credit?: number;
+  credit_used?: number;
+  credit_remaining?: number;
+  wallet_balance?: number;
+  status?: string;
+  credit_status?: string;
+  branch_id?: number | null;
+  branch_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  wallet_number?: string;
+  [key: string]: any;
+}
+
 export interface ResellerTopupCalcResult {
   paymentAmount: number;
   commissionPercent: number;

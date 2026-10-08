@@ -14,12 +14,12 @@ import {
   Sparkles,
   Lock,
 } from 'lucide-react';
-import type { ResellerItem } from '@/types/api';
+import type { ResellerItem, ResellerTopupTarget } from '@/types/api';
 
 interface ResellerTopupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  reseller: ResellerItem;
+  reseller: ResellerTopupTarget | ResellerItem;
   currentUser?: any;
   onSuccess: () => void;
 }
@@ -92,7 +92,7 @@ export function ResellerTopupModal({
 
   // Credit calculation
   const creditLimit = reseller.credit_limit ?? 50000;
-  const creditUsed = reseller.used_credit ?? 0;
+  const creditUsed = reseller.used_credit ?? reseller.credit_used ?? 0;
   const currentCreditRemaining = Math.max(0, creditLimit - creditUsed);
   const creditRemainingAfter = currentCreditRemaining - (topupType === 'CREDIT' ? amount : 0);
   const isCreditExceeded = topupType === 'CREDIT' && amount > currentCreditRemaining;
