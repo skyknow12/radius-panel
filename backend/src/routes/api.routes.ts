@@ -20,12 +20,16 @@ import { searchService } from '../services/search.service';
 import { reportsService } from '../services/reports.service';
 import { billingRepository } from '../repositories/billing.repository';
 import { organizationRepository } from '../repositories/organization.repository';
+import { userManagementRepository } from '../repositories/user-management.repository';
+import { crmRepository } from '../repositories/crm.repository';
+import { ticketRepository } from '../repositories/ticket.repository';
+import { notificationService } from '../services/notification.service';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
 import { envelope } from '../lib/response';
 import { HttpError } from '../lib/http-error';
-import { authMiddleware, type AuthenticatedRequest } from '../middleware/auth.middleware';
+import { authMiddleware, requirePermission, type AuthenticatedRequest } from '../middleware/auth.middleware';
 import type { TimeRange } from '../types/api';
 
 export const apiRouter = Router();
@@ -2394,5 +2398,711 @@ apiRouter.get(
     res.send(csvRows.join('\n'));
   })
 );
+
+// =============================================================================
+//  PHASE 7: USER MANAGEMENT & RBAC ENDPOINTS
+// =============================================================================
+
+apiRouter.get(
+  '/users',
+  authMiddleware,
+  requirePermission('users.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { search, role, status, data_scope, page, limit } = req.query;
+
+    let branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+    let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+
+    // Data scope enforcement
+    if (authReq.user?.userType === 'reseller') {
+      resellerId = authReq.user.resellerId || -1;
+    } else if (authReq.user?.userType === 'branch') {
+      branchId = authReq.user.branchId || -1;
+    }
+
+    const result = await userManagementRepository.listUsers({
+      search: search ? String(search) : undefined,
+      role: role ? String(role) : undefined,
+      status: status ? String(status) : undefined,
+      data_scope: data_scope ? String(data_scope) : undefined,
+      branch_id: branchId,
+      reseller_id: resellerId,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20,
+    });
+    res.json(envelope(result.users, { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
+  })
+);
+
+apiRouter.post(
+  '/users',
+  authMiddleware,
+  requirePermission('users.create'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      username: z.string().min(3),
+      email: z.string().email().optional(),
+      fullName: z.string().min(1),
+      phone: z.string().optional(),
+      password: z.string().min(6),
+      roleIds: z.array(z.number()).min(1),
+      dataScope: z.enum(['GLOBAL', 'ORGANIZATION', 'BRANCH', 'RESELLER', 'OWN']).optional(),
+      userType: z.enum(['isp', 'branch', 'reseller']).optional(),
+      organizationId: z.number().optional(),
+      branchId: z.number().optional(),
+      resellerId: z.number().optional(),
+      forcePasswordReset: z.boolean().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+
+    // Enforce scope: non-super_admin cannot create users with broader scope than themselves
+    if (authReq.user?.role !== 'super_admin') {
+      if (authReq.user?.userType === 'branch') {
+        parsed.branchId = authReq.user.branchId || undefined;
+        parsed.userType = 'branch';
+        parsed.dataScope = 'BRANCH';
+      } else if (authReq.user?.userType === 'reseller') {
+        parsed.resellerId = authReq.user.resellerId || undefined;
+        parsed.userType = 'reseller';
+        parsed.dataScope = 'RESELLER';
+      }
+    }
+
+    const userId = await userManagementRepository.createUser({
+      ...parsed,
+      createdBy: authReq.user?.userId,
+    });
+
+    res.status(201).json(envelope({ id: userId, message: 'User created successfully' }));
+  })
+);
+
+apiRouter.get(
+  '/users/:id',
+  authMiddleware,
+  requirePermission('users.view'),
+  asyncHandler(async (req, res) => {
+    const user = await userManagementRepository.getUserById(req.params.id);
+    res.json(envelope(user));
+  })
+);
+
+apiRouter.put(
+  '/users/:id',
+  authMiddleware,
+  requirePermission('users.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      fullName: z.string().optional(),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
+      roleIds: z.array(z.number()).optional(),
+      dataScope: z.enum(['GLOBAL', 'ORGANIZATION', 'BRANCH', 'RESELLER', 'OWN']).optional(),
+      organizationId: z.number().nullable().optional(),
+      branchId: z.number().nullable().optional(),
+      resellerId: z.number().nullable().optional(),
+      userType: z.enum(['isp', 'branch', 'reseller']).optional(),
+      forcePasswordReset: z.boolean().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    await userManagementRepository.updateUser(req.params.id, {
+      ...parsed,
+      updatedBy: authReq.user?.userId,
+    });
+
+    res.json(envelope({ success: true, message: 'User updated successfully' }));
+  })
+);
+
+apiRouter.patch(
+  '/users/:id/status',
+  authMiddleware,
+  requirePermission('users.disable'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { status } = z.object({ status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']) }).parse(req.body);
+
+    await userManagementRepository.setStatus(req.params.id, status, authReq.user?.userId);
+    res.json(envelope({ success: true, message: `User status changed to ${status}` }));
+  })
+);
+
+apiRouter.post(
+  '/users/:id/reset-password',
+  authMiddleware,
+  requirePermission('users.reset_password'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { password, forceNextReset } = z.object({
+      password: z.string().min(6),
+      forceNextReset: z.boolean().optional(),
+    }).parse(req.body);
+
+    await userManagementRepository.resetPassword(req.params.id, password, !!forceNextReset, authReq.user?.userId);
+    res.json(envelope({ success: true, message: 'User password reset successfully' }));
+  })
+);
+
+apiRouter.post(
+  '/users/:id/force-logout',
+  authMiddleware,
+  requirePermission('users.force_logout'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    await userManagementRepository.forceLogout(req.params.id, authReq.user?.userId);
+    res.json(envelope({ success: true, message: 'User forced logged out. Active sessions terminated.' }));
+  })
+);
+
+apiRouter.get(
+  '/users/:id/login-history',
+  authMiddleware,
+  requirePermission('users.view'),
+  asyncHandler(async (req, res) => {
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const history = await userManagementRepository.getLoginHistory(req.params.id, limit);
+    res.json(envelope(history));
+  })
+);
+
+apiRouter.get(
+  '/users/:id/sessions',
+  authMiddleware,
+  requirePermission('users.view'),
+  asyncHandler(async (req, res) => {
+    const sessions = await userManagementRepository.getSessions(req.params.id);
+    res.json(envelope(sessions));
+  })
+);
+
+// ---- Roles & Permissions ----
+apiRouter.get(
+  '/roles',
+  authMiddleware,
+  requirePermission('roles.view'),
+  asyncHandler(async (_req, res) => {
+    const roles = await userManagementRepository.listRoles();
+    res.json(envelope(roles));
+  })
+);
+
+apiRouter.get(
+  '/roles/:id',
+  authMiddleware,
+  requirePermission('roles.view'),
+  asyncHandler(async (req, res) => {
+    const role = await userManagementRepository.getRoleById(Number(req.params.id));
+    res.json(envelope(role));
+  })
+);
+
+apiRouter.post(
+  '/roles',
+  authMiddleware,
+  requirePermission('roles.create'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      name: z.string().min(2),
+      displayName: z.string().min(2),
+      description: z.string().optional(),
+      permissionKeys: z.array(z.string()).default([]),
+    });
+
+    const parsed = schema.parse(req.body);
+    const roleId = await userManagementRepository.createRole({
+      ...parsed,
+      actorId: authReq.user?.userId,
+    });
+    res.status(201).json(envelope({ id: roleId, message: 'Custom role created successfully' }));
+  })
+);
+
+apiRouter.put(
+  '/roles/:id',
+  authMiddleware,
+  requirePermission('roles.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      displayName: z.string().optional(),
+      description: z.string().optional(),
+      permissionKeys: z.array(z.string()).optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    await userManagementRepository.updateRole(Number(req.params.id), {
+      ...parsed,
+      actorId: authReq.user?.userId,
+    });
+    res.json(envelope({ success: true, message: 'Role updated successfully' }));
+  })
+);
+
+apiRouter.delete(
+  '/roles/:id',
+  authMiddleware,
+  requirePermission('roles.delete'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    await userManagementRepository.deleteRole(Number(req.params.id), authReq.user?.userId);
+    res.json(envelope({ success: true, message: 'Custom role deleted' }));
+  })
+);
+
+apiRouter.get(
+  '/permissions',
+  authMiddleware,
+  asyncHandler(async (_req, res) => {
+    const grouped = await userManagementRepository.listPermissions();
+    res.json(envelope(grouped));
+  })
+);
+
+// =============================================================================
+//  PHASE 7: CUSTOMER CRM ENDPOINTS
+// =============================================================================
+
+apiRouter.get(
+  '/crm/subscribers/:id/summary',
+  authMiddleware,
+  requirePermission('crm.view'),
+  asyncHandler(async (req, res) => {
+    const summary = await crmRepository.getSubscriberCrmSummary(Number(req.params.id));
+    res.json(envelope(summary));
+  })
+);
+
+apiRouter.get(
+  '/crm/subscribers/:id/notes',
+  authMiddleware,
+  requirePermission('crm.view'),
+  asyncHandler(async (req, res) => {
+    const notes = await crmRepository.listNotes(Number(req.params.id));
+    res.json(envelope(notes));
+  })
+);
+
+apiRouter.post(
+  '/crm/subscribers/:id/notes',
+  authMiddleware,
+  requirePermission('crm.create'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { note, isPinned } = z.object({
+      note: z.string().min(1),
+      isPinned: z.boolean().optional(),
+    }).parse(req.body);
+
+    const created = await crmRepository.addNote({
+      subscriberId: Number(req.params.id),
+      authorId: authReq.user?.userId,
+      authorName: authReq.user?.username || 'Staff',
+      note,
+      isPinned,
+    });
+    res.status(201).json(envelope(created));
+  })
+);
+
+apiRouter.delete(
+  '/crm/notes/:noteId',
+  authMiddleware,
+  requirePermission('crm.delete'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    await crmRepository.deleteNote(Number(req.params.noteId), authReq.user?.userId);
+    res.json(envelope({ success: true, message: 'Note deleted' }));
+  })
+);
+
+apiRouter.patch(
+  '/crm/notes/:noteId/pin',
+  authMiddleware,
+  requirePermission('crm.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const isPinned = await crmRepository.togglePinNote(Number(req.params.noteId), authReq.user?.userId);
+    res.json(envelope({ is_pinned: isPinned }));
+  })
+);
+
+apiRouter.get(
+  '/crm/subscribers/:id/activities',
+  authMiddleware,
+  requirePermission('crm.view'),
+  asyncHandler(async (req, res) => {
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const activities = await crmRepository.listActivities(Number(req.params.id), limit);
+    res.json(envelope(activities));
+  })
+);
+
+apiRouter.get(
+  '/crm/subscribers/:id/communications',
+  authMiddleware,
+  requirePermission('crm.view'),
+  asyncHandler(async (req, res) => {
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const comms = await crmRepository.listCommunications(Number(req.params.id), limit);
+    res.json(envelope(comms));
+  })
+);
+
+apiRouter.post(
+  '/crm/subscribers/:id/communications',
+  authMiddleware,
+  requirePermission('crm.create'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      channel: z.enum(['IN_APP', 'SMS', 'EMAIL', 'WHATSAPP', 'CALL']),
+      recipient: z.string().min(1),
+      subject: z.string().optional(),
+      message: z.string().min(1),
+    });
+
+    const parsed = schema.parse(req.body);
+    const comm = await crmRepository.logCommunication({
+      subscriberId: Number(req.params.id),
+      ...parsed,
+      sentBy: authReq.user?.userId,
+    });
+    res.status(201).json(envelope(comm));
+  })
+);
+
+// =============================================================================
+//  PHASE 7: TICKETING & SUPPORT HELPDESK ENDPOINTS
+// =============================================================================
+
+apiRouter.get(
+  '/tickets',
+  authMiddleware,
+  requirePermission('tickets.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { search, status, priority, category, assigned_user_id, subscriber_id, sla_breached, page, limit } = req.query;
+
+    let branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+    let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+
+    // Data scope enforcement
+    if (authReq.user?.userType === 'reseller') {
+      resellerId = authReq.user.resellerId || -1;
+    } else if (authReq.user?.userType === 'branch') {
+      branchId = authReq.user.branchId || -1;
+    }
+
+    const result = await ticketRepository.listTickets({
+      search: search ? String(search) : undefined,
+      status: status ? String(status) : undefined,
+      priority: priority ? String(priority) : undefined,
+      category: category ? String(category) : undefined,
+      branch_id: branchId,
+      reseller_id: resellerId,
+      assigned_user_id: assigned_user_id ? String(assigned_user_id) : undefined,
+      subscriber_id: subscriber_id ? Number(subscriber_id) : undefined,
+      sla_breached: sla_breached !== undefined ? sla_breached === 'true' : undefined,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20,
+    });
+
+    res.json(envelope(result.tickets, { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
+  })
+);
+
+apiRouter.get(
+  '/tickets/metrics',
+  authMiddleware,
+  requirePermission('tickets.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    let branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+    let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+
+    if (authReq.user?.userType === 'reseller') {
+      resellerId = authReq.user.resellerId || -1;
+    } else if (authReq.user?.userType === 'branch') {
+      branchId = authReq.user.branchId || -1;
+    }
+
+    const metrics = await ticketRepository.getMetrics({ branch_id: branchId, reseller_id: resellerId });
+    res.json(envelope(metrics));
+  })
+);
+
+apiRouter.get(
+  '/tickets/categories',
+  authMiddleware,
+  asyncHandler(async (_req, res) => {
+    const categories = await ticketRepository.listCategories();
+    res.json(envelope(categories));
+  })
+);
+
+apiRouter.get(
+  '/tickets/sla-rules',
+  authMiddleware,
+  asyncHandler(async (_req, res) => {
+    const rules = await ticketRepository.listSlaRules();
+    res.json(envelope(rules));
+  })
+);
+
+apiRouter.put(
+  '/tickets/sla-rules/:priority',
+  authMiddleware,
+  requirePermission('settings.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      response_time_hours: z.number().min(1),
+      resolution_time_hours: z.number().min(1),
+    });
+
+    const parsed = schema.parse(req.body);
+    await ticketRepository.updateSlaRule(req.params.priority, {
+      ...parsed,
+      actorId: authReq.user?.userId,
+    });
+    res.json(envelope({ success: true, message: `SLA rule updated for ${req.params.priority}` }));
+  })
+);
+
+apiRouter.post(
+  '/tickets',
+  authMiddleware,
+  requirePermission('tickets.create'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      subscriberId: z.number().optional(),
+      username: z.string().optional(),
+      category: z.string().min(1),
+      subcategory: z.string().optional(),
+      subject: z.string().min(2),
+      description: z.string().min(5),
+      priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
+      assignedUserId: z.string().optional(),
+      internalNotes: z.string().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    const ticket = await ticketRepository.createTicket({
+      ...parsed,
+      createdById: authReq.user?.userId,
+      createdByName: authReq.user?.username || 'Staff',
+    });
+
+    // Notify assigned technician if specified
+    if (parsed.assignedUserId) {
+      await notificationService.send({
+        userId: parsed.assignedUserId,
+        title: `Ticket Assigned: #${ticket.ticket_number}`,
+        message: `You were assigned ticket #${ticket.ticket_number} (${ticket.subject})`,
+        type: 'TICKET',
+        actionUrl: `/tickets?id=${ticket.id}`,
+      }).catch(() => undefined);
+    }
+
+    res.status(201).json(envelope(ticket));
+  })
+);
+
+apiRouter.get(
+  '/tickets/:id',
+  authMiddleware,
+  requirePermission('tickets.view'),
+  asyncHandler(async (req, res) => {
+    const ticket = await ticketRepository.getTicketById(Number(req.params.id));
+    res.json(envelope(ticket));
+  })
+);
+
+apiRouter.post(
+  '/tickets/:id/comments',
+  authMiddleware,
+  requirePermission('tickets.comment'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      comment: z.string().min(1),
+      isInternal: z.boolean().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    const comment = await ticketRepository.addComment({
+      ticketId: Number(req.params.id),
+      authorId: authReq.user?.userId,
+      authorName: authReq.user?.username || 'Staff',
+      comment: parsed.comment,
+      isInternal: parsed.isInternal,
+    });
+    res.status(201).json(envelope(comment));
+  })
+);
+
+apiRouter.patch(
+  '/tickets/:id/status',
+  authMiddleware,
+  requirePermission('tickets.close'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      status: z.enum(['OPEN', 'IN_PROGRESS', 'WAITING_CUSTOMER', 'WAITING_INTERNAL', 'RESOLVED', 'CLOSED', 'REOPENED']),
+      resolution: z.string().optional(),
+      reason: z.string().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    await ticketRepository.updateStatus({
+      ticketId: Number(req.params.id),
+      status: parsed.status,
+      resolution: parsed.resolution,
+      reason: parsed.reason,
+      changedById: authReq.user?.userId,
+      changedByName: authReq.user?.username || 'Staff',
+    });
+    res.json(envelope({ success: true, message: `Ticket status updated to ${parsed.status}` }));
+  })
+);
+
+apiRouter.patch(
+  '/tickets/:id/assign',
+  authMiddleware,
+  requirePermission('tickets.assign'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      assignedUserId: z.string().nullable(),
+    });
+
+    const parsed = schema.parse(req.body);
+    await ticketRepository.assignTicket({
+      ticketId: Number(req.params.id),
+      assignedUserId: parsed.assignedUserId,
+      actorId: authReq.user?.userId,
+      actorName: authReq.user?.username || 'Staff',
+    });
+
+    if (parsed.assignedUserId) {
+      await notificationService.send({
+        userId: parsed.assignedUserId,
+        title: 'Ticket Reassigned',
+        message: `Support ticket #${req.params.id} has been assigned to you`,
+        type: 'TICKET',
+        actionUrl: `/tickets?id=${req.params.id}`,
+      }).catch(() => undefined);
+    }
+
+    res.json(envelope({ success: true, message: 'Ticket assigned successfully' }));
+  })
+);
+
+apiRouter.post(
+  '/tickets/:id/escalate',
+  authMiddleware,
+  requirePermission('tickets.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      toPriority: z.enum(['HIGH', 'CRITICAL']),
+      reason: z.string().min(2),
+    });
+
+    const parsed = schema.parse(req.body);
+    await ticketRepository.escalateTicket({
+      ticketId: Number(req.params.id),
+      toPriority: parsed.toPriority,
+      reason: parsed.reason,
+      escalatedById: authReq.user?.userId,
+      escalatedByName: authReq.user?.username || 'Staff',
+    });
+    res.json(envelope({ success: true, message: `Ticket escalated to ${parsed.toPriority}` }));
+  })
+);
+
+// =============================================================================
+//  PHASE 7: NOTIFICATIONS ENDPOINTS
+// =============================================================================
+
+apiRouter.get(
+  '/notifications',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) throw HttpError.unauthorized();
+    const unreadOnly = req.query.unread === 'true';
+    const limit = req.query.limit ? Number(req.query.limit) : 30;
+
+    const notifs = await notificationService.listForUser(authReq.user.userId, unreadOnly, limit);
+    res.json(envelope(notifs));
+  })
+);
+
+apiRouter.get(
+  '/notifications/unread-count',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) throw HttpError.unauthorized();
+
+    const count = await notificationService.getUnreadCount(authReq.user.userId);
+    res.json(envelope({ unreadCount: count }));
+  })
+);
+
+apiRouter.patch(
+  '/notifications/:id/read',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) throw HttpError.unauthorized();
+
+    await notificationService.markAsRead(Number(req.params.id), authReq.user.userId);
+    res.json(envelope({ success: true }));
+  })
+);
+
+apiRouter.post(
+  '/notifications/mark-all-read',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) throw HttpError.unauthorized();
+
+    await notificationService.markAllAsRead(authReq.user.userId);
+    res.json(envelope({ success: true, message: 'All notifications marked as read' }));
+  })
+);
+
+apiRouter.post(
+  '/notifications/broadcast',
+  authMiddleware,
+  requirePermission('notifications.create'),
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      targetRole: z.string().optional(),
+      targetBranchId: z.number().optional(),
+      targetResellerId: z.number().optional(),
+      title: z.string().min(2),
+      message: z.string().min(2),
+      type: z.enum(['INFO', 'SUCCESS', 'WARNING', 'CRITICAL', 'TICKET', 'BILLING']).optional(),
+      actionUrl: z.string().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    const count = await notificationService.broadcast(parsed);
+    res.json(envelope({ deliveredCount: count, message: `Notification broadcasted to ${count} users` }));
+  })
+);
+
 
 

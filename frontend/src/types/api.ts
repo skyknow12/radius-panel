@@ -436,7 +436,7 @@ export interface NocMetrics {
 }
 
 export interface GlobalSearchResult {
-  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice' | 'branch' | 'reseller' | 'wallet';
+  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice' | 'branch' | 'reseller' | 'wallet' | 'ticket' | 'user';
   title: string;
   subtitle: string;
   id: string | number;
@@ -804,5 +804,234 @@ export interface ResellerCommissionReportData {
   }>;
   total: number;
 }
+
+// =============================================================================
+// PHASE 7: USER MANAGEMENT, RBAC, CRM, TICKETS & NOTIFICATIONS
+// =============================================================================
+
+export interface UserManagementItem {
+  id: string;
+  username: string;
+  email: string | null;
+  full_name: string | null;
+  phone: string | null;
+  status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+  is_active: boolean;
+  data_scope: 'GLOBAL' | 'ORGANIZATION' | 'BRANCH' | 'RESELLER' | 'OWN';
+  user_type: string;
+  organization_id: number | null;
+  branch_id: number | null;
+  reseller_id: number | null;
+  organization_name?: string | null;
+  branch_name?: string | null;
+  reseller_name?: string | null;
+  roles: Array<{ id: number; name: string; display_name: string }>;
+  role_name?: string;
+  role_display_name?: string;
+  permissions?: string[];
+  last_login_at: string | null;
+  last_login_ip: string | null;
+  force_password_reset: boolean;
+  token_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleItem {
+  id: number;
+  name: string;
+  display_name: string;
+  description: string | null;
+  is_system: boolean;
+  user_count?: number;
+  permission_count?: number;
+  permissions?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PermissionItem {
+  id: number;
+  key: string;
+  module: string;
+  description: string | null;
+}
+
+export interface LoginHistoryItem {
+  id: number;
+  user_id: string | null;
+  username: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  status: 'SUCCESS' | 'FAILED' | 'LOCKED';
+  failure_reason: string | null;
+  created_at: string;
+}
+
+export interface UserSessionItem {
+  id: string;
+  user_id: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  last_activity: string;
+  expires_at: string | null;
+  is_revoked: boolean;
+  created_at: string;
+}
+
+export interface TicketItem {
+  id: number;
+  ticket_number: string;
+  subscriber_id: number;
+  username: string;
+  customer_name?: string;
+  customer_phone?: string;
+  organization_id: number | null;
+  branch_id: number | null;
+  reseller_id: number | null;
+  branch_name?: string | null;
+  reseller_name?: string | null;
+  category: string;
+  subcategory: string | null;
+  subject: string;
+  description: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  status: 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'WAITING_INTERNAL' | 'RESOLVED' | 'CLOSED' | 'REOPENED';
+  assigned_user_id: string | null;
+  assigned_user_name?: string | null;
+  created_by_id: string | null;
+  created_by_name: string;
+  sla_deadline: string | null;
+  sla_breached: boolean;
+  sla_remaining_minutes?: number | null;
+  first_response_at: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+  resolution: string | null;
+  internal_notes: string | null;
+  customer_notes: string | null;
+  escalation_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TicketCommentItem {
+  id: number;
+  ticket_id: number;
+  author_id: string | null;
+  author_name: string;
+  comment: string;
+  is_internal: boolean;
+  created_at: string;
+}
+
+export interface TicketAttachmentItem {
+  id: number;
+  ticket_id: number;
+  filename: string;
+  file_url: string;
+  file_size: number | null;
+  mime_type: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+}
+
+export interface TicketStatusHistoryItem {
+  id: number;
+  ticket_id: number;
+  from_status: string | null;
+  to_status: string;
+  changed_by: string | null;
+  changed_by_name: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface TicketEscalationItem {
+  id: number;
+  ticket_id: number;
+  escalated_by: string | null;
+  from_priority: string;
+  to_priority: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface TicketMetrics {
+  openTickets: number;
+  inProgressTickets: number;
+  criticalTickets: number;
+  slaNearBreach: number;
+  slaBreached: number;
+  resolvedToday: number;
+  totalTickets: number;
+}
+
+export interface TicketCategoryItem {
+  id: number;
+  name: string;
+  description: string | null;
+  default_priority: string;
+  default_sla_hours: number;
+  is_active: boolean;
+}
+
+export interface SlaRuleItem {
+  id: number;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  response_time_hours: number;
+  resolution_time_hours: number;
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface CrmNoteItem {
+  id: number;
+  subscriber_id: number;
+  author_id: string | null;
+  author_name: string;
+  note: string;
+  is_pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerActivityItem {
+  id: number;
+  subscriber_id: number;
+  actor_id: string | null;
+  actor_name: string;
+  action_type: string;
+  description: string;
+  metadata: Record<string, any>;
+  created_at: string;
+}
+
+export interface CustomerCommunicationItem {
+  id: number;
+  subscriber_id: number;
+  channel: 'IN_APP' | 'SMS' | 'EMAIL' | 'WHATSAPP' | 'CALL';
+  recipient: string;
+  subject: string | null;
+  message: string;
+  status: 'QUEUED' | 'SENT' | 'FAILED' | 'DELIVERED';
+  sent_by: string | null;
+  created_at: string;
+}
+
+export interface NotificationItem {
+  id: number;
+  user_id: string;
+  title: string;
+  message: string;
+  type: 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL' | 'TICKET' | 'BILLING';
+  category: string;
+  action_url: string | null;
+  is_read: boolean;
+  read_at: string | null;
+  metadata: Record<string, any>;
+  created_at: string;
+}
+
 
 

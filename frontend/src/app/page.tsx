@@ -36,6 +36,11 @@ import { ResellersView } from '@/components/resellers-view';
 import { WalletsView } from '@/components/wallets-view';
 import { ChannelPricingView } from '@/components/channel-pricing-view';
 import { ResellerCommissionView } from '@/components/reseller-commission-view';
+import { UserManagementView } from '@/components/user-management-view';
+import { RolesPermissionsView } from '@/components/roles-permissions-view';
+import { TicketsView } from '@/components/tickets-view';
+import { CrmView } from '@/components/crm-view';
+import { SlaRulesView } from '@/components/sla-rules-view';
 import { GlobalSearchDialog } from '@/components/global-search-dialog';
 import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
@@ -357,6 +362,22 @@ export default function DashboardPage() {
             <ChannelPricingView />
           ) : activeTab === 'commission_report' ? (
             <ResellerCommissionView />
+          ) : activeTab === 'crm' ? (
+            <CrmView
+              currentUser={currentUser}
+              onOpenSubscriber={(id) => setSubscriberProfileId(id)}
+            />
+          ) : activeTab === 'tickets' ? (
+            <TicketsView
+              currentUser={currentUser}
+              onOpenSubscriber={(id) => setSubscriberProfileId(id)}
+            />
+          ) : activeTab === 'sla_rules' ? (
+            <SlaRulesView currentUser={currentUser} />
+          ) : activeTab === 'users' ? (
+            <UserManagementView currentUser={currentUser} />
+          ) : activeTab === 'roles' ? (
+            <RolesPermissionsView currentUser={currentUser} />
           ) : activeTab === 'subscribers' ? (
             <SubscribersView />
           ) : activeTab === 'packages' ? (

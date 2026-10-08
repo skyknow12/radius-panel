@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Search, User, Server, Layers, Box, Network, ArrowRight, CreditCard, Building2, Store, Wallet } from 'lucide-react';
+import { Search, User, Server, Layers, Box, Network, ArrowRight, CreditCard, Building2, Store, Wallet, LifeBuoy, UserCheck } from 'lucide-react';
 import type { GlobalSearchResult } from '@/types/api';
 
 interface GlobalSearchDialogProps {
@@ -87,6 +87,10 @@ export function GlobalSearchDialog({
       onNavigate?.('resellers');
     } else if (item.type === 'wallet') {
       onNavigate?.('wallets');
+    } else if (item.type === 'ticket') {
+      onNavigate?.('tickets');
+    } else if (item.type === 'user') {
+      onNavigate?.('users');
     }
   };
 
@@ -99,7 +103,7 @@ export function GlobalSearchDialog({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search username, CID, IP, NAS, branch, reseller, wallet, Txn ID..."
+            placeholder="Search username, CID, IP, NAS, branch, reseller, wallet, Txn, ticket, user..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
@@ -139,6 +143,10 @@ export function GlobalSearchDialog({
                       <Store className="w-4 h-4 text-purple-400" />
                     ) : item.type === 'wallet' ? (
                       <Wallet className="w-4 h-4 text-emerald-400" />
+                    ) : item.type === 'ticket' ? (
+                      <LifeBuoy className="w-4 h-4 text-rose-400" />
+                    ) : item.type === 'user' ? (
+                      <UserCheck className="w-4 h-4 text-indigo-400" />
                     ) : item.type === 'transaction' || item.type === 'invoice' ? (
                       <CreditCard className="w-4 h-4 text-emerald-400" />
                     ) : (

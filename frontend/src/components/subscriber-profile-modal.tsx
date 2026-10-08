@@ -25,6 +25,9 @@ import {
   Plus,
   RefreshCw,
   CreditCard,
+  LifeBuoy,
+  Pin,
+  Trash2,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -85,14 +88,26 @@ export function SubscriberProfileModal({
   const [actionNotice, setActionNotice] = React.useState<string | null>(null);
   const [actionLoading, setActionLoading] = React.useState(false);
 
+  // Phase 7 CRM & Support states
+  const [subTickets, setSubTickets] = React.useState<any[]>([]);
+  const [crmNotes, setCrmNotes] = React.useState<any[]>([]);
+  const [crmActivities, setCrmActivities] = React.useState<any[]>([]);
+  const [ticketSubject, setTicketSubject] = React.useState('');
+  const [ticketDesc, setTicketDesc] = React.useState('');
+  const [ticketPriority, setTicketPriority] = React.useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('MEDIUM');
+  const [showCreateTicketInModal, setShowCreateTicketInModal] = React.useState(false);
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const [profRes, usageRes, pkgRes, recRes] = await Promise.all([
+      const [profRes, usageRes, pkgRes, recRes, tktRes, crmNotesRes, crmActRes] = await Promise.all([
         fetch(`/api/subscribers/${subscriberId}/profile`),
         fetch(`/api/subscribers/${subscriberId}/usage?range=${usageRange}`),
         fetch('/api/packages'),
         fetch(`/api/recharge?subscriber_id=${subscriberId}`),
+        fetch(`/api/tickets?subscriber_id=${subscriberId}&limit=50`),
+        fetch(`/api/crm/subscribers/${subscriberId}/notes`),
+        fetch(`/api/crm/subscribers/${subscriberId}/activities`),
       ]);
 
       if (profRes.ok) {
@@ -110,6 +125,18 @@ export function SubscriberProfileModal({
       if (recRes.ok) {
         const json = await recRes.json();
         setRecharges(json.data?.items || json.data || []);
+      }
+      if (tktRes.ok) {
+        const json = await tktRes.json();
+        setSubTickets(json.data?.tickets || []);
+      }
+      if (crmNotesRes.ok) {
+        const json = await crmNotesRes.json();
+        setCrmNotes(json.data || []);
+      }
+      if (crmActRes.ok) {
+        const json = await crmActRes.json();
+        setCrmActivities(json.data || []);
       }
     } catch {} finally {
       setLoading(false);
@@ -210,6 +237,58 @@ export function SubscriberProfileModal({
     } catch {} finally {
       setActionLoading(false);
     }
+  };
+
+  const handleCreateTicketFromModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticketSubject.trim() || !ticketDesc.trim()) return;
+    try {
+      setActionLoading(true);
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscriber_id: subscriberId,
+          subject: ticketSubject.trim(),
+          description: ticketDesc.trim(),
+          priority: ticketPriority,
+          category: 'Customer Support',
+        }),
+      });
+      if (res.ok) {
+        showNotice('Support ticket created.');
+        setTicketSubject('');
+        setTicketDesc('');
+        setShowCreateTicketInModal(false);
+        fetchProfile();
+      }
+    } catch {} finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleTogglePinNote = async (noteId: number) => {
+    try {
+      const res = await fetch(`/api/crm/subscribers/${subscriberId}/notes/${noteId}/pin`, {
+        method: 'PATCH',
+      });
+      if (res.ok) {
+        fetchProfile();
+      }
+    } catch {}
+  };
+
+  const handleDeleteCrmNote = async (noteId: number) => {
+    if (!confirm('Are you sure you want to delete this note?')) return;
+    try {
+      const res = await fetch(`/api/crm/subscribers/${subscriberId}/notes/${noteId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        showNotice('Note removed.');
+        fetchProfile();
+      }
+    } catch {}
   };
 
   const sub = profile?.subscriber;
@@ -378,8 +457,9 @@ export function SubscriberProfileModal({
               { key: 'usage', label: 'Usage & Analytics', icon: TrendingUp },
               { key: 'auth', label: 'Authentication Logs', icon: Activity },
               { key: 'recharge', label: `Recharges (${recharges.length})`, icon: CreditCard },
+              { key: 'tickets', label: `Tickets (${subTickets.length})`, icon: LifeBuoy },
               { key: 'activity', label: 'Activity Timeline', icon: Clock },
-              { key: 'notes', label: `Staff Notes (${profile?.notes.length || 0})`, icon: FileText },
+              { key: 'notes', label: `CRM Notes (${profile?.notes.length || crmNotes.length || 0})`, icon: FileText },
             ] as const
           ).map((tab) => {
             const Icon = tab.icon;
@@ -954,18 +1034,127 @@ export function SubscriberProfileModal({
                 </div>
               )}
 
-              {/* TAB 8: STAFF NOTES */}
+              {/* TAB: TICKETS */}
+              {activeTab === 'tickets' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-foreground">Support & Trouble Tickets</h4>
+                      <p className="text-xs text-muted-foreground">Complaints, SLA tracking, and resolution history for this subscriber.</p>
+                    </div>
+                    <button
+                      onClick={() => setShowCreateTicketInModal(!showCreateTicketInModal)}
+                      className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 shadow-sm hover:opacity-90"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Open Ticket
+                    </button>
+                  </div>
+
+                  {showCreateTicketInModal && (
+                    <form onSubmit={handleCreateTicketFromModal} className="p-4 rounded-xl border border-border bg-card/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground uppercase tracking-wider">New Ticket</span>
+                        <select
+                          value={ticketPriority}
+                          onChange={(e) => setTicketPriority(e.target.value as any)}
+                          className="bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground"
+                        >
+                          <option value="LOW">Low (P4)</option>
+                          <option value="MEDIUM">Medium (P3)</option>
+                          <option value="HIGH">High (P2)</option>
+                          <option value="CRITICAL">Critical (P1)</option>
+                        </select>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Subject (e.g. Intermittent ping drops)"
+                        value={ticketSubject}
+                        onChange={(e) => setTicketSubject(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-background border border-border text-xs text-foreground"
+                      />
+                      <textarea
+                        rows={3}
+                        placeholder="Detailed complaint description..."
+                        value={ticketDesc}
+                        onChange={(e) => setTicketDesc(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-background border border-border text-xs text-foreground"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateTicketInModal(false)}
+                          className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={actionLoading}
+                          className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold"
+                        >
+                          Submit Ticket
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  <div className="space-y-2">
+                    {subTickets.length > 0 ? (
+                      subTickets.map((t) => (
+                        <div key={t.id} className="p-3.5 rounded-xl border border-border bg-card/60 flex items-center justify-between text-xs">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-primary">{t.ticket_number}</span>
+                              <span className="font-semibold text-foreground">{t.subject}</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary">{t.priority}</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground">{t.status}</span>
+                            </div>
+                            <div className="text-muted-foreground text-[11px] flex items-center gap-2">
+                              <span>Category: {t.category}</span>
+                              <span>•</span>
+                              <span>Opened: {new Date(t.created_at).toLocaleDateString()}</span>
+                              {t.assigned_user_name && (
+                                <>
+                                  <span>•</span>
+                                  <span>Assigned: {t.assigned_user_name}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            {t.sla_breached ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-500 border border-red-500/20">
+                                SLA Breached
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground font-mono">
+                                Deadline: {t.sla_deadline ? new Date(t.sla_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground py-6 text-center">
+                        No support tickets opened for this subscriber.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 8: CRM & STAFF NOTES */}
               {activeTab === 'notes' && (
                 <div className="space-y-5">
                   <form onSubmit={handleAddNote} className="space-y-3">
                     <label className="text-xs font-bold text-foreground uppercase tracking-wider block">
-                      Add Internal Staff Note
+                      Add CRM / Staff Note
                     </label>
                     <div className="flex gap-2">
                       <textarea
                         value={newNoteContent}
                         onChange={(e) => setNewNoteContent(e.target.value)}
-                        placeholder="Type verification notes, optical power readings, or customer requests..."
+                        placeholder="Type CRM follow-up notes, customer interaction summaries, or tech logs..."
                         className="flex-1 p-3 rounded-xl bg-background border border-border text-xs focus:ring-2 focus:ring-primary outline-none resize-none h-20 text-foreground"
                       />
                       <button
@@ -979,7 +1168,50 @@ export function SubscriberProfileModal({
                   </form>
 
                   <div className="space-y-3 pt-2">
-                    {profile?.notes && profile.notes.length > 0 ? (
+                    {/* Render CRM notes if available, falling back to profile notes */}
+                    {crmNotes.length > 0 ? (
+                      crmNotes.map((n) => (
+                        <div
+                          key={n.id}
+                          className={`p-4 rounded-xl border text-xs space-y-1.5 transition ${
+                            n.is_pinned
+                              ? 'border-primary/40 bg-primary/5'
+                              : 'border-border bg-card/60'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-primary">{n.author_name}</span>
+                              {n.is_pinned && (
+                                <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold rounded bg-primary/10 text-primary border border-primary/20 flex items-center gap-1">
+                                  <Pin className="w-2.5 h-2.5" /> Pinned
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px]">{new Date(n.created_at).toLocaleString()}</span>
+                              <button
+                                onClick={() => handleTogglePinNote(n.id)}
+                                className="p-1 hover:text-primary transition"
+                                title={n.is_pinned ? 'Unpin note' : 'Pin note to top'}
+                              >
+                                <Pin className={`w-3.5 h-3.5 ${n.is_pinned ? 'text-primary fill-primary' : 'text-muted-foreground'}`} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCrmNote(n.id)}
+                                className="p-1 hover:text-red-500 transition text-muted-foreground"
+                                title="Delete note"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-foreground leading-relaxed whitespace-pre-wrap">
+                            {n.note}
+                          </p>
+                        </div>
+                      ))
+                    ) : profile?.notes && profile.notes.length > 0 ? (
                       profile.notes.map((n) => (
                         <div
                           key={n.id}

@@ -37,6 +37,46 @@ export function Topbar({
 }: TopbarProps) {
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
+  const [notifications, setNotifications] = React.useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = React.useState<number>(0);
+
+  const fetchNotifications = async () => {
+    try {
+      const [resList, resCount] = await Promise.all([
+        fetch('/api/notifications?limit=10'),
+        fetch('/api/notifications/unread-count'),
+      ]);
+      if (resList.ok) {
+        const jsonList = await resList.json();
+        setNotifications(jsonList.data || []);
+      }
+      if (resCount.ok) {
+        const jsonCount = await resCount.json();
+        setUnreadCount(jsonCount.data?.count || 0);
+      }
+    } catch {}
+  };
+
+  React.useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 25000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleMarkAllRead = async () => {
+    try {
+      await fetch('/api/notifications/mark-all-read', { method: 'POST' });
+      setUnreadCount(0);
+      fetchNotifications();
+    } catch {}
+  };
+
+  const handleMarkRead = async (id: number) => {
+    try {
+      await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+      fetchNotifications();
+    } catch {}
+  };
 
   const isHealthy = systemHealth?.status === 'healthy';
   const isWarning = systemHealth?.status === 'degraded';
@@ -123,24 +163,53 @@ export function Topbar({
             title="Notifications"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-primary rounded-full ring-2 ring-card" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 px-1.5 min-w-[18px] h-4.5 bg-rose-600 text-white rounded-full text-[10px] font-bold flex items-center justify-center ring-2 ring-card shadow-sm animate-pulse">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
 
           {notificationsOpen && (
-            <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-card p-3 shadow-xl z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl border border-border bg-card p-3 shadow-xl z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
               <div className="flex items-center justify-between pb-2 border-b border-border font-medium">
-                <span>Recent System Alerts</span>
-                <span className="text-[10px] text-muted-foreground">3 new</span>
+                <span className="font-bold text-foreground">Notifications</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground">{unreadCount} unread</span>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="text-[10px] text-primary hover:underline"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="py-2 space-y-2">
-                <div className="p-2 rounded-lg bg-muted/50 border border-border/50">
-                  <p className="font-semibold text-foreground">FreeRADIUS Daemon Online</p>
-                  <p className="text-muted-foreground text-[11px]">Ports 1812/1813 UDP responding in 1ms.</p>
-                </div>
-                <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500">
-                  <p className="font-semibold">Dharan-BNG Warning</p>
-                  <p className="text-[11px]">Heartbeat interval exceeded 15 mins.</p>
-                </div>
+              <div className="py-2 space-y-2 max-h-72 overflow-y-auto pr-1">
+                {notifications.length > 0 ? (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => handleMarkRead(n.id)}
+                      className={`p-2.5 rounded-lg border cursor-pointer transition ${
+                        !n.is_read
+                          ? 'bg-primary/5 border-primary/20 text-foreground'
+                          : 'bg-muted/40 border-border/60 text-muted-foreground'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-foreground text-xs">{n.title}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-[11px] mt-0.5 text-muted-foreground line-clamp-2">{n.message}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="py-6 text-center text-xs text-muted-foreground">No recent notifications</p>
+                )}
               </div>
             </div>
           )}

@@ -519,5 +519,74 @@ The system supports a 3-tier operational hierarchy:
   - `reseller_operator`: Recharge and view permissions for reseller subscribers.
 - **Strict Data Isolation**: Multi-tenant isolation is enforced at the database and API query layer, ensuring partner accounts cannot view or modify unauthorized branches or subscribers.
 
+---
+
+## Phase 7: CRM, Customer Support, Notifications & User Management
+
+Phase 7 introduces enterprise customer relationship management, helpdesk ticketing, SLA compliance tracking, granular database-driven RBAC, and in-app system notifications.
+
+### 1. User Management & Session Governance
+- **Full Staff CRUD**: Administer staff accounts with full names, phone numbers, emails, assigned organizations/branches/resellers, and status controls (`ACTIVE`, `INACTIVE`, `SUSPENDED`).
+- **Immediate Session Invalidation**:
+  - `forceLogout` increments `users.token_version` and marks all active records in `login_sessions` as revoked (`is_revoked = TRUE`).
+  - Active JWT sessions carrying older token versions are immediately rejected at the API middleware layer.
+- **Password Governance**:
+  - Secure bcrypt password hashing with min length and complexity checks.
+  - `force_password_reset` flag requiring operators to update credentials on subsequent login.
+- **Login History Audit**: Every login attempt (Success, Failed credentials, Locked) is logged to `login_history` with IP address, user agent, and failure reason.
+- **Active Session Tracking**: View active user sessions with IP address, browser agent, last active timestamp, and instant remote revocation.
+
+### 2. Database-Driven RBAC & Data Scope
+- **Dynamic Roles & Permissions**:
+  - System roles (`SUPER_ADMIN`, `ORG_ADMIN`, `NOC_HEAD`, `NOC_OPERATOR`, `BILLING_ADMIN`, `BRANCH_ADMIN`, `BRANCH_OPERATOR`, `RESELLER_ADMIN`, `RESELLER_OPERATOR`, `SUPPORT_OPERATOR`, `READ_ONLY`) and arbitrary custom roles.
+  - Action-level permissions catalog grouped by module: Subscribers, RADIUS/NAS, Billing/Wallets, Branches/Resellers, Tickets/CRM, Users/RBAC, and System Settings.
+  - Multi-role assignment: Users assigned multiple roles automatically receive the SQL union of all permissions.
+- **Data Scopes**:
+  - `GLOBAL`: Unrestricted visibility across all branches, resellers, and subscribers.
+  - `ORGANIZATION`: Scoped to designated organization entities.
+  - `BRANCH`: Automatically constrained to users, subscribers, and wallets belonging to the branch.
+  - `RESELLER`: Constrained to franchise partner subscribers, wallets, and tickets.
+  - `OWN`: Operator-only records.
+
+### 3. Customer CRM & Unified Touchpoints
+- **Clean Subscriber Extension**: Fully integrates with existing subscriber database entities without duplicate customer records.
+- **CRM Notes**:
+  - Pinned notes feature: Critical customer notices (e.g. VIP, high-value corporate link, chronic fiber cuts) stay pinned to the top of profile notes.
+  - Delete and audit tracking for staff notes.
+- **Activity Timeline**:
+  - Centralized customer activity log (`customer_activities`) tracking recharges, plan changes, suspension, tickets, and authentication anomalies.
+- **Customer Communications**:
+  - Multi-channel communication logger (`customer_communications`) recording interactions across `CALL`, `SMS`, `WHATSAPP`, `EMAIL`, and `IN_APP`.
+
+### 4. Helpdesk & Support Ticketing
+- **Ticket Lifecycle**:
+  - Managed states: `OPEN` → `IN_PROGRESS` → `WAITING_CUSTOMER` → `WAITING_INTERNAL` → `RESOLVED` → `CLOSED` (or `REOPENED`).
+  - 14 ISP Categories: Connectivity Issues, Slow Speed, High Latency, Physical Fiber Cut, ONT/Router Malfunction, Optical Power Low, IP Allocation Issue, Billing Dispute, Payment Verification, Package Upgrade, Address Relocation, Plan Cancellation, Port Configuration, and General Inquiry.
+- **Dual-Thread Discussion**:
+  - Staff internal notes (private to team) vs Public comments (customer-facing).
+- **Technician Assignment**: Assign tickets to specific operators with instant assignment notifications.
+- **Escalation Framework**:
+  - Multi-level priority escalation (`LOW` → `MEDIUM` → `HIGH` → `CRITICAL`).
+  - Mandatory justification prompt logged to immutable `ticket_escalations` audit trail.
+
+### 5. Service Level Agreement (SLA) Engine
+- **Configurable Thresholds**:
+  - `CRITICAL` (P1): 1 hr response / 4 hr resolution.
+  - `HIGH` (P2): 2 hr response / 8 hr resolution.
+  - `MEDIUM` (P3): 4 hr response / 24 hr resolution.
+  - `LOW` (P4): 8 hr response / 48 hr resolution.
+- **Automated Deadline Tracking**:
+  - Deadlines calculated dynamically from active SLA policies upon ticket creation (`NOW() + resolution_time_hours`).
+  - Near-breach (< 2 hours remaining) warnings highlighted in amber across NOC views.
+  - Overdue tickets flagged in pulsing red as `BREACHED SLA`.
+
+### 6. Notifications & Global Navigation
+- **In-App Notification Engine**:
+  - Real-time notification generation on ticket events, SLA warnings, and account state modifications.
+  - Topbar bell icon with unread badge counter, notification drawer, single-click mark-read, and mark-all-read.
+- **Unified Global Search**:
+  - Search modal (`⌘K`) indexes support tickets (by ticket number, subject) and staff users (by username, full name) alongside subscribers, IPs, NAS devices, branches, and transactions.
+
+
 
 

@@ -26,6 +26,11 @@ import {
   Store,
   Wallet,
   Percent,
+  LifeBuoy,
+  UserCheck,
+  ShieldCheck,
+  ShieldAlert,
+  Headphones,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -40,8 +45,10 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
   const [radiusOpen, setRadiusOpen] = React.useState(true);
   const [networkOpen, setNetworkOpen] = React.useState(true);
   const [managementOpen, setManagementOpen] = React.useState(true);
+  const [crmOpen, setCrmOpen] = React.useState(true);
   const [channelsOpen, setChannelsOpen] = React.useState(true);
   const [billingOpen, setBillingOpen] = React.useState(true);
+  const [accessOpen, setAccessOpen] = React.useState(true);
   const [systemOpen, setSystemOpen] = React.useState(true);
 
   const handleNextModule = (title: string) => {
@@ -330,6 +337,69 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
           )}
         </div>
 
+        {/* CRM & CUSTOMER SUPPORT GROUP */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setCrmOpen(!crmOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <Headphones className="w-3.5 h-3.5 text-pink-400" /> CRM & SUPPORT
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !crmOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? crmOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => setActiveTab('crm')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'crm'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Customer CRM"
+              >
+                <Users className="w-4 h-4 flex-shrink-0 text-pink-400" />
+                {!collapsed && <span>Customer CRM</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('tickets')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'tickets'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Support Tickets"
+              >
+                <LifeBuoy className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                {!collapsed && <span>Support Tickets</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('sla_rules')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'sla_rules'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="SLA Policies"
+              >
+                <ShieldAlert className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                {!collapsed && <span>SLA Policies</span>}
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* CHANNELS & WALLETS GROUP */}
         <div>
           {!collapsed ? (
@@ -544,6 +614,55 @@ export function Sidebar({ activeTab, setActiveTab, collapsed, onNavigateNotice }
             </div>
             {!collapsed && <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1 rounded font-medium">CSV</span>}
           </button>
+        </div>
+
+        {/* ACCESS & RBAC GROUP */}
+        <div>
+          {!collapsed ? (
+            <div
+              onClick={() => setAccessOpen(!accessOpen)}
+              className="flex items-center justify-between text-xs font-semibold text-muted-foreground/80 tracking-wider uppercase px-3 py-1 cursor-pointer hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" /> ACCESS & RBAC
+              </span>
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', !accessOpen && '-rotate-90')} />
+            </div>
+          ) : (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {(!collapsed ? accessOpen : true) && (
+            <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => setActiveTab('users')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'users'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Staff Users"
+              >
+                <UserCheck className="w-4 h-4 flex-shrink-0 text-indigo-400" />
+                {!collapsed && <span>Staff Users</span>}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('roles')}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  activeTab === 'roles'
+                    ? 'bg-primary/15 text-primary font-semibold border border-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Roles & Permissions"
+              >
+                <ShieldCheck className="w-4 h-4 flex-shrink-0 text-indigo-400" />
+                {!collapsed && <span>Roles & Permissions</span>}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* SYSTEM */}

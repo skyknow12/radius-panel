@@ -1,7 +1,7 @@
 import { query } from '../db/pool';
 
 export interface GlobalSearchResultItem {
-  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice' | 'branch' | 'reseller' | 'wallet';
+  type: 'subscriber' | 'session' | 'nas' | 'package' | 'ip' | 'transaction' | 'invoice' | 'branch' | 'reseller' | 'wallet' | 'ticket' | 'user';
   title: string;
   subtitle: string;
   id: string | number;
@@ -35,7 +35,25 @@ export const searchService = {
       });
     }
 
-    // 2. Branches
+    // 2. Support Tickets
+    const tickRes = await query<{ id: number; ticket_number: string; username: string; subject: string; status: string; priority: string }>(
+      `SELECT id, ticket_number, username, subject, status, priority
+         FROM tickets
+        WHERE ticket_number ILIKE $1 OR subject ILIKE $1 OR username ILIKE $1
+        LIMIT 4`,
+      [pattern]
+    );
+    for (const t of tickRes.rows) {
+      results.push({
+        type: 'ticket',
+        id: t.id,
+        title: `Ticket: ${t.ticket_number}`,
+        subtitle: `${t.username} • ${t.subject}`,
+        badge: `${t.status} • ${t.priority}`,
+      });
+    }
+
+    // 3. Branches
     const brRes = await query<{ id: number; name: string; code: string; status: string }>(
       `SELECT id, name, code, status FROM branches WHERE name ILIKE $1 OR code ILIKE $1 LIMIT 3`,
       [pattern],
@@ -50,7 +68,7 @@ export const searchService = {
       });
     }
 
-    // 3. Resellers
+    // 4. Resellers
     const resRes = await query<{ id: number; name: string; code: string; contact_person: string; status: string }>(
       `SELECT id, name, code, contact_person, status FROM resellers WHERE name ILIKE $1 OR code ILIKE $1 OR contact_person ILIKE $1 LIMIT 3`,
       [pattern],
@@ -65,7 +83,7 @@ export const searchService = {
       });
     }
 
-    // 4. Wallets
+    // 5. Wallets
     const wltRes = await query<{ id: number; wallet_number: string; entity_type: string; balance: string }>(
       `SELECT id, wallet_number, entity_type, balance FROM wallets WHERE wallet_number ILIKE $1 LIMIT 3`,
       [pattern],
@@ -79,7 +97,7 @@ export const searchService = {
       });
     }
 
-    // 5. Active Sessions
+    // 6. Active Sessions
     const sessRes = await query<{ radacctid: number; username: string; framedipaddress: string; acctsessionid: string; nasipaddress: string }>(
       `SELECT radacctid, username, host(framedipaddress) as framedipaddress, acctsessionid, host(nasipaddress) as nasipaddress
          FROM radacct
@@ -97,7 +115,7 @@ export const searchService = {
       });
     }
 
-    // 6. NAS Devices
+    // 7. NAS Devices
     const nasRes = await query<{ id: number; name: string; ip_address: string; nas_type: string; status: string }>(
       `SELECT id, name, host(ip_address) as ip_address, nas_type, status
          FROM nas_devices
@@ -115,7 +133,7 @@ export const searchService = {
       });
     }
 
-    // 7. Packages
+    // 8. Packages
     const pkgRes = await query<{ id: number; name: string; rate_limit: string; price: string }>(
       `SELECT id, name, rate_limit, price
          FROM packages
@@ -132,7 +150,7 @@ export const searchService = {
       });
     }
 
-    // 8. Billing Transactions
+    // 9. Billing Transactions
     const txRes = await query<{ transaction_id: string; username: string; final_amount: string; currency: string; status: string; package_name: string }>(
       `SELECT transaction_id, username, final_amount, currency, status, package_name
          FROM recharge_transactions
@@ -147,6 +165,25 @@ export const searchService = {
         title: `Txn: ${tx.transaction_id}`,
         subtitle: `${tx.username} • ${tx.currency} ${tx.final_amount} (${tx.package_name})`,
         badge: tx.status,
+      });
+    }
+
+    // 10. Staff Users
+    const userRes = await query<{ id: string; username: string; full_name: string; role_name: string; status: string }>(
+      `SELECT u.id, u.username, u.full_name, r.display_name AS role_name, COALESCE(u.status, 'ACTIVE') AS status
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+        WHERE u.username ILIKE $1 OR u.full_name ILIKE $1 OR u.email ILIKE $1
+        LIMIT 3`,
+      [pattern]
+    );
+    for (const u of userRes.rows) {
+      results.push({
+        type: 'user',
+        id: u.id,
+        title: `Staff: ${u.full_name || u.username} (@${u.username})`,
+        subtitle: `Role: ${u.role_name}`,
+        badge: u.status,
       });
     }
 

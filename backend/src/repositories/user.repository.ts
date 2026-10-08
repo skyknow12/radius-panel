@@ -18,12 +18,22 @@ export interface UserRow {
   reseller_id?: number | null;
   employee_id?: string | null;
   user_type?: string;
+  phone?: string | null;
+  status?: string;
+  data_scope?: string;
+  force_password_reset?: boolean;
+  token_version?: number;
 }
 
 const SELECT_USER = `
   SELECT u.id, u.username, u.email, u.full_name, u.password_hash, u.is_active,
          u.failed_login_attempts, u.locked_until, u.last_login_at,
          u.organization_id, u.branch_id, u.reseller_id, u.employee_id,
+         u.phone,
+         COALESCE(u.status, 'ACTIVE') AS status,
+         COALESCE(u.data_scope, 'OWN') AS data_scope,
+         COALESCE(u.force_password_reset, FALSE) AS force_password_reset,
+         COALESCE(u.token_version, 1) AS token_version,
          COALESCE(u.user_type, 'isp') AS user_type,
          r.id AS role_id, r.name AS role_name, r.display_name AS role_display_name
     FROM users u
@@ -50,6 +60,35 @@ export const userRepository = {
       [roleId],
     );
     return rows.map((r) => r.key);
+  },
+
+  async permissionsForUser(userId: string, primaryRoleId: number): Promise<string[]> {
+    const { rows } = await query<{ key: string }>(
+      `SELECT DISTINCT p.key
+         FROM permissions p
+         JOIN role_permissions rp ON rp.permission_id = p.id
+        WHERE rp.role_id IN (
+          SELECT role_id FROM user_roles WHERE user_id = $1
+          UNION
+          SELECT $2
+        )
+        ORDER BY p.key`,
+      [userId, primaryRoleId]
+    );
+    return rows.map((r) => r.key);
+  },
+
+  async rolesForUser(userId: string, primaryRoleName: string): Promise<string[]> {
+    const { rows } = await query<{ name: string }>(
+      `SELECT DISTINCT r.name
+         FROM roles r
+         JOIN user_roles ur ON ur.role_id = r.id
+        WHERE ur.user_id = $1`,
+      [userId]
+    );
+    const names = rows.map((r) => r.name);
+    if (!names.includes(primaryRoleName)) names.unshift(primaryRoleName);
+    return names;
   },
 
   async create(input: {
