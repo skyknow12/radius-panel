@@ -66,7 +66,7 @@ export function SubscriberProfileModal({
   const [packages, setPackages] = React.useState<PackageItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState<
-    'overview' | 'service' | 'radius' | 'sessions' | 'usage' | 'auth' | 'recharge' | 'activity' | 'notes'
+    'overview' | 'service' | 'radius' | 'sessions' | 'usage' | 'auth' | 'recharge' | 'tickets' | 'activity' | 'notes'
   >('overview');
   const [usageRange, setUsageRange] = React.useState<'today' | '7d' | '30d'>('30d');
 
