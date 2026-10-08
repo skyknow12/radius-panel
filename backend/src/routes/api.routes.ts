@@ -3474,7 +3474,7 @@ apiRouter.get(
   '/settings/appearance',
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    const userId = authReq.user?.id;
+    const userId = authReq.user?.userId;
     const settings = await settingsRepository.getAppearanceSettings(userId);
     res.json(envelope(settings, 'live'));
   })
@@ -3552,10 +3552,11 @@ apiRouter.get(
   '/users/preferences',
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (!authReq.user?.id) {
-      return res.json(envelope({ theme: 'default', appearance_mode: 'dark', sidebar_collapsed: false }, 'live'));
+    if (!authReq.user?.userId) {
+      res.json(envelope({ theme: 'default', appearance_mode: 'dark', sidebar_collapsed: false }, 'live'));
+      return;
     }
-    const prefs = await settingsRepository.getUserPreferences(authReq.user.id);
+    const prefs = await settingsRepository.getUserPreferences(authReq.user.userId);
     res.json(envelope(prefs || { theme: 'default', appearance_mode: 'dark', sidebar_collapsed: false }, 'live'));
   })
 );
@@ -3564,7 +3565,7 @@ apiRouter.patch(
   '/users/preferences',
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (!authReq.user?.id) {
+    if (!authReq.user?.userId) {
       throw HttpError.unauthorized('Authentication required to save preferences');
     }
 
@@ -3576,7 +3577,7 @@ apiRouter.patch(
     });
     const parsed = schema.parse(req.body);
 
-    const prefs = await settingsRepository.saveUserPreferences(authReq.user.id, parsed);
+    const prefs = await settingsRepository.saveUserPreferences(authReq.user.userId, parsed);
     res.json(envelope(prefs, 'live'));
   })
 );
