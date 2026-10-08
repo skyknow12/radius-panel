@@ -61,6 +61,13 @@ export function SettingsAppearanceView({ initialTab = 'theme', currentUser }: Se
   const [selectedOrgDefault, setSelectedOrgDefault] = useState<AppThemeKey>(orgDefaultTheme);
   const [savingOrgDefault, setSavingOrgDefault] = useState(false);
   const [orgDefaultSuccess, setOrgDefaultSuccess] = useState(false);
+  const [orgDefaultError, setOrgDefaultError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (orgDefaultTheme) {
+      setSelectedOrgDefault(orgDefaultTheme);
+    }
+  }, [orgDefaultTheme]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -129,11 +136,12 @@ export function SettingsAppearanceView({ initialTab = 'theme', currentUser }: Se
   const handleSaveOrgDefault = async () => {
     try {
       setSavingOrgDefault(true);
+      setOrgDefaultError(null);
       await setOrgDefaultTheme(selectedOrgDefault);
       setOrgDefaultSuccess(true);
-      setTimeout(() => setOrgDefaultSuccess(false), 3000);
+      setTimeout(() => setOrgDefaultSuccess(false), 3500);
     } catch (err: any) {
-      alert(err.message || 'Failed to update organization default theme');
+      setOrgDefaultError(err.message || 'Failed to update organization default theme');
     } finally {
       setSavingOrgDefault(false);
     }
@@ -501,6 +509,20 @@ export function SettingsAppearanceView({ initialTab = 'theme', currentUser }: Se
                   )}
                 </button>
               </div>
+
+              {orgDefaultSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>Organization default theme updated successfully.</span>
+                </div>
+              )}
+
+              {orgDefaultError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-red-400" />
+                  <span>{orgDefaultError}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

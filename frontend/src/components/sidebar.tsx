@@ -135,7 +135,7 @@ export function Sidebar({
         className={cn(
           'w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all group relative',
           isActive
-            ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold shadow-md shadow-purple-500/20'
+            ? 'bg-primary text-primary-foreground font-semibold shadow-md shadow-primary/25'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
         )}
         title={collapsed ? label : undefined}
@@ -143,7 +143,7 @@ export function Sidebar({
         <Icon
           className={cn(
             'w-4 h-4 flex-shrink-0 transition-colors',
-            isActive ? 'text-white' : 'text-muted-foreground group-hover:text-primary'
+            isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-primary'
           )}
         />
         {!collapsed && (
@@ -234,7 +234,7 @@ export function Sidebar({
     >
       {/* Brand Header */}
       <div className="h-16 flex items-center px-4 border-b border-border/80 gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 via-indigo-600 to-primary flex items-center justify-center text-white font-bold shadow-lg shadow-purple-500/20 flex-shrink-0 overflow-hidden relative border border-white/10">
+        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold shadow-lg shadow-primary/20 flex-shrink-0 overflow-hidden relative border border-white/10">
           {logoUrl ? (
             <img
               src={logoUrl}

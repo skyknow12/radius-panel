@@ -49,8 +49,8 @@ export class SettingsRepository {
       custom_settings?: Record<string, unknown>;
     }
   ): Promise<UserPreferencesItem> {
-    const theme = input.theme || 'default';
-    const mode = input.appearance_mode || 'dark';
+    const theme = input.theme || 'light-pro';
+    const mode = input.appearance_mode || 'light';
     const collapsed = input.sidebar_collapsed !== undefined ? input.sidebar_collapsed : false;
     const custom = JSON.stringify(input.custom_settings || {});
 
@@ -73,7 +73,7 @@ export class SettingsRepository {
    * Get consolidated Appearance Settings based on:
    * 1. User theme (highest priority)
    * 2. Organization default theme
-   * 3. System default ('default')
+   * 3. System default ('light-pro')
    */
   async getAppearanceSettings(userId?: string): Promise<AppearanceSettingsData> {
     // 1. Fetch organization branding & default theme
@@ -94,7 +94,7 @@ export class SettingsRepository {
     `);
 
     const org = orgRes.rows[0];
-    const orgTheme = org?.settings?.default_theme || 'default';
+    const orgTheme = org?.settings?.default_theme || 'light-pro';
     const logoUrl = org?.logo_url || null;
     const brandName = org?.brand_name || 'SKY RADIUS';
     const brandSubtitle = org?.brand_subtitle || 'ISP Operations';
@@ -102,21 +102,21 @@ export class SettingsRepository {
 
     // 2. Fetch user preferences if user is authenticated
     let userTheme = '';
-    let appearanceMode = 'dark';
+    let appearanceMode = 'light';
 
     if (userId) {
       const userPref = await this.getUserPreferences(userId);
       if (userPref) {
         userTheme = userPref.theme;
-        appearanceMode = userPref.appearance_mode || 'dark';
+        appearanceMode = userPref.appearance_mode || 'light';
       }
     }
 
     // Determine effective theme
-    const effectiveTheme = userTheme || orgTheme || 'default';
+    const effectiveTheme = userTheme || orgTheme || 'light-pro';
 
     return {
-      userTheme: userTheme || 'default',
+      userTheme: userTheme || orgTheme || 'light-pro',
       orgTheme,
       effectiveTheme,
       appearanceMode,

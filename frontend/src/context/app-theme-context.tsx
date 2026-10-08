@@ -2,14 +2,14 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-export type AppThemeKey = 'default' | 'dark-pro' | 'light-pro' | 'colorful' | 'noc';
-export type AppearanceMode = 'dark' | 'light' | 'system';
+export type AppThemeKey = 'light-pro' | 'default' | 'dark-pro' | 'colorful' | 'noc';
+export type AppearanceMode = 'light' | 'dark' | 'system';
 
 export interface ThemeOption {
   id: AppThemeKey;
   name: string;
   tagline: string;
-  category: 'dark' | 'light' | 'vibrant' | 'high-contrast';
+  category: 'light' | 'dark' | 'vibrant' | 'high-contrast';
   description: string;
   primaryColor: string;
   bgColor: string;
@@ -21,37 +21,11 @@ export interface ThemeOption {
 
 export const THEME_OPTIONS: ThemeOption[] = [
   {
-    id: 'default',
-    name: 'Default',
-    tagline: 'Purple / Indigo Modern ISP',
-    category: 'dark',
-    description: 'The standard Fiberworld-style professional purple/indigo theme with dark sidebar and clean card contrast.',
-    primaryColor: '#8b5cf6',
-    bgColor: '#0a0e1a',
-    cardColor: '#101626',
-    borderColor: '#1e2638',
-    textColor: '#f8fafc',
-    badgeColor: '#a78bfa',
-  },
-  {
-    id: 'dark-pro',
-    name: 'Dark Pro',
-    tagline: 'Deep Charcoal NOC Center',
-    category: 'dark',
-    description: 'Deep dark charcoal/near-black canvas engineered for technical NOC teams with maximum focus and subtle borders.',
-    primaryColor: '#9061f9',
-    bgColor: '#06080d',
-    cardColor: '#10121a',
-    borderColor: '#1c1f2e',
-    textColor: '#f8fafc',
-    badgeColor: '#c084fc',
-  },
-  {
     id: 'light-pro',
     name: 'Light Pro',
-    tagline: 'Crisp Enterprise Light',
+    tagline: 'Clean Crisp Enterprise Light (Default)',
     category: 'light',
-    description: 'Clean, bright white and soft slate design tailored for administrative, customer support, and billing management staff.',
+    description: 'Bright crisp canvas, pure white cards, soft slate borders, and royal purple accents for high-clarity ISP operations and billing.',
     primaryColor: '#7c3aed',
     bgColor: '#f8fafc',
     cardColor: '#ffffff',
@@ -60,28 +34,54 @@ export const THEME_OPTIONS: ThemeOption[] = [
     badgeColor: '#6d28d9',
   },
   {
+    id: 'default',
+    name: 'Classic Dark',
+    tagline: 'Purple / Indigo Modern ISP',
+    category: 'dark',
+    description: 'The standard Fiberworld-style professional purple/indigo theme with dark navy canvas, slate cards, and clean contrast.',
+    primaryColor: '#8b5cf6',
+    bgColor: '#0b0f19',
+    cardColor: '#141b2d',
+    borderColor: '#24304f',
+    textColor: '#f8fafc',
+    badgeColor: '#a78bfa',
+  },
+  {
+    id: 'dark-pro',
+    name: 'Dark Pro',
+    tagline: 'Midnight Charcoal & Radiant Blue',
+    category: 'dark',
+    description: 'Deep pitch charcoal/near-black canvas engineered for technical NOC teams with radiant electric blue indicators.',
+    primaryColor: '#3b82f6',
+    bgColor: '#080b11',
+    cardColor: '#10141d',
+    borderColor: '#202738',
+    textColor: '#f8fafc',
+    badgeColor: '#60a5fa',
+  },
+  {
     id: 'colorful',
     name: 'Colorful',
-    tagline: 'Multi-Color Modern Dashboard',
+    tagline: 'Deep Ocean Teal & Cyber Emerald',
     category: 'vibrant',
-    description: 'Vibrant indigo, cyan, emerald, and violet accents carefully balanced for a modern, multi-spectrum experience.',
-    primaryColor: '#6366f1',
-    bgColor: '#0b0f19',
-    cardColor: '#131929',
-    borderColor: '#1e293b',
+    description: 'Deep ocean teal canvas with rich aquatic cards, cyan borders, and emerald green accents for a distinctive modern experience.',
+    primaryColor: '#14b8a6',
+    bgColor: '#0a171c',
+    cardColor: '#12252c',
+    borderColor: '#234c5b',
     textColor: '#f8fafc',
-    badgeColor: '#38bdf8',
+    badgeColor: '#2dd4bf',
   },
   {
     id: 'noc',
     name: 'NOC High Contrast',
-    tagline: 'High Visibility Operations',
+    tagline: 'OLED Black & Ultra Neon Indicators',
     category: 'high-contrast',
-    description: 'Pure black canvas with ultra-high contrast neon indicators designed specifically for 24/7 video walls and large displays.',
-    primaryColor: '#9d4edd',
+    description: 'Pure 100% OLED pitch black canvas with jet black cards, crisp white text, and ultra-high visibility neon green indicators.',
+    primaryColor: '#00e676',
     bgColor: '#000000',
-    cardColor: '#121212',
-    borderColor: '#383838',
+    cardColor: '#0f0f0f',
+    borderColor: '#474747',
     textColor: '#ffffff',
     badgeColor: '#00e676',
   },
@@ -106,13 +106,27 @@ interface AppThemeContextType {
 
 const AppThemeContext = createContext<AppThemeContextType | undefined>(undefined);
 
+// Helper for auth headers
+function getAuthHeaders(): HeadersInit {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('radius_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+  return headers;
+}
+
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<AppThemeKey>('default');
-  const [appearanceMode, setAppearanceModeState] = useState<AppearanceMode>('dark');
+  const [theme, setThemeState] = useState<AppThemeKey>('light-pro');
+  const [appearanceMode, setAppearanceModeState] = useState<AppearanceMode>('light');
   const [logoUrl, setLogoUrlState] = useState<string | null>(null);
   const [brandName, setBrandNameState] = useState<string>('SKY RADIUS');
   const [brandSubtitle, setBrandSubtitleState] = useState<string>('ISP Operations');
-  const [orgDefaultTheme, setOrgDefaultThemeState] = useState<AppThemeKey>('default');
+  const [orgDefaultTheme, setOrgDefaultThemeState] = useState<AppThemeKey>('light-pro');
 
   // Apply theme to document element
   const applyThemeToDOM = useCallback((newTheme: AppThemeKey) => {
@@ -122,7 +136,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     // Set data-theme attribute
     root.setAttribute('data-theme', newTheme);
 
-    // Sync class for Tailwind dark mode
+    // Sync class for Tailwind dark/light mode
     if (newTheme === 'light-pro') {
       root.classList.remove('dark');
       root.classList.add('light');
@@ -143,11 +157,11 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       const savedName = localStorage.getItem('radius_brand_name');
       const savedSub = localStorage.getItem('radius_brand_subtitle');
 
-      if (savedTheme && ['default', 'dark-pro', 'light-pro', 'colorful', 'noc'].includes(savedTheme)) {
+      if (savedTheme && ['light-pro', 'default', 'dark-pro', 'colorful', 'noc'].includes(savedTheme)) {
         setThemeState(savedTheme);
         applyThemeToDOM(savedTheme);
       } else {
-        applyThemeToDOM('default');
+        applyThemeToDOM('light-pro');
       }
 
       if (savedMode) setAppearanceModeState(savedMode);
@@ -157,7 +171,10 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     // Fetch server-persisted appearance settings
-    fetch('/api/settings/appearance')
+    fetch('/api/settings/appearance', {
+      headers: getAuthHeaders(),
+      credentials: 'same-origin',
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (json?.data) {
@@ -203,7 +220,8 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
         // Save to user preferences in background if authenticated
         fetch('/api/users/preferences', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify({ theme: newTheme }),
         }).catch(() => undefined);
       }
@@ -220,7 +238,8 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
 
     fetch('/api/users/preferences', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
+      credentials: 'same-origin',
       body: JSON.stringify({ appearance_mode: newMode }),
     }).catch(() => undefined);
   }, []);
@@ -252,12 +271,13 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     async (input: { logo_url?: string | null; brand_name?: string; brand_subtitle?: string }) => {
       const res = await fetch('/api/settings/appearance', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify(input),
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error?.message || 'Failed to save branding');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || err.message || 'Failed to save branding');
       }
       if (input.logo_url !== undefined) setLogoUrl(input.logo_url);
       if (input.brand_name) setBrandNameState(input.brand_name);
@@ -271,12 +291,13 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     async (newOrgTheme: AppThemeKey) => {
       const res = await fetch('/api/settings/appearance', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify({ default_theme: newOrgTheme }),
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error?.message || 'Failed to update organization default theme');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || err.message || 'Failed to update organization default theme');
       }
       setOrgDefaultThemeState(newOrgTheme);
     },
@@ -285,12 +306,17 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Reset theme to default
   const resetToDefault = useCallback(() => {
-    setTheme('default');
-  }, [setTheme]);
+    const target = orgDefaultTheme || 'light-pro';
+    setTheme(target);
+  }, [orgDefaultTheme, setTheme]);
 
   // Reset logo to default
   const resetLogo = useCallback(async () => {
-    await fetch('/api/settings/logo', { method: 'DELETE' }).catch(() => undefined);
+    await fetch('/api/settings/logo', {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      credentials: 'same-origin',
+    }).catch(() => undefined);
     setLogoUrl(null);
   }, [setLogoUrl]);
 

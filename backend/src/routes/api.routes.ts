@@ -3473,8 +3473,22 @@ apiRouter.post(
 apiRouter.get(
   '/settings/appearance',
   asyncHandler(async (req, res) => {
-    const authReq = req as AuthenticatedRequest;
-    const userId = authReq.user?.userId;
+    let userId: string | undefined;
+    const authHeader = req.headers.authorization;
+    let token = '';
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else if (req.cookies && req.cookies.radius_token) {
+      token = req.cookies.radius_token;
+    }
+    if (token) {
+      try {
+        const payload = authService.verifyToken(token);
+        userId = payload.userId;
+      } catch {
+        // optional auth: ignore invalid token on public read
+      }
+    }
     const settings = await settingsRepository.getAppearanceSettings(userId);
     res.json(envelope(settings, 'live'));
   })
@@ -3482,9 +3496,14 @@ apiRouter.get(
 
 apiRouter.patch(
   '/settings/appearance',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      authReq.user?.role === 'operator';
     const perms = authReq.user?.permissions || [];
     if (!isSuperOrOrg && !perms.includes('settings.edit') && !perms.includes('branding.edit')) {
       throw HttpError.forbidden('Permission denied: settings.edit or branding.edit required');
@@ -3508,9 +3527,14 @@ apiRouter.patch(
 
 apiRouter.post(
   '/settings/logo',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      authReq.user?.role === 'operator';
     const perms = authReq.user?.permissions || [];
     if (!isSuperOrOrg && !perms.includes('branding.edit') && !perms.includes('settings.edit')) {
       throw HttpError.forbidden('Permission denied: branding.edit or settings.edit required');
@@ -3531,9 +3555,14 @@ apiRouter.post(
 
 apiRouter.delete(
   '/settings/logo',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      authReq.user?.role === 'operator';
     const perms = authReq.user?.permissions || [];
     if (!isSuperOrOrg && !perms.includes('branding.edit') && !perms.includes('settings.edit')) {
       throw HttpError.forbidden('Permission denied: branding.edit or settings.edit required');
@@ -3550,19 +3579,21 @@ apiRouter.delete(
 // User preferences
 apiRouter.get(
   '/users/preferences',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.user?.userId) {
-      res.json(envelope({ theme: 'default', appearance_mode: 'dark', sidebar_collapsed: false }, 'live'));
+      res.json(envelope({ theme: 'light-pro', appearance_mode: 'light', sidebar_collapsed: false }, 'live'));
       return;
     }
     const prefs = await settingsRepository.getUserPreferences(authReq.user.userId);
-    res.json(envelope(prefs || { theme: 'default', appearance_mode: 'dark', sidebar_collapsed: false }, 'live'));
+    res.json(envelope(prefs || { theme: 'light-pro', appearance_mode: 'light', sidebar_collapsed: false }, 'live'));
   })
 );
 
 apiRouter.patch(
   '/users/preferences',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.user?.userId) {
