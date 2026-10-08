@@ -38,6 +38,8 @@ import { ResellersView } from '@/components/resellers-view';
 import { WalletsView } from '@/components/wallets-view';
 import { ChannelPricingView } from '@/components/channel-pricing-view';
 import { ResellerCommissionView } from '@/components/reseller-commission-view';
+import { ResellerProfileView } from '@/components/reseller-profile-view';
+import { ResellerReportsView } from '@/components/reseller-reports-view';
 import { UserManagementView } from '@/components/user-management-view';
 import { RolesPermissionsView } from '@/components/roles-permissions-view';
 import { TicketsView } from '@/components/tickets-view';
@@ -63,6 +65,7 @@ export default function DashboardPage() {
   const [notice, setNotice] = React.useState<string | null>(null);
   const [nasFilterForSessions, setNasFilterForSessions] = React.useState<string | null>(null);
   const [billingExpiryFilter, setBillingExpiryFilter] = React.useState<string>('today');
+  const [selectedResellerId, setSelectedResellerId] = React.useState<number | null>(null);
 
   // Sync state with URL params on mount & popstate
   React.useEffect(() => {
@@ -444,7 +447,31 @@ export default function DashboardPage() {
             <ResellersView
               onViewCustomers={() => handleNavigate('subscribers')}
               onViewWallet={() => handleNavigate('wallets')}
+              onOpenSubscriber={(id) => setSubscriberProfileId(id)}
+              initialResellerId={selectedResellerId}
               currentUser={currentUser}
+            />
+          ) : activeTab === 'reseller_profile' ? (
+            <ResellerProfileView
+              resellerId={selectedResellerId || 1}
+              onBack={() => handleNavigate('resellers')}
+              currentUser={currentUser}
+              onOpenSubscriber={(id) => setSubscriberProfileId(id)}
+            />
+          ) : activeTab === 'reseller_dashboard' || activeTab === 'reseller_reports' ? (
+            <ResellerReportsView
+              currentUser={currentUser}
+              onOpenResellerProfile={(id) => {
+                setSelectedResellerId(id);
+                handleNavigate('reseller_profile');
+              }}
+            />
+          ) : activeTab === 'reseller_transactions' || activeTab === 'reseller_wallet' || activeTab === 'reseller_credit' ? (
+            <ResellerProfileView
+              resellerId={selectedResellerId || 1}
+              onBack={() => handleNavigate('resellers')}
+              currentUser={currentUser}
+              onOpenSubscriber={(id) => setSubscriberProfileId(id)}
             />
           ) : activeTab === 'wallets' ? (
             <WalletsView currentUser={currentUser} />

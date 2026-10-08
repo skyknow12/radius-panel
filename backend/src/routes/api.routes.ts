@@ -20,6 +20,7 @@ import { searchService } from '../services/search.service';
 import { reportsService } from '../services/reports.service';
 import { billingRepository } from '../repositories/billing.repository';
 import { organizationRepository } from '../repositories/organization.repository';
+import { resellerRepository } from '../repositories/reseller.repository';
 import { userManagementRepository } from '../repositories/user-management.repository';
 import { crmRepository } from '../repositories/crm.repository';
 import { ticketRepository } from '../repositories/ticket.repository';
@@ -2003,8 +2004,339 @@ apiRouter.get(
         throw HttpError.forbidden('Access denied to other reseller dashboard');
       }
     }
-    const metrics = await organizationRepository.getResellerDashboardMetrics(id);
+    const metrics = await resellerRepository.getResellerDashboard(id);
     res.json(envelope(metrics, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/resellers/calculate-topup',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      amount: z.number().positive(),
+      commission_percent: z.number().min(0).max(99.99),
+      type: z.enum(['CASH', 'CREDIT']),
+    });
+    const parsed = schema.parse(req.body);
+    const result = resellerRepository.calculateTopup(parsed.amount, parsed.commission_percent, parsed.type);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/reports',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller') {
+        resellerId = authReq.user.resellerId;
+      }
+    }
+    const reports = await resellerRepository.getResellerReports({
+      reseller_id: resellerId,
+      period: req.query.period as any,
+      start_date: req.query.start_date as string,
+      end_date: req.query.end_date as string,
+      type: req.query.type as string,
+      status: req.query.status as string,
+      payment_method: req.query.payment_method as string,
+    });
+    res.json(envelope(reports, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id/profile',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to other reseller profile');
+      }
+    }
+    const profile = await resellerRepository.getResellerDashboard(id);
+    res.json(envelope(profile, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/resellers/:id/topup',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const perms = authReq.user?.permissions || [];
+
+    const schema = z.object({
+      type: z.enum(['CASH', 'CREDIT']),
+      amount: z.number().positive('Top-up amount must be greater than zero'),
+      commission_percent: z.number().min(0).max(99.99).optional(),
+      payment_method: z.string().optional(),
+      reference: z.string().optional(),
+      remarks: z.string().optional(),
+      idempotency_key: z.string().optional(),
+      allow_credit_override: z.boolean().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    if (parsed.type === 'CASH') {
+      if (!isSuperOrOrg && !perms.includes('reseller.wallet.topup') && !perms.includes('wallet.topup')) {
+        throw HttpError.forbidden('Permission denied: reseller.wallet.topup required');
+      }
+    } else {
+      if (!isSuperOrOrg && !perms.includes('reseller.credit.create') && !perms.includes('credit.create')) {
+        throw HttpError.forbidden('Permission denied: reseller.credit.create required');
+      }
+    }
+
+    if (parsed.commission_percent !== undefined) {
+      if (!isSuperOrOrg && !perms.includes('pricing.commission') && !perms.includes('pricing.edit')) {
+        throw HttpError.forbidden('Permission denied to override commission percentage');
+      }
+    }
+
+    if (parsed.allow_credit_override) {
+      if (!isSuperOrOrg && !perms.includes('reseller.credit.override')) {
+        throw HttpError.forbidden('Permission denied: reseller.credit.override required for credit limit override');
+      }
+    }
+
+    const tx = await resellerRepository.topupReseller({
+      resellerId: id,
+      type: parsed.type,
+      amount: parsed.amount,
+      commissionPercent: parsed.commission_percent,
+      paymentMethod: parsed.payment_method,
+      reference: parsed.reference,
+      remarks: parsed.remarks,
+      idempotencyKey: parsed.idempotency_key,
+      allowCreditOverride: parsed.allow_credit_override,
+      operator: authReq.user?.username || 'admin',
+    });
+
+    res.status(201).json(envelope(tx, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/resellers/:id/customer-recharge',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to recharge through another reseller');
+      }
+    }
+
+    const schema = z.object({
+      subscriber_id: z.number().int().positive(),
+      package_id: z.number().int().positive(),
+      duration_months: z.number().int().min(1).default(1),
+      remarks: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const tx = await resellerRepository.customerRecharge({
+      resellerId: id,
+      subscriberId: parsed.subscriber_id,
+      packageId: parsed.package_id,
+      durationMonths: parsed.duration_months,
+      operator: authReq.user?.username || 'admin',
+      remarks: parsed.remarks,
+    });
+
+    res.status(201).json(envelope(tx, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/resellers/:id/reversal',
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const perms = authReq.user?.permissions || [];
+    if (!isSuperOrOrg && !perms.includes('reseller.wallet.reverse') && !perms.includes('wallet.adjust')) {
+      throw HttpError.forbidden('Permission denied: reseller.wallet.reverse required');
+    }
+
+    const schema = z.object({
+      transaction_id: z.string().min(1),
+      reason: z.string().min(3, 'Reversal reason must be provided'),
+    });
+    const parsed = schema.parse(req.body);
+
+    const rev = await resellerRepository.reverseTopup({
+      transactionId: parsed.transaction_id,
+      reason: parsed.reason,
+      operator: authReq.user?.username || 'admin',
+    });
+
+    res.status(200).json(envelope(rev, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/resellers/:id/commission',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const perms = authReq.user?.permissions || [];
+    if (!isSuperOrOrg && !perms.includes('pricing.commission') && !perms.includes('reseller.edit')) {
+      throw HttpError.forbidden('Permission denied: pricing.commission or reseller.edit required');
+    }
+
+    const schema = z.object({
+      commission_percent: z.number().min(0).max(99.99),
+      reason: z.string().min(2, 'Reason for commission change is required'),
+    });
+    const parsed = schema.parse(req.body);
+
+    const result = await resellerRepository.updateCommission(
+      id,
+      parsed.commission_percent,
+      parsed.reason,
+      authReq.user?.username || 'admin'
+    );
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id/commission-history',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to other reseller commission history');
+      }
+    }
+    const history = await resellerRepository.getCommissionHistory(id);
+    res.json(envelope(history, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/resellers/:id/credit',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    const perms = authReq.user?.permissions || [];
+    if (!isSuperOrOrg && !perms.includes('reseller.credit.edit') && !perms.includes('credit.edit')) {
+      throw HttpError.forbidden('Permission denied: reseller.credit.edit required');
+    }
+
+    const schema = z.object({
+      credit_limit: z.number().min(0),
+      credit_status: z.enum(['ACTIVE', 'SUSPENDED', 'EXPIRED']),
+      notes: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const result = await resellerRepository.updateCreditFacility(
+      id,
+      parsed.credit_limit,
+      parsed.credit_status,
+      authReq.user?.username || 'admin',
+      parsed.notes
+    );
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id/transactions',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to other reseller transactions');
+      }
+    }
+    const result = await resellerRepository.listTransactions({
+      reseller_id: id,
+      type: req.query.type as string,
+      status: req.query.status as string,
+      payment_method: req.query.payment_method as string,
+      customer_id: req.query.customer_id ? Number(req.query.customer_id) : undefined,
+      search: req.query.search as string,
+      start_date: req.query.start_date as string,
+      end_date: req.query.end_date as string,
+      limit: req.query.limit ? Number(req.query.limit) : 50,
+      offset: req.query.offset ? Number(req.query.offset) : 0,
+    });
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id/transactions/export',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to export other reseller transactions');
+      }
+    }
+    const csv = await resellerRepository.exportTransactionsCsv({
+      reseller_id: id,
+      type: req.query.type as string,
+      status: req.query.status as string,
+      payment_method: req.query.payment_method as string,
+      start_date: req.query.start_date as string,
+      end_date: req.query.end_date as string,
+    });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="reseller_${id}_ledger_${Date.now()}.csv"`);
+    res.status(200).send(csv);
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id/customers',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to other reseller customer list');
+      }
+    }
+    const search = req.query.search as string;
+    const customers = await resellerRepository.listResellerCustomers(id, search);
+    res.json(envelope(customers, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/resellers/:id/reports',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
+        throw HttpError.forbidden('Access denied to other reseller reports');
+      }
+    }
+    const reports = await resellerRepository.getResellerReports({
+      reseller_id: id,
+      period: req.query.period as any,
+      start_date: req.query.start_date as string,
+      end_date: req.query.end_date as string,
+      type: req.query.type as string,
+      status: req.query.status as string,
+      payment_method: req.query.payment_method as string,
+    });
+    res.json(envelope(reports, 'live'));
   })
 );
 

@@ -174,7 +174,21 @@ export function Sidebar({
         'customers_expired',
         'customers_dashboard',
       ].includes(activeTab);
-    const isOpen = isCustomerActive || (openSections[key] ?? true);
+    const isNetworkActive = key === 'network' && activeTab === 'noc_dashboard';
+    const isOrgActive =
+      key === 'organization' &&
+      [
+        'organization_dashboard',
+        'branches',
+        'resellers',
+        'reseller_profile',
+        'reseller_dashboard',
+        'reseller_transactions',
+        'reseller_wallet',
+        'reseller_credit',
+        'reseller_reports',
+      ].includes(activeTab);
+    const isOpen = isCustomerActive || isNetworkActive || isOrgActive || (openSections[key] ?? true);
 
     return (
       <div key={key} className="space-y-1">
@@ -232,10 +246,9 @@ export function Sidebar({
 
       {/* Nav List grouped by Business Sections */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
-        {/* 1. DASHBOARD & NOC */}
+        {/* 1. DASHBOARD */}
         <div className="space-y-0.5">
           {renderNavItem('dashboard', 'Dashboard', LayoutDashboard)}
-          {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'LIVE')}
         </div>
 
         {/* 2. CUSTOMERS */}
@@ -258,6 +271,7 @@ export function Sidebar({
           'NETWORK',
           Monitor,
           <>
+            {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'LIVE', 'radius.view')}
             {renderNavItem('nas_devices', 'NAS / BNG Gateways', Server, undefined, 'radius.view')}
             {renderNavItem('radius_overview', 'RADIUS Overview', Radio, undefined, 'radius.view')}
             {renderNavItem('radius_profiles', 'RADIUS Profiles', ShieldCheck, undefined, 'radius.view')}
@@ -299,6 +313,11 @@ export function Sidebar({
             {renderNavItem('organization_dashboard', 'Organization Dashboard', Building2, undefined, 'organization.view')}
             {renderNavItem('branches', 'Branch Offices', Store, undefined, 'branch.view')}
             {renderNavItem('resellers', 'Resellers & Partners', Users, undefined, 'reseller.view')}
+            {renderNavItem('reseller_dashboard', 'Reseller Dashboard', LayoutDashboard, undefined, 'reseller.view')}
+            {renderNavItem('reseller_transactions', 'Reseller Transactions', CreditCard, undefined, 'reseller.view')}
+            {renderNavItem('reseller_wallet', 'Reseller Wallet', Wallet, undefined, 'reseller.view')}
+            {renderNavItem('reseller_credit', 'Reseller Credit', ShieldAlert, undefined, 'reseller.view')}
+            {renderNavItem('reseller_reports', 'Reseller Reports', FileBarChart, undefined, 'reseller.view')}
           </>,
           ['organization.view', 'branch.view', 'reseller.view']
         )}

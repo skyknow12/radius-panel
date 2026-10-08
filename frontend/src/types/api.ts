@@ -648,15 +648,148 @@ export interface ResellerItem {
   address: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   commission_model: 'discount' | 'commission';
+  commission_percent?: number;
+  credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   notes: string | null;
   wallet_id?: number | null;
   wallet_balance?: number;
   credit_limit?: number;
   used_credit?: number;
+  credit_remaining?: number;
   customer_count?: number;
   active_customers?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ResellerTopupCalcResult {
+  paymentAmount: number;
+  commissionPercent: number;
+  walletValue: number;
+  commissionAmount: number;
+  cashAmount: number;
+  creditAmount: number;
+  type: 'CASH' | 'CREDIT';
+}
+
+export interface ResellerWalletTxRow {
+  id: number;
+  transaction_id: string;
+  reseller_id: number;
+  reseller_name?: string;
+  reseller_code?: string;
+  wallet_id: number | null;
+  type: string;
+  status: string;
+  cash_amount: number;
+  credit_amount: number;
+  commission_percent: number;
+  commission_amount: number;
+  wallet_value: number;
+  wallet_debit: number;
+  balance_before: number;
+  balance_after: number;
+  credit_used_before: number;
+  credit_used_after: number;
+  customer_id: number | null;
+  customer_username: string | null;
+  package_id: number | null;
+  package_name: string | null;
+  duration_months: number;
+  payment_method: string | null;
+  reference: string | null;
+  remarks: string | null;
+  reversal_of_id: string | null;
+  refund_of_id: string | null;
+  idempotency_key: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ResellerProfileDashboardData {
+  reseller: {
+    id: number;
+    name: string;
+    code: string;
+    contact_person: string | null;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    status: string;
+    commission_percent: number;
+    credit_limit: number;
+    credit_used: number;
+    credit_remaining: number;
+    credit_status: string;
+    branch_id: number | null;
+    branch_name: string | null;
+    created_at: string;
+    wallet_number: string;
+  };
+  cards: {
+    currentBalance: number;
+    totalCashTopup: number;
+    totalCreditTopup: number;
+    totalCommissionGranted: number;
+    totalWalletValueReceived: number;
+    totalCustomerRecharge: number;
+    totalCreditUsed: number;
+    creditRemaining: number;
+    customers: number;
+    todayRecharge: number;
+  };
+  customersSummary: {
+    total: number;
+    active: number;
+    expired: number;
+  };
+  recentTransactions: ResellerWalletTxRow[];
+}
+
+export interface ResellerCommissionHistoryItem {
+  id: number;
+  reseller_id: number;
+  previous_percent: number;
+  new_percent: number;
+  changed_by: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface ResellerFinancialReportData {
+  totals: {
+    totalCashReceived: number;
+    totalCreditGranted: number;
+    totalCommissionGranted: number;
+    totalWalletValueAdded: number;
+    totalCustomerRecharge: number;
+    totalRefund: number;
+    totalReversal: number;
+    cashRevenue: number;
+  };
+  timeSeries: Array<{
+    date: string;
+    cash_received: number;
+    credit_granted: number;
+    commission_granted: number;
+    wallet_added: number;
+    customer_recharge: number;
+  }>;
+  resellerBreakdown: Array<{
+    reseller_id: number;
+    reseller_name: string;
+    reseller_code: string;
+    commission_percent: number;
+    wallet_balance: number;
+    credit_limit: number;
+    credit_used: number;
+    credit_remaining: number;
+    cash_paid: number;
+    credit_taken: number;
+    commission_earned: number;
+    wallet_credited: number;
+    customer_recharges: number;
+  }>;
 }
 
 export interface WalletItem {

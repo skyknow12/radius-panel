@@ -21,14 +21,28 @@ import {
   DollarSign
 } from 'lucide-react';
 import type { ResellerItem, ResellerDashboardMetrics, BranchItem } from '@/types/api';
+import { ResellerTopupModal } from './reseller-topup-modal';
+import { ResellerProfileView } from './reseller-profile-view';
 
 interface ResellersViewProps {
   onViewCustomers?: (resellerId: number) => void;
   onViewWallet?: (resellerId: number) => void;
+  onOpenSubscriber?: (subscriberId: number) => void;
+  initialResellerId?: number | null;
   currentUser?: any;
 }
 
-export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: ResellersViewProps) {
+export function ResellersView({
+  onViewCustomers,
+  onViewWallet,
+  onOpenSubscriber,
+  initialResellerId,
+  currentUser,
+}: ResellersViewProps) {
+  const [viewingProfileResellerId, setViewingProfileResellerId] = React.useState<number | null>(
+    initialResellerId || null
+  );
+  const [topupModalReseller, setTopupModalReseller] = React.useState<ResellerItem | null>(null);
   const [resellers, setResellers] = React.useState<ResellerItem[]>([]);
   const [branches, setBranches] = React.useState<BranchItem[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -51,7 +65,9 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
   const [phone, setPhone] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [address, setAddress] = React.useState('');
-  const [commissionModel, setCommissionModel] = React.useState<'discount' | 'commission'>('discount');
+  const [commissionPercent, setCommissionPercent] = React.useState('50');
+  const [creditLimit, setCreditLimit] = React.useState('50000');
+  const [commissionModel, setCommissionModel] = React.useState<'discount' | 'commission'>('commission');
   const [notes, setNotes] = React.useState('');
   const [status, setStatus] = React.useState<'ACTIVE' | 'INACTIVE' | 'SUSPENDED'>('ACTIVE');
 
@@ -187,6 +203,17 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
     return matchesSearch && matchesStatus && matchesBranch;
   });
 
+  if (viewingProfileResellerId) {
+    return (
+      <ResellerProfileView
+        resellerId={viewingProfileResellerId}
+        onBack={() => setViewingProfileResellerId(null)}
+        currentUser={currentUser}
+        onOpenSubscriber={onOpenSubscriber}
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* Header and Controls */}
@@ -266,9 +293,9 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
                 <th className="py-3 px-4">Reseller Details</th>
                 <th className="py-3 px-4">Parent Branch</th>
                 <th className="py-3 px-4">Customers</th>
+                <th className="py-3 px-4">Commission %</th>
                 <th className="py-3 px-4">Wallet Balance</th>
                 <th className="py-3 px-4">Credit Facility</th>
-                <th className="py-3 px-4">Model</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -291,8 +318,14 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
                   <tr key={r.id} className="hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4">
                       <div className="font-bold text-foreground flex items-center gap-2">
-                        <span>{r.name}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-mono text-[10px] font-semibold border border-amber-500/20">
+                        <button
+                          type="button"
+                          onClick={() => setViewingProfileResellerId(r.id)}
+                          className="hover:text-purple-400 hover:underline text-left font-bold"
+                        >
+                          {r.name}
+                        </button>
+                        <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 font-mono text-[10px] font-semibold border border-purple-500/20">
                           {r.code}
                         </span>
                       </div>
@@ -319,7 +352,12 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="font-bold text-purple-400 font-mono">
+                      <span className="font-black text-purple-400 text-xs">
+                        {(r.commission_percent ?? 50).toFixed(2)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-foreground font-mono">
                         Rs. {(r.wallet_balance || 0).toLocaleString()}
                       </div>
                       <div className="text-[10px] text-muted-foreground">Prepaid Wallet</div>
@@ -331,11 +369,6 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
                       <div className="text-[10px] text-amber-400 font-mono">
                         Used: Rs. {(r.used_credit || 0).toLocaleString()}
                       </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground uppercase font-bold text-[10px]">
-                        {r.commission_model}
-                      </span>
                     </td>
                     <td className="py-3 px-4">
                       <span
@@ -353,12 +386,19 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => handleOpenResellerDetails(r)}
-                          className="px-2.5 py-1 rounded-lg bg-card border border-border hover:bg-muted text-[11px] font-semibold text-foreground transition-colors flex items-center gap-1"
-                          title="View Reseller Metrics"
+                          onClick={() => setTopupModalReseller(r)}
+                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-[11px] shadow-sm flex items-center gap-1"
+                          title="Add Balance / Top-Up"
                         >
-                          <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Metrics</span>
+                          <Plus className="w-3 h-3 stroke-[3]" />
+                          <span>+ Top-Up</span>
+                        </button>
+                        <button
+                          onClick={() => setViewingProfileResellerId(r.id)}
+                          className="px-2.5 py-1 rounded-lg bg-card border border-border hover:bg-muted text-[11px] font-semibold text-foreground transition-colors flex items-center gap-1"
+                          title="View Reseller Profile & Ledger"
+                        >
+                          <span>Profile</span>
                         </button>
                         <button
                           onClick={() => {
@@ -740,6 +780,18 @@ export function ResellersView({ onViewCustomers, onViewWallet, currentUser }: Re
             </form>
           </div>
         </div>
+      )}
+      {/* Topup Modal */}
+      {topupModalReseller && (
+        <ResellerTopupModal
+          isOpen={!!topupModalReseller}
+          onClose={() => setTopupModalReseller(null)}
+          reseller={topupModalReseller}
+          currentUser={currentUser}
+          onSuccess={() => {
+            fetchDependencies();
+          }}
+        />
       )}
     </div>
   );

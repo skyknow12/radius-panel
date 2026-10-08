@@ -52,6 +52,8 @@ export interface ResellerItem {
   address: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   commission_model: 'discount' | 'commission';
+  commission_percent?: number;
+  credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   notes: string | null;
   wallet_id?: number | null;
   wallet_balance?: number;
@@ -438,11 +440,14 @@ export const organizationRepository = {
     const { rows } = await query<ResellerItem>(`
       SELECT r.id, r.organization_id, r.branch_id, b.name AS branch_name,
              r.name, r.code, r.contact_person, r.phone, r.email, r.address,
-             r.status, r.commission_model, r.notes, r.created_at, r.updated_at,
+             r.status, r.commission_model,
+             COALESCE(r.commission_percent, 50.00)::float AS commission_percent,
+             COALESCE(r.credit_status, 'ACTIVE') AS credit_status,
+             r.notes, r.created_at, r.updated_at,
              w.id AS wallet_id,
              COALESCE(w.balance, 0)::float AS wallet_balance,
-             COALESCE(c.credit_limit, 0)::float AS credit_limit,
-             COALESCE(c.used_credit, 0)::float AS used_credit,
+             COALESCE(r.credit_limit, c.credit_limit, 0)::float AS credit_limit,
+             COALESCE(r.credit_used, c.used_credit, 0)::float AS used_credit,
              COUNT(s.id)::int AS customer_count,
              COUNT(s.id) FILTER (WHERE s.status = 'enabled' AND (s.expiry_date IS NULL OR s.expiry_date > NOW()))::int AS active_customers
         FROM resellers r
@@ -451,7 +456,7 @@ export const organizationRepository = {
         LEFT JOIN credit_accounts c ON c.wallet_id = w.id
         LEFT JOIN subscribers s ON s.reseller_id = r.id
        ${filter}
-       GROUP BY r.id, b.name, w.id, w.balance, c.credit_limit, c.used_credit
+       GROUP BY r.id, b.name, w.id, w.balance, r.credit_limit, c.credit_limit, r.credit_used, c.used_credit, r.commission_percent, r.credit_status
        ORDER BY r.name ASC
     `, params);
     return rows;
@@ -461,11 +466,14 @@ export const organizationRepository = {
     const { rows } = await query<ResellerItem>(`
       SELECT r.id, r.organization_id, r.branch_id, b.name AS branch_name,
              r.name, r.code, r.contact_person, r.phone, r.email, r.address,
-             r.status, r.commission_model, r.notes, r.created_at, r.updated_at,
+             r.status, r.commission_model,
+             COALESCE(r.commission_percent, 50.00)::float AS commission_percent,
+             COALESCE(r.credit_status, 'ACTIVE') AS credit_status,
+             r.notes, r.created_at, r.updated_at,
              w.id AS wallet_id,
              COALESCE(w.balance, 0)::float AS wallet_balance,
-             COALESCE(c.credit_limit, 0)::float AS credit_limit,
-             COALESCE(c.used_credit, 0)::float AS used_credit,
+             COALESCE(r.credit_limit, c.credit_limit, 0)::float AS credit_limit,
+             COALESCE(r.credit_used, c.used_credit, 0)::float AS used_credit,
              COUNT(s.id)::int AS customer_count,
              COUNT(s.id) FILTER (WHERE s.status = 'enabled' AND (s.expiry_date IS NULL OR s.expiry_date > NOW()))::int AS active_customers
         FROM resellers r
@@ -474,7 +482,7 @@ export const organizationRepository = {
         LEFT JOIN credit_accounts c ON c.wallet_id = w.id
         LEFT JOIN subscribers s ON s.reseller_id = r.id
        WHERE r.id = $1
-       GROUP BY r.id, b.name, w.id, w.balance, c.credit_limit, c.used_credit
+       GROUP BY r.id, b.name, w.id, w.balance, r.credit_limit, c.credit_limit, r.credit_used, c.used_credit, r.commission_percent, r.credit_status
     `, [id]);
     return rows[0] ?? null;
   },
@@ -489,15 +497,26 @@ export const organizationRepository = {
     address?: string;
     status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
     commission_model?: 'discount' | 'commission';
+    commission_percent?: number;
+    credit_limit?: number;
+    credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
     notes?: string;
   }): Promise<ResellerItem> {
     const org = await this.getPrimaryOrganization();
     const client = await getClient();
     try {
       await client.query('BEGIN');
+      const commPercent = input.commission_percent !== undefined ? input.commission_percent : 50.00;
+      const credLimit = input.credit_limit !== undefined ? input.credit_limit : 50000.00;
+      const credStatus = input.credit_status || 'ACTIVE';
+
       const { rows } = await client.query<ResellerItem>(`
-        INSERT INTO resellers (organization_id, branch_id, name, code, contact_person, phone, email, address, status, commission_model, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO resellers (
+          organization_id, branch_id, name, code, contact_person,
+          phone, email, address, status, commission_model,
+          commission_percent, credit_limit, credit_used, credit_status, notes
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0.00, $13, $14)
         RETURNING *
       `, [
         org.id,
@@ -509,7 +528,10 @@ export const organizationRepository = {
         input.email || null,
         input.address || null,
         input.status || 'ACTIVE',
-        input.commission_model || 'discount',
+        input.commission_model || 'commission',
+        commPercent,
+        credLimit,
+        credStatus,
         input.notes || null,
       ]);
       const reseller = rows[0];
@@ -525,8 +547,14 @@ export const organizationRepository = {
       // Auto-provision credit account
       await client.query(`
         INSERT INTO credit_accounts (wallet_id, credit_enabled, credit_limit, used_credit, status)
-        VALUES ($1, FALSE, 0.00, 0.00, 'ACTIVE')
-      `, [walletRes.rows[0].id]);
+        VALUES ($1, TRUE, $2, 0.00, $3)
+      `, [walletRes.rows[0].id, credLimit, credStatus]);
+
+      // Record initial commission in history
+      await client.query(`
+        INSERT INTO reseller_commission_history (reseller_id, previous_percent, new_percent, changed_by, reason)
+        VALUES ($1, $2, $2, 'SYSTEM', 'Initial configuration')
+      `, [reseller.id, commPercent]);
 
       await client.query('COMMIT');
       return (await this.getReseller(reseller.id))!;
@@ -552,6 +580,9 @@ export const organizationRepository = {
     if (input.address !== undefined) { fields.push(`address = $${idx++}`); values.push(input.address); }
     if (input.status !== undefined) { fields.push(`status = $${idx++}`); values.push(input.status); }
     if (input.commission_model !== undefined) { fields.push(`commission_model = $${idx++}`); values.push(input.commission_model); }
+    if (input.commission_percent !== undefined) { fields.push(`commission_percent = $${idx++}`); values.push(input.commission_percent); }
+    if (input.credit_limit !== undefined) { fields.push(`credit_limit = $${idx++}`); values.push(input.credit_limit); }
+    if (input.credit_status !== undefined) { fields.push(`credit_status = $${idx++}`); values.push(input.credit_status); }
     if (input.notes !== undefined) { fields.push(`notes = $${idx++}`); values.push(input.notes); }
 
     if (fields.length > 0) {
