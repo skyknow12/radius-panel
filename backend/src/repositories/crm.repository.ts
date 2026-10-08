@@ -116,6 +116,15 @@ export const crmRepository = {
       [noteId]
     );
     if (!rows[0]) throw HttpError.notFound('Note not found');
+
+    await auditRepository.insert({
+      userId: actorId,
+      action: rows[0].is_pinned ? 'crm.note_pinned' : 'crm.note_unpinned',
+      entityType: 'crm_note',
+      entityId: String(noteId),
+      status: 'success',
+    });
+
     return rows[0].is_pinned;
   },
 
