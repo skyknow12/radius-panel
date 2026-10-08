@@ -2,14 +2,14 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-export type AppThemeKey = 'light-pro' | 'default' | 'dark-pro' | 'colorful' | 'noc';
+export type AppThemeKey = 'light-pro' | 'default' | 'colorful' | 'noc' | 'dark-pro';
 export type AppearanceMode = 'light' | 'dark' | 'system';
 
 export interface ThemeOption {
   id: AppThemeKey;
   name: string;
   tagline: string;
-  category: 'light' | 'dark' | 'vibrant' | 'high-contrast';
+  category: 'light' | 'dark';
   description: string;
   primaryColor: string;
   bgColor: string;
@@ -22,10 +22,10 @@ export interface ThemeOption {
 export const THEME_OPTIONS: ThemeOption[] = [
   {
     id: 'light-pro',
-    name: 'Light Pro',
-    tagline: 'Clean Crisp Enterprise Light (Default)',
+    name: 'Light Pro (Default)',
+    tagline: 'Crisp White & Royal Purple',
     category: 'light',
-    description: 'Bright crisp canvas, pure white cards, soft slate borders, and royal purple accents for high-clarity ISP operations and billing.',
+    description: 'Bright white canvas, pure white cards, soft slate borders, and royal purple accents for high-clarity ISP management and billing.',
     primaryColor: '#7c3aed',
     bgColor: '#f8fafc',
     cardColor: '#ffffff',
@@ -35,55 +35,55 @@ export const THEME_OPTIONS: ThemeOption[] = [
   },
   {
     id: 'default',
-    name: 'Classic Dark',
-    tagline: 'Purple / Indigo Modern ISP',
-    category: 'dark',
-    description: 'The standard Fiberworld-style professional purple/indigo theme with dark navy canvas, slate cards, and clean contrast.',
-    primaryColor: '#8b5cf6',
-    bgColor: '#0b0f19',
-    cardColor: '#141b2d',
-    borderColor: '#24304f',
-    textColor: '#f8fafc',
-    badgeColor: '#a78bfa',
+    name: 'Ocean Blue',
+    tagline: 'Crisp White & Electric Sky Blue',
+    category: 'light',
+    description: 'Fresh sky-white canvas with soft blue borders and vibrant electric ocean blue accents for modern telecom operations.',
+    primaryColor: '#2563eb',
+    bgColor: '#f0f7ff',
+    cardColor: '#ffffff',
+    borderColor: '#bfdbfe',
+    textColor: '#1e293b',
+    badgeColor: '#0284c7',
+  },
+  {
+    id: 'colorful',
+    name: 'Emerald Mint',
+    tagline: 'Crisp White & Cyber Mint Green',
+    category: 'light',
+    description: 'Bright pearl white canvas with soft mint borders and vibrant emerald green accents for network operations and eco dashboards.',
+    primaryColor: '#059669',
+    bgColor: '#f0fdf4',
+    cardColor: '#ffffff',
+    borderColor: '#bbf7d0',
+    textColor: '#132a22',
+    badgeColor: '#10b981',
+  },
+  {
+    id: 'noc',
+    name: 'Sunset Amber',
+    tagline: 'Crisp White & Radiant Sunset Coral',
+    category: 'light',
+    description: 'Warm pearl white canvas with soft peach borders and radiant sunset amber accents for energetic modern billing workflows.',
+    primaryColor: '#ea580c',
+    bgColor: '#fffbeb',
+    cardColor: '#ffffff',
+    borderColor: '#fde68a',
+    textColor: '#291e14',
+    badgeColor: '#f97316',
   },
   {
     id: 'dark-pro',
-    name: 'Dark Pro',
-    tagline: 'Midnight Charcoal & Radiant Blue',
+    name: 'Dark Pro (NOC Midnight)',
+    tagline: 'Midnight Charcoal & Technical Night',
     category: 'dark',
-    description: 'Deep pitch charcoal/near-black canvas engineered for technical NOC teams with radiant electric blue indicators.',
+    description: 'The single definitive dark theme: deep pitch charcoal canvas, dark slate cards, and radiant electric blue indicators for 24/7 NOC centers.',
     primaryColor: '#3b82f6',
     bgColor: '#080b11',
     cardColor: '#10141d',
     borderColor: '#202738',
     textColor: '#f8fafc',
     badgeColor: '#60a5fa',
-  },
-  {
-    id: 'colorful',
-    name: 'Colorful',
-    tagline: 'Deep Ocean Teal & Cyber Emerald',
-    category: 'vibrant',
-    description: 'Deep ocean teal canvas with rich aquatic cards, cyan borders, and emerald green accents for a distinctive modern experience.',
-    primaryColor: '#14b8a6',
-    bgColor: '#0a171c',
-    cardColor: '#12252c',
-    borderColor: '#234c5b',
-    textColor: '#f8fafc',
-    badgeColor: '#2dd4bf',
-  },
-  {
-    id: 'noc',
-    name: 'NOC High Contrast',
-    tagline: 'OLED Black & Ultra Neon Indicators',
-    category: 'high-contrast',
-    description: 'Pure 100% OLED pitch black canvas with jet black cards, crisp white text, and ultra-high visibility neon green indicators.',
-    primaryColor: '#00e676',
-    bgColor: '#000000',
-    cardColor: '#0f0f0f',
-    borderColor: '#474747',
-    textColor: '#ffffff',
-    badgeColor: '#00e676',
   },
 ];
 
@@ -136,13 +136,13 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     // Set data-theme attribute
     root.setAttribute('data-theme', newTheme);
 
-    // Sync class for Tailwind dark/light mode
-    if (newTheme === 'light-pro') {
-      root.classList.remove('dark');
-      root.classList.add('light');
-    } else {
+    // Only 'dark-pro' gets the dark class; all other 4 themes are crisp white/light!
+    if (newTheme === 'dark-pro') {
       root.classList.add('dark');
       root.classList.remove('light');
+    } else {
+      root.classList.remove('dark');
+      root.classList.add('light');
     }
   }, []);
 
@@ -236,13 +236,25 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('radius_appearance_mode', newMode);
     } catch {}
 
+    if (newMode === 'dark') {
+      setTheme('dark-pro');
+    } else if (newMode === 'light') {
+      setThemeState((current) => {
+        if (current === 'dark-pro') {
+          applyThemeToDOM('light-pro');
+          return 'light-pro';
+        }
+        return current;
+      });
+    }
+
     fetch('/api/users/preferences', {
       method: 'PATCH',
       headers: getAuthHeaders(),
       credentials: 'same-origin',
       body: JSON.stringify({ appearance_mode: newMode }),
     }).catch(() => undefined);
-  }, []);
+  }, [applyThemeToDOM, setTheme]);
 
   // Set Logo Handler
   const setLogoUrl = useCallback((url: string | null) => {

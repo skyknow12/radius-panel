@@ -31,7 +31,7 @@ export function ThemeToggle({ onOpenAppearanceSettings }: ThemeToggleProps) {
     );
   }
 
-  const isLight = theme === 'light-pro';
+  const isLight = theme !== 'dark-pro';
   const currentOption = THEME_OPTIONS.find((t) => t.id === theme) || THEME_OPTIONS[0];
 
   return (

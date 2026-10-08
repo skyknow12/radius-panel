@@ -4,13 +4,13 @@
 
 @layer base {
   /* ========================================================================= */
-  /* BASE / THEME: LIGHT PRO (Crisp Enterprise Light — Default Theme)          */
+  /* BASE / THEME 1: LIGHT PRO (Crisp White & Royal Purple — Default)          */
   /* ========================================================================= */
   :root,
   html[data-theme="light-pro"] {
     --background: 210 40% 98%;          /* #f8fafc Bright Crisp Canvas */
     --foreground: 222 47% 11%;          /* #0f172a Deep Slate Text */
-    --card: 0 0% 100%;                 /* #ffffff Pure White Cards */
+    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
     --card-foreground: 222 47% 11%;
     --muted: 210 40% 93%;              /* #e2e8f0 Muted Background */
     --muted-foreground: 215 16% 47%;    /* #64748b */
@@ -30,42 +30,91 @@
   }
 
   /* ========================================================================= */
-  /* THEME 1: DEFAULT (Classic Navy / Purple ISP Operations Dashboard)         */
+  /* THEME 2: DEFAULT / LIGHT OCEAN BLUE (Crisp White & Electric Sky Blue)     */
   /* ========================================================================= */
   html[data-theme="default"] {
-    --background: 222 47% 8%;           /* #0b0f19 Classic Deep Navy */
-    --foreground: 210 40% 98%;          /* High Contrast White */
-    --card: 222 40% 13%;               /* #141b2d Navy Slate Card */
-    --card-foreground: 210 40% 98%;
-    --muted: 223 35% 18%;              /* #1e2840 */
-    --muted-foreground: 215 20% 65%;
-    --border: 222 35% 22%;              /* #24304f Indigo-Navy Border */
-    --input: 222 35% 22%;
-    --primary: 263 70% 64%;             /* #8b5cf6 Classic Purple */
-    --primary-foreground: 210 40% 98%;
-    --accent: 262 70% 20%;
-    --accent-foreground: 263 70% 85%;
-    --ring: 263 70% 64%;
+    --background: 210 50% 98%;          /* #f0f7ff Soft Sky-White Canvas */
+    --foreground: 215 28% 17%;          /* #1e293b Deep Navy Slate Text */
+    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
+    --card-foreground: 215 28% 17%;
+    --muted: 210 45% 94%;              /* #e0f2fe */
+    --muted-foreground: 215 18% 46%;    /* #64748b */
+    --border: 214 45% 88%;             /* #bfdbfe Soft Sky Blue Border */
+    --input: 214 45% 88%;
+    --primary: 217 91% 55%;            /* #2563eb Electric Ocean Blue Primary */
+    --primary-foreground: 0 0% 100%;
+    --accent: 214 95% 94%;             /* #dbeafe Soft Blue Tint */
+    --accent-foreground: 221 83% 50%;
+    --ring: 217 91% 55%;
 
-    --status-healthy: 152 76% 40%;
-    --status-warning: 43 96% 56%;
+    --status-healthy: 142 71% 45%;
+    --status-warning: 38 92% 50%;
     --status-offline: 0 84% 60%;
     --status-info: 217 91% 60%;
   }
 
   /* ========================================================================= */
-  /* THEME 2: DARK PRO (Midnight Charcoal & Radiant Tech Blue for NOC Teams)   */
+  /* THEME 3: COLORFUL / LIGHT EMERALD MINT (Crisp White & Cyber Mint Green)   */
   /* ========================================================================= */
-  html[data-theme="dark-pro"] {
-    --background: 220 30% 5%;           /* #080b11 Pitch Charcoal Black */
-    --foreground: 210 40% 98%;
-    --card: 220 25% 9%;                /* #10141d Technical Dark Card */
+  html[data-theme="colorful"] {
+    --background: 150 40% 98%;          /* #f0fdf4 Fresh Pearl Mint Canvas */
+    --foreground: 160 30% 15%;          /* #132a22 Deep Forest Slate Text */
+    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
+    --card-foreground: 160 30% 15%;
+    --muted: 150 35% 94%;              /* #dcfce7 */
+    --muted-foreground: 155 16% 45%;    /* #52796f */
+    --border: 145 35% 86%;             /* #bbf7d0 Soft Mint Green Border */
+    --input: 145 35% 86%;
+    --primary: 158 64% 42%;            /* #059669 Vibrant Emerald Primary */
+    --primary-foreground: 0 0% 100%;
+    --accent: 145 80% 94%;             /* #d1fae5 Soft Mint Tint */
+    --accent-foreground: 160 84% 30%;
+    --ring: 158 64% 42%;
+
+    --status-healthy: 158 64% 42%;
+    --status-warning: 38 92% 50%;
+    --status-offline: 0 84% 60%;
+    --status-info: 180 80% 45%;
+  }
+
+  /* ========================================================================= */
+  /* THEME 4: NOC / LIGHT SUNSET AMBER (Crisp White & Radiant Sunset Amber)    */
+  /* ========================================================================= */
+  html[data-theme="noc"] {
+    --background: 35 50% 98%;           /* #fffbeb Warm Pearl Amber Canvas */
+    --foreground: 25 35% 16%;           /* #291e14 Warm Deep Slate Text */
+    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
+    --card-foreground: 25 35% 16%;
+    --muted: 35 45% 94%;               /* #fef3c7 */
+    --muted-foreground: 30 18% 46%;     /* #786452 */
+    --border: 35 40% 86%;              /* #fde68a Soft Amber Border */
+    --input: 35 40% 86%;
+    --primary: 25 95% 53%;             /* #ea580c Radiant Sunset Amber / Coral */
+    --primary-foreground: 0 0% 100%;
+    --accent: 35 90% 94%;              /* #ffedd5 Soft Peach Amber Tint */
+    --accent-foreground: 25 90% 40%;
+    --ring: 25 95% 53%;
+
+    --status-healthy: 142 71% 45%;
+    --status-warning: 38 92% 50%;
+    --status-offline: 0 84% 60%;
+    --status-info: 217 91% 60%;
+  }
+
+  /* ========================================================================= */
+  /* THEME 5: DARK PRO (Midnight Charcoal NOC — THE SINGLE DARK THEME)         */
+  /* ========================================================================= */
+  html[data-theme="dark-pro"],
+  html.dark:not([data-theme="light-pro"]):not([data-theme="default"]):not([data-theme="colorful"]):not([data-theme="noc"]) {
+    --background: 220 30% 5%;           /* #080b11 Pitch Charcoal Black Canvas */
+    --foreground: 210 40% 98%;          /* High-Contrast White */
+    --card: 220 25% 9%;                /* #10141d Technical Dark Slate Card */
     --card-foreground: 210 40% 98%;
     --muted: 220 20% 14%;              /* #181f2c */
-    --muted-foreground: 215 16% 60%;
-    --border: 220 20% 18%;              /* #202738 Technical Slate Border */
+    --muted-foreground: 215 16% 60%;    /* #94a3b8 */
+    --border: 220 20% 18%;              /* #202738 Clean Technical Border */
     --input: 220 20% 18%;
-    --primary: 217 91% 60%;             /* #3b82f6 Radiant Tech Blue! */
+    --primary: 217 91% 60%;             /* #3b82f6 Radiant Tech Blue */
     --primary-foreground: 0 0% 100%;
     --accent: 217 60% 16%;
     --accent-foreground: 217 91% 75%;
@@ -75,54 +124,6 @@
     --status-warning: 38 92% 50%;
     --status-offline: 350 89% 60%;
     --status-info: 199 89% 48%;
-  }
-
-  /* ========================================================================= */
-  /* THEME 4: COLORFUL (Deep Ocean Teal Canvas & Vibrant Cyber Emerald)        */
-  /* ========================================================================= */
-  html[data-theme="colorful"] {
-    --background: 195 45% 7%;           /* #0a171c Deep Ocean Teal Canvas */
-    --foreground: 180 50% 98%;
-    --card: 195 40% 12%;               /* #12252c Rich Aquatic Teal Card */
-    --card-foreground: 180 50% 98%;
-    --muted: 195 35% 18%;              /* #1b3843 */
-    --muted-foreground: 185 25% 70%;
-    --border: 195 35% 24%;              /* #234c5b Distinct Teal Border */
-    --input: 195 35% 24%;
-    --primary: 173 80% 45%;             /* #14b8a6 Vibrant Teal / Cyber Emerald */
-    --primary-foreground: 0 0% 100%;
-    --accent: 173 70% 18%;
-    --accent-foreground: 173 80% 75%;
-    --ring: 173 80% 45%;
-
-    --status-healthy: 160 84% 45%;
-    --status-warning: 38 92% 50%;
-    --status-offline: 347 77% 55%;
-    --status-info: 190 90% 50%;
-  }
-
-  /* ========================================================================= */
-  /* THEME 5: NOC HIGH CONTRAST (Pure 100% OLED Pitch Black & Neon Indicators) */
-  /* ========================================================================= */
-  html[data-theme="noc"] {
-    --background: 0 0% 0%;              /* #000000 100% Pitch OLED Black */
-    --foreground: 0 0% 100%;            /* #ffffff 100% Crisp White */
-    --card: 0 0% 6%;                   /* #0f0f0f Jet Black Card */
-    --card-foreground: 0 0% 100%;
-    --muted: 0 0% 15%;                  /* #262626 */
-    --muted-foreground: 0 0% 85%;
-    --border: 0 0% 28%;                 /* #474747 High Visibility Border */
-    --input: 0 0% 28%;
-    --primary: 150 100% 45%;            /* #00e676 Ultra Neon Lime/Green! */
-    --primary-foreground: 0 0% 0%;
-    --accent: 0 0% 18%;
-    --accent-foreground: 150 100% 50%;
-    --ring: 150 100% 45%;
-
-    --status-healthy: 150 100% 50%;     /* #00ff73 Ultra Neon Lime */
-    --status-warning: 45 100% 50%;      /* #ffea00 Neon Gold */
-    --status-offline: 0 100% 60%;       /* #ff3333 Neon Coral Red */
-    --status-info: 185 100% 50%;        /* #00f0ff Neon Cyan */
   }
 }
 

@@ -231,7 +231,10 @@ export function SettingsAppearanceView({ initialTab = 'theme', currentUser }: Se
             <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-xl border border-border/80">
               <button
                 type="button"
-                onClick={() => setAppearanceMode('dark')}
+                onClick={() => {
+                  setAppearanceMode('dark');
+                  setTheme('dark-pro');
+                }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   appearanceMode === 'dark'
                     ? 'bg-card text-foreground shadow-sm font-bold border border-border'
