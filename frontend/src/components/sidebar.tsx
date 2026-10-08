@@ -189,7 +189,6 @@ export function Sidebar({
         'reseller_profile',
         'reseller_dashboard',
         'reseller_transactions',
-        'reseller_wallet',
         'reseller_credit',
         'reseller_reports',
       ].includes(activeTab);
@@ -328,10 +327,9 @@ export function Sidebar({
           <>
             {renderNavItem('organization_dashboard', 'Organization Dashboard', Building2, undefined, 'organization.view')}
             {renderNavItem('branches', 'Branch Offices', Store, undefined, 'branch.view')}
-            {renderNavItem('resellers', 'Resellers & Partners', Users, undefined, 'reseller.view')}
+            {renderNavItem('resellers', 'All Resellers', Users, undefined, 'reseller.view')}
             {renderNavItem('reseller_dashboard', 'Reseller Dashboard', LayoutDashboard, undefined, 'reseller.view')}
             {renderNavItem('reseller_transactions', 'Reseller Transactions', CreditCard, undefined, 'reseller.view')}
-            {renderNavItem('reseller_wallet', 'Reseller Wallet', Wallet, undefined, 'reseller.view')}
             {renderNavItem('reseller_credit', 'Reseller Credit', ShieldAlert, undefined, 'reseller.view')}
             {renderNavItem('reseller_reports', 'Reseller Reports', FileBarChart, undefined, 'reseller.view')}
           </>,

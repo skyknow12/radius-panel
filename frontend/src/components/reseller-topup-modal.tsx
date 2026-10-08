@@ -121,9 +121,13 @@ export function ResellerTopupModal({
       // Unique idempotency key to prevent double submissions
       const idempotencyKey = `topup-${reseller.id}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(`/api/resellers/${reseller.id}/topup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           type: topupType,
           amount,

@@ -53,7 +53,10 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
   const fetchBranches = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/branches');
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/branches', { headers });
       if (res.ok) {
         const json = await res.json();
         setBranches(json.data || []);
@@ -73,7 +76,10 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
     setSelectedBranch(branch);
     try {
       setMetricsLoading(true);
-      const res = await fetch(`/api/branches/${branch.id}/dashboard`);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/branches/${branch.id}/dashboard`, { headers });
       if (res.ok) {
         const json = await res.json();
         setBranchMetrics(json.data);
@@ -90,9 +96,12 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
     try {
       setSaving(true);
       setError(null);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/branches', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           name: name.trim(),
           code: code.trim().toUpperCase(),
@@ -107,7 +116,7 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Failed to create branch');
+        throw new Error(errJson.error || errJson.message || 'Failed to create branch');
       }
 
       setCreateModalOpen(false);
@@ -131,9 +140,12 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
     if (!selectedBranch) return;
     try {
       setSaving(true);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`/api/branches/${selectedBranch.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           name: selectedBranch.name,
           manager_name: selectedBranch.manager_name,
@@ -147,7 +159,7 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Failed to update branch');
+        throw new Error(errJson.error || errJson.message || 'Failed to update branch');
       }
 
       setEditModalOpen(false);

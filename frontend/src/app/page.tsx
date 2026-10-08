@@ -468,9 +468,18 @@ export default function DashboardPage() {
                 handleNavigate('reseller_profile');
               }}
             />
-          ) : activeTab === 'reseller_transactions' || activeTab === 'reseller_wallet' || activeTab === 'reseller_credit' ? (
+          ) : activeTab === 'reseller_transactions' || activeTab === 'reseller_wallet' ? (
             <ResellerProfileView
               resellerId={selectedResellerId || 1}
+              initialTab="balance_transactions"
+              onBack={() => handleNavigate('resellers')}
+              currentUser={currentUser}
+              onOpenSubscriber={(id) => setSubscriberProfileId(id)}
+            />
+          ) : activeTab === 'reseller_credit' ? (
+            <ResellerProfileView
+              resellerId={selectedResellerId || 1}
+              initialTab="credit"
               onBack={() => handleNavigate('resellers')}
               currentUser={currentUser}
               onOpenSubscriber={(id) => setSubscriberProfileId(id)}

@@ -46,6 +46,7 @@ import { ResellerTopupModal } from './reseller-topup-modal';
 
 interface ResellerProfileViewProps {
   resellerId: number;
+  initialTab?: string;
   onBack?: () => void;
   currentUser?: any;
   onOpenSubscriber?: (subscriberId: number) => void;
@@ -53,6 +54,7 @@ interface ResellerProfileViewProps {
 
 export function ResellerProfileView({
   resellerId,
+  initialTab,
   onBack,
   currentUser,
   onOpenSubscriber,
@@ -61,8 +63,8 @@ export function ResellerProfileView({
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Active Tab: overview | customers | wallet | topups | transactions | credit | commission | recharge_history | reports | activity
-  const [activeTab, setActiveTab] = React.useState<string>('overview');
+  // Active Tab: overview | customers | balance_transactions | credit | commission | recharge_history | reports | activity | notes
+  const [activeTab, setActiveTab] = React.useState<string>(initialTab || 'overview');
 
   // Modals state
   const [topupModalOpen, setTopupModalOpen] = React.useState(false);
@@ -90,6 +92,11 @@ export function ResellerProfileView({
   const [reportData, setReportData] = React.useState<any | null>(null);
   const [reportLoading, setReportLoading] = React.useState(false);
 
+  // Notes tab state
+  const [notesText, setNotesText] = React.useState('');
+  const [notesSaving, setNotesSaving] = React.useState(false);
+  const [notesMessage, setNotesMessage] = React.useState<string | null>(null);
+
   // Form states for modals
   const [newCommissionPercent, setNewCommissionPercent] = React.useState('');
   const [commissionReason, setCommissionReason] = React.useState('');
@@ -115,13 +122,20 @@ export function ResellerProfileView({
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/resellers/${resellerId}/profile`);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/resellers/${resellerId}/profile`, { headers });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error?.message || json.message || 'Failed to load reseller profile');
       }
       const json = await res.json();
       setData(json.data);
+      if (json.data?.reseller?.notes) {
+        setNotesText(json.data.reseller.notes);
+      }
     } catch (err: any) {
       setError(err.message || 'Error loading reseller profile');
     } finally {
@@ -132,7 +146,10 @@ export function ResellerProfileView({
   const fetchCustomers = async () => {
     try {
       setCustomersLoading(true);
-      const res = await fetch(`/api/resellers/${resellerId}/customers?search=${encodeURIComponent(customerSearch)}`);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/resellers/${resellerId}/customers?search=${encodeURIComponent(customerSearch)}`, { headers });
       if (res.ok) {
         const json = await res.json();
         setCustomers(json.data || []);
@@ -145,9 +162,12 @@ export function ResellerProfileView({
   const fetchTransactions = async () => {
     try {
       setTransactionsLoading(true);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const typeParam = txTypeFilter !== 'ALL' ? `&type=${txTypeFilter}` : '';
       const searchParam = txSearch ? `&search=${encodeURIComponent(txSearch)}` : '';
-      const res = await fetch(`/api/resellers/${resellerId}/transactions?limit=100${typeParam}${searchParam}`);
+      const res = await fetch(`/api/resellers/${resellerId}/transactions?limit=100${typeParam}${searchParam}`, { headers });
       if (res.ok) {
         const json = await res.json();
         setTransactions(json.data?.transactions || []);
@@ -159,7 +179,10 @@ export function ResellerProfileView({
 
   const fetchCommissionHistory = async () => {
     try {
-      const res = await fetch(`/api/resellers/${resellerId}/commission-history`);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/resellers/${resellerId}/commission-history`, { headers });
       if (res.ok) {
         const json = await res.json();
         setCommissionHistory(json.data || []);
@@ -169,7 +192,10 @@ export function ResellerProfileView({
 
   const fetchPackages = async () => {
     try {
-      const res = await fetch('/api/packages');
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/packages', { headers });
       if (res.ok) {
         const json = await res.json();
         setPackages(json.data || []);
@@ -180,13 +206,42 @@ export function ResellerProfileView({
   const fetchReports = async () => {
     try {
       setReportLoading(true);
-      const res = await fetch(`/api/resellers/${resellerId}/reports?period=${reportPeriod}`);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/resellers/${resellerId}/reports?period=${reportPeriod}`, { headers });
       if (res.ok) {
         const json = await res.json();
         setReportData(json.data);
       }
     } catch {} finally {
       setReportLoading(false);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    try {
+      setNotesSaving(true);
+      setNotesMessage(null);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/resellers/${resellerId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ notes: notesText.trim() }),
+      });
+      if (res.ok) {
+        setNotesMessage('Notes saved successfully.');
+        setTimeout(() => setNotesMessage(null), 3000);
+        fetchProfile();
+      } else {
+        setNotesMessage('Failed to save notes.');
+      }
+    } catch {
+      setNotesMessage('Failed to save notes.');
+    } finally {
+      setNotesSaving(false);
     }
   };
 
@@ -197,10 +252,10 @@ export function ResellerProfileView({
 
   React.useEffect(() => {
     if (activeTab === 'customers') fetchCustomers();
-    if (activeTab === 'wallet' || activeTab === 'topups' || activeTab === 'transactions' || activeTab === 'recharge_history') {
+    if (activeTab === 'balance_transactions' || activeTab === 'recharge_history' || activeTab === 'overview') {
       fetchTransactions();
     }
-    if (activeTab === 'commission') fetchCommissionHistory();
+    if (activeTab === 'commission' || activeTab === 'activity') fetchCommissionHistory();
     if (activeTab === 'reports') fetchReports();
   }, [activeTab, resellerId]);
 
@@ -208,9 +263,12 @@ export function ResellerProfileView({
     e.preventDefault();
     try {
       setCommissionSubmitting(true);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`/api/resellers/${resellerId}/commission`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           commission_percent: parseFloat(newCommissionPercent),
           reason: commissionReason,
@@ -236,9 +294,12 @@ export function ResellerProfileView({
     e.preventDefault();
     try {
       setCreditSubmitting(true);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`/api/resellers/${resellerId}/credit`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           credit_limit: parseFloat(newCreditLimit),
           credit_status: newCreditStatus,
@@ -263,9 +324,12 @@ export function ResellerProfileView({
     if (!selectedTxForReversal) return;
     try {
       setReversalSubmitting(true);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`/api/resellers/${resellerId}/reversal`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           transaction_id: selectedTxForReversal.transaction_id,
           reason: reversalReason,
@@ -296,9 +360,12 @@ export function ResellerProfileView({
     try {
       setRechargeSubmitting(true);
       setRechargeError(null);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`/api/resellers/${resellerId}/customer-recharge`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           subscriber_id: Number(rechargeSubId),
           package_id: Number(rechargePkgId),
@@ -461,11 +528,14 @@ export function ResellerProfileView({
         </div>
       </div>
 
-      {/* 2. TEN CLICKABLE DASHBOARD CARDS (Section 4) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      {/* 2. SIX RESELLER BALANCE SUMMARY CARDS (Section 11) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         {/* Card 1: Current Balance */}
         <button
-          onClick={() => setActiveTab('wallet')}
+          onClick={() => {
+            setTxTypeFilter('ALL');
+            setActiveTab('balance_transactions');
+          }}
           className="p-4 rounded-2xl bg-card border border-border hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
         >
           <div className="flex items-center justify-between w-full mb-2">
@@ -486,7 +556,7 @@ export function ResellerProfileView({
         <button
           onClick={() => {
             setTxTypeFilter('RESELLER_TOPUP_CASH');
-            setActiveTab('topups');
+            setActiveTab('balance_transactions');
           }}
           className="p-4 rounded-2xl bg-card border border-border hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
         >
@@ -508,7 +578,7 @@ export function ResellerProfileView({
         <button
           onClick={() => {
             setTxTypeFilter('RESELLER_TOPUP_CREDIT');
-            setActiveTab('topups');
+            setActiveTab('balance_transactions');
           }}
           className="p-4 rounded-2xl bg-card border border-border hover:border-amber-500/50 hover:bg-amber-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
         >
@@ -533,7 +603,7 @@ export function ResellerProfileView({
         >
           <div className="flex items-center justify-between w-full mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-purple-400">
-              Commission Granted
+              Total Commission
             </span>
             <Percent className="w-4 h-4 text-purple-400" />
           </div>
@@ -545,45 +615,7 @@ export function ResellerProfileView({
           </span>
         </button>
 
-        {/* Card 5: Total Wallet Value Received */}
-        <button
-          onClick={() => setActiveTab('wallet')}
-          className="p-4 rounded-2xl bg-card border border-border hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
-        >
-          <div className="flex items-center justify-between w-full mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-indigo-400">
-              Total Value Received
-            </span>
-            <Layers className="w-4 h-4 text-indigo-400" />
-          </div>
-          <div className="text-xl font-black text-foreground">
-            Rs. {cards.totalWalletValueReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </div>
-          <span className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-            Wallet Credit Sum <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </span>
-        </button>
-
-        {/* Card 6: Total Customer Recharge */}
-        <button
-          onClick={() => setActiveTab('recharge_history')}
-          className="p-4 rounded-2xl bg-card border border-border hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
-        >
-          <div className="flex items-center justify-between w-full mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-blue-400">
-              Customer Recharge
-            </span>
-            <CreditCard className="w-4 h-4 text-blue-400" />
-          </div>
-          <div className="text-xl font-black text-blue-400">
-            Rs. {cards.totalCustomerRecharge.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </div>
-          <span className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-            Total Selling Debits <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </span>
-        </button>
-
-        {/* Card 7: Total Credit Used */}
+        {/* Card 5: Credit Used */}
         <button
           onClick={() => setActiveTab('credit')}
           className="p-4 rounded-2xl bg-card border border-border hover:border-rose-500/50 hover:bg-rose-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
@@ -602,7 +634,7 @@ export function ResellerProfileView({
           </span>
         </button>
 
-        {/* Card 8: Credit Remaining */}
+        {/* Card 6: Credit Remaining */}
         <button
           onClick={() => setActiveTab('credit')}
           className="p-4 rounded-2xl bg-card border border-border hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
@@ -620,60 +652,22 @@ export function ResellerProfileView({
             Limit: Rs. {reseller.credit_limit.toLocaleString()} <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
           </span>
         </button>
-
-        {/* Card 9: Total Customers */}
-        <button
-          onClick={() => setActiveTab('customers')}
-          className="p-4 rounded-2xl bg-card border border-border hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
-        >
-          <div className="flex items-center justify-between w-full mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-purple-400">
-              Total Customers
-            </span>
-            <Users className="w-4 h-4 text-purple-400" />
-          </div>
-          <div className="text-xl font-black text-foreground">
-            {cards.customers}
-          </div>
-          <span className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-            {data.customersSummary.active} Active <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </span>
-        </button>
-
-        {/* Card 10: Today's Recharge */}
-        <button
-          onClick={() => setActiveTab('recharge_history')}
-          className="p-4 rounded-2xl bg-card border border-border hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all text-left flex flex-col justify-between group shadow-sm"
-        >
-          <div className="flex items-center justify-between w-full mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-emerald-400">
-              Today's Recharge
-            </span>
-            <Clock className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-xl font-black text-emerald-400">
-            Rs. {cards.todayRecharge.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </div>
-          <span className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-            Today's Selling <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </span>
-        </button>
       </div>
 
-      {/* 3. RESELLER PROFILE TABS (Section 47) */}
+      {/* 3. RESELLER PROFILE TABS */}
       <div className="space-y-4">
         {/* Tab Buttons Bar */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-border text-xs scrollbar-none">
           {[
             { id: 'overview', label: 'Overview', icon: Layers },
             { id: 'customers', label: `Customers (${cards.customers})`, icon: Users },
-            { id: 'wallet', label: 'Wallet', icon: Wallet },
-            { id: 'topups', label: 'Top-Ups', icon: DollarSign },
-            { id: 'transactions', label: 'Transactions', icon: History },
+            { id: 'balance_transactions', label: 'Balance & Transactions', icon: Wallet },
             { id: 'credit', label: 'Credit', icon: ShieldAlert },
             { id: 'commission', label: 'Commission', icon: Percent },
             { id: 'recharge_history', label: 'Recharge History', icon: CreditCard },
             { id: 'reports', label: 'Reports', icon: FileBarChart },
+            { id: 'activity', label: 'Activity', icon: Clock },
+            { id: 'notes', label: 'Notes', icon: FileText },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -950,316 +944,245 @@ export function ResellerProfileView({
         )}
 
         {/* ======================================================== */}
-        {/* TAB 3: WALLET & LEDGER */}
+        {/* TAB 3: BALANCE & TRANSACTIONS (Unified Balance System)   */}
         {/* ======================================================== */}
-        {activeTab === 'wallet' && (
+        {activeTab === 'balance_transactions' && (
           <div className="space-y-4">
-            <div className="p-5 rounded-2xl bg-card border border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                  Reseller Wallet Number
-                </span>
-                <span className="text-lg font-mono font-black text-foreground">
-                  {reseller.wallet_number}
-                </span>
+            {/* Balance & Wallet Summary Strip */}
+            <div className="p-5 rounded-2xl bg-card border border-border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1">
+                <div>
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Wallet Number
+                  </span>
+                  <span className="text-sm font-mono font-black text-foreground">
+                    {reseller.wallet_number}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Current Balance
+                  </span>
+                  <span className="text-base font-black text-purple-400">
+                    Rs. {cards.currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Total Cash Paid
+                  </span>
+                  <span className="text-sm font-black text-emerald-400">
+                    Rs. {cards.totalCashTopup.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Total Credit Used
+                  </span>
+                  <span className="text-sm font-black text-amber-400">
+                    Rs. {cards.totalCreditTopup.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
                 <button
                   onClick={handleExportCsv}
                   className="px-3.5 py-2 rounded-xl border border-border bg-card text-xs font-semibold text-foreground hover:bg-muted transition-colors flex items-center gap-1.5"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Ledger CSV</span>
+                  <span>Export CSV</span>
                 </button>
                 <button
                   onClick={() => setTopupModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5 shadow-md shadow-purple-500/20"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>+ Add Balance</span>
+                  <Plus className="w-4 h-4 stroke-[3]" />
+                  <span>+ Add Balance / Top-Up</span>
                 </button>
               </div>
             </div>
 
-            {/* Wallet Ledger Table */}
+            {/* Filter Bar & Search */}
             <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-foreground">Wallet Ledger Entries</h3>
-                <span className="text-xs text-muted-foreground">
-                  Current Balance: Rs. {cards.currentBalance.toFixed(2)}
-                </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3 flex-1">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Search by ID, customer, reference..."
+                      value={txSearch}
+                      onChange={(e) => setTxSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && fetchTransactions()}
+                      className="w-full pl-9 pr-3 py-1.5 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Filter className="w-3.5 h-3.5" />
+                    <select
+                      value={txTypeFilter}
+                      onChange={(e) => setTxTypeFilter(e.target.value)}
+                      className="px-2.5 py-1.5 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="ALL">All Types</option>
+                      <option value="RESELLER_TOPUP_CASH">Cash Top-Up</option>
+                      <option value="RESELLER_TOPUP_CREDIT">Credit Top-Up</option>
+                      <option value="RESELLER_CUSTOMER_RECHARGE">Customer Recharge</option>
+                      <option value="RESELLER_TOPUP_REVERSAL">Reversal</option>
+                      <option value="RESELLER_REFUND">Refund</option>
+                      <option value="RESELLER_MANUAL_ADJUSTMENT">Adjustment</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  onClick={fetchTransactions}
+                  className="p-2 rounded-xl border border-border hover:bg-muted text-muted-foreground transition-colors self-end sm:self-auto"
+                  title="Refresh Transactions"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
               </div>
 
+              {/* Complete Section 35 Unified Ledger Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase">
-                      <th className="pb-2.5">Date</th>
-                      <th className="pb-2.5">Tx ID</th>
-                      <th className="pb-2.5">Type</th>
-                      <th className="pb-2.5 text-right">Debit / Credit</th>
-                      <th className="pb-2.5 text-right">Balance Before</th>
-                      <th className="pb-2.5 text-right">Balance After</th>
-                      <th className="pb-2.5">Reference / Notes</th>
+                    <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase whitespace-nowrap">
+                      <th className="pb-2.5 pr-3">Date</th>
+                      <th className="pb-2.5 pr-3">Tx ID</th>
+                      <th className="pb-2.5 pr-3">Type</th>
+                      <th className="pb-2.5 pr-3 text-right">Cash</th>
+                      <th className="pb-2.5 pr-3 text-right">Credit</th>
+                      <th className="pb-2.5 pr-3 text-right">Comm %</th>
+                      <th className="pb-2.5 pr-3 text-right">Commission</th>
+                      <th className="pb-2.5 pr-3 text-right">Wallet Added</th>
+                      <th className="pb-2.5 pr-3 text-right">Debit</th>
+                      <th className="pb-2.5 pr-3 text-right">Bal Before</th>
+                      <th className="pb-2.5 pr-3 text-right">Bal After</th>
+                      <th className="pb-2.5 pr-3">Customer</th>
+                      <th className="pb-2.5 pr-3">Package</th>
+                      <th className="pb-2.5 pr-3">Method</th>
+                      <th className="pb-2.5 pr-3">Operator</th>
+                      <th className="pb-2.5 pr-3">Status</th>
+                      <th className="pb-2.5 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/40">
-                    {transactions.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="py-3 text-muted-foreground">
-                          {new Date(tx.created_at).toLocaleString()}
-                        </td>
-                        <td className="py-3 font-mono font-medium text-foreground">
-                          {tx.transaction_id}
-                        </td>
-                        <td className="py-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-muted text-foreground">
-                            {tx.type.replace('RESELLER_', '')}
-                          </span>
-                        </td>
-                        <td className="py-3 text-right font-bold">
-                          {tx.wallet_value > 0 ? (
-                            <span className="text-emerald-400">+Rs. {tx.wallet_value.toFixed(2)}</span>
-                          ) : tx.wallet_debit > 0 ? (
-                            <span className="text-rose-400">-Rs. {tx.wallet_debit.toFixed(2)}</span>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="py-3 text-right text-muted-foreground">
-                          Rs. {tx.balance_before.toFixed(2)}
-                        </td>
-                        <td className="py-3 text-right font-semibold text-foreground">
-                          Rs. {tx.balance_after.toFixed(2)}
-                        </td>
-                        <td className="py-3 text-muted-foreground max-w-xs truncate">
-                          {tx.reference || tx.remarks || '-'}
+                  <tbody className="divide-y divide-border/40 whitespace-nowrap">
+                    {transactionsLoading ? (
+                      <tr>
+                        <td colSpan={17} className="py-8 text-center text-muted-foreground">
+                          Loading transactions...
                         </td>
                       </tr>
-                    ))}
+                    ) : transactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={17} className="py-8 text-center text-muted-foreground">
+                          No transactions found matching criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      transactions.map((tx) => (
+                        <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-3 pr-3 text-muted-foreground">
+                            {new Date(tx.created_at).toLocaleString()}
+                          </td>
+                          <td className="py-3 pr-3 font-mono font-medium text-foreground">
+                            {tx.transaction_id}
+                          </td>
+                          <td className="py-3 pr-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                tx.type.includes('CASH')
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : tx.type.includes('CREDIT')
+                                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  : tx.type.includes('RECHARGE')
+                                  ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                  : tx.type.includes('REVERSAL')
+                                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}
+                            >
+                              {tx.type.replace('RESELLER_', '')}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3 text-right text-emerald-400 font-medium">
+                            {tx.cash_amount > 0 ? `Rs. ${tx.cash_amount.toFixed(2)}` : '-'}
+                          </td>
+                          <td className="py-3 pr-3 text-right text-amber-400 font-medium">
+                            {tx.credit_amount > 0 ? `Rs. ${tx.credit_amount.toFixed(2)}` : '-'}
+                          </td>
+                          <td className="py-3 pr-3 text-right text-muted-foreground">
+                            {tx.commission_percent > 0 ? `${tx.commission_percent.toFixed(2)}%` : '-'}
+                          </td>
+                          <td className="py-3 pr-3 text-right text-purple-400 font-bold">
+                            {tx.commission_amount > 0 ? `Rs. ${tx.commission_amount.toFixed(2)}` : '-'}
+                          </td>
+                          <td className="py-3 pr-3 text-right font-black text-foreground">
+                            {tx.wallet_value > 0 ? `+Rs. ${tx.wallet_value.toFixed(2)}` : '-'}
+                          </td>
+                          <td className="py-3 pr-3 text-right font-black text-rose-400">
+                            {tx.wallet_debit > 0 ? `-Rs. ${tx.wallet_debit.toFixed(2)}` : '-'}
+                          </td>
+                          <td className="py-3 pr-3 text-right text-muted-foreground">
+                            Rs. {tx.balance_before.toFixed(2)}
+                          </td>
+                          <td className="py-3 pr-3 text-right font-semibold text-foreground">
+                            Rs. {tx.balance_after.toFixed(2)}
+                          </td>
+                          <td className="py-3 pr-3">
+                            {tx.customer_username ? (
+                              <button
+                                type="button"
+                                onClick={() => tx.customer_id && onOpenSubscriber?.(tx.customer_id)}
+                                className="font-bold text-purple-400 hover:underline"
+                              >
+                                {tx.customer_username}
+                              </button>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="py-3 pr-3 text-muted-foreground">{tx.package_name || '-'}</td>
+                          <td className="py-3 pr-3 text-muted-foreground">{tx.payment_method || '-'}</td>
+                          <td className="py-3 pr-3 text-muted-foreground">{tx.created_by}</td>
+                          <td className="py-3 pr-3">
+                            <span
+                              className={`text-[10px] font-bold uppercase ${
+                                tx.status === 'COMPLETED'
+                                  ? 'text-emerald-400'
+                                  : tx.status === 'REVERSED'
+                                  ? 'text-rose-400'
+                                  : 'text-muted-foreground'
+                              }`}
+                            >
+                              {tx.status}
+                            </span>
+                          </td>
+                          <td className="py-3 text-right">
+                            {tx.status === 'COMPLETED' &&
+                              (tx.type.includes('TOPUP') || tx.type.includes('CASH') || tx.type.includes('CREDIT')) && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedTxForReversal(tx);
+                                    setReversalReason('');
+                                    setReversalModalOpen(true);
+                                  }}
+                                  className="px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px] font-bold transition-colors"
+                                  title="Reverse Top-Up (Creates immutable reversal record)"
+                                >
+                                  Reverse
+                                </button>
+                              )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 4: TOP-UPS (Section 51) */}
-        {/* ======================================================== */}
-        {activeTab === 'topups' && (
-          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-muted-foreground">Filter Type:</span>
-                <select
-                  value={txTypeFilter}
-                  onChange={(e) => setTxTypeFilter(e.target.value)}
-                  className="px-2.5 py-1.5 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="ALL">All Top-Ups</option>
-                  <option value="RESELLER_TOPUP_CASH">Cash Top-Ups Only</option>
-                  <option value="RESELLER_TOPUP_CREDIT">Credit Top-Ups Only</option>
-                  <option value="RESELLER_TOPUP_REVERSAL">Reversals Only</option>
-                </select>
-              </div>
-
-              <button
-                onClick={() => setTopupModalOpen(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Add Balance / Top-Up</span>
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase">
-                    <th className="pb-2.5">Date</th>
-                    <th className="pb-2.5">Transaction ID</th>
-                    <th className="pb-2.5">Type</th>
-                    <th className="pb-2.5 text-right">Cash Paid</th>
-                    <th className="pb-2.5 text-right">Credit Amount</th>
-                    <th className="pb-2.5 text-right">Comm %</th>
-                    <th className="pb-2.5 text-right">Commission Granted</th>
-                    <th className="pb-2.5 text-right">Wallet Value Added</th>
-                    <th className="pb-2.5">Method</th>
-                    <th className="pb-2.5">Status</th>
-                    <th className="pb-2.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {transactions
-                    .filter((t) => t.type.includes('TOPUP'))
-                    .map((tx) => (
-                      <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="py-3 text-muted-foreground">
-                          {new Date(tx.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 font-mono font-medium text-foreground">
-                          {tx.transaction_id}
-                        </td>
-                        <td className="py-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              tx.type.includes('CASH')
-                                ? 'bg-emerald-500/10 text-emerald-400'
-                                : 'bg-amber-500/10 text-amber-400'
-                            }`}
-                          >
-                            {tx.type.replace('RESELLER_TOPUP_', '')}
-                          </span>
-                        </td>
-                        <td className="py-3 text-right font-medium text-emerald-400">
-                          {tx.cash_amount > 0 ? `Rs. ${tx.cash_amount.toFixed(2)}` : '-'}
-                        </td>
-                        <td className="py-3 text-right font-medium text-amber-400">
-                          {tx.credit_amount > 0 ? `Rs. ${tx.credit_amount.toFixed(2)}` : '-'}
-                        </td>
-                        <td className="py-3 text-right text-muted-foreground">
-                          {tx.commission_percent.toFixed(2)}%
-                        </td>
-                        <td className="py-3 text-right font-bold text-purple-400">
-                          Rs. {tx.commission_amount.toFixed(2)}
-                        </td>
-                        <td className="py-3 text-right font-black text-foreground">
-                          Rs. {tx.wallet_value.toFixed(2)}
-                        </td>
-                        <td className="py-3 text-muted-foreground">{tx.payment_method || '-'}</td>
-                        <td className="py-3">
-                          <span
-                            className={`text-[10px] font-bold uppercase ${
-                              tx.status === 'COMPLETED'
-                                ? 'text-emerald-400'
-                                : tx.status === 'REVERSED'
-                                ? 'text-rose-400'
-                                : 'text-muted-foreground'
-                            }`}
-                          >
-                            {tx.status}
-                          </span>
-                        </td>
-                        <td className="py-3 text-right">
-                          {tx.status === 'COMPLETED' && (
-                            <button
-                              onClick={() => {
-                                setSelectedTxForReversal(tx);
-                                setReversalReason('');
-                                setReversalModalOpen(true);
-                              }}
-                              className="px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px] font-bold transition-colors"
-                              title="Reverse Top-Up (Creates immutable reversal record)"
-                            >
-                              Reverse
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 5: TRANSACTIONS (Complete Immutable Ledger) */}
-        {/* ======================================================== */}
-        {activeTab === 'transactions' && (
-          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search by ID, username, reference..."
-                  value={txSearch}
-                  onChange={(e) => setTxSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && fetchTransactions()}
-                  className="w-full pl-9 pr-3 py-1.5 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              <button
-                onClick={handleExportCsv}
-                className="px-3.5 py-1.5 rounded-xl border border-border bg-card text-xs font-semibold text-foreground hover:bg-muted transition-colors flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export CSV</span>
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase">
-                    <th className="pb-2.5">Date</th>
-                    <th className="pb-2.5">Tx ID</th>
-                    <th className="pb-2.5">Type</th>
-                    <th className="pb-2.5 text-right">Cash</th>
-                    <th className="pb-2.5 text-right">Credit</th>
-                    <th className="pb-2.5 text-right">Comm</th>
-                    <th className="pb-2.5 text-right">Wallet Added</th>
-                    <th className="pb-2.5 text-right">Wallet Debit</th>
-                    <th className="pb-2.5 text-right">Balance After</th>
-                    <th className="pb-2.5">Customer</th>
-                    <th className="pb-2.5">Operator</th>
-                    <th className="pb-2.5">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="py-3 text-muted-foreground">
-                        {new Date(tx.created_at).toLocaleString()}
-                      </td>
-                      <td className="py-3 font-mono font-medium text-foreground">{tx.transaction_id}</td>
-                      <td className="py-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-muted text-foreground">
-                          {tx.type.replace('RESELLER_', '')}
-                        </span>
-                      </td>
-                      <td className="py-3 text-right text-emerald-400 font-medium">
-                        {tx.cash_amount > 0 ? `Rs. ${tx.cash_amount.toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-3 text-right text-amber-400 font-medium">
-                        {tx.credit_amount > 0 ? `Rs. ${tx.credit_amount.toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-3 text-right text-purple-400 font-medium">
-                        {tx.commission_amount > 0 ? `Rs. ${tx.commission_amount.toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-3 text-right font-bold text-foreground">
-                        {tx.wallet_value > 0 ? `+Rs. ${tx.wallet_value.toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-3 text-right font-bold text-rose-400">
-                        {tx.wallet_debit > 0 ? `-Rs. ${tx.wallet_debit.toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-3 text-right font-semibold text-foreground">
-                        Rs. {tx.balance_after.toFixed(2)}
-                      </td>
-                      <td className="py-3">
-                        {tx.customer_username ? (
-                          <button
-                            type="button"
-                            onClick={() => tx.customer_id && onOpenSubscriber?.(tx.customer_id)}
-                            className="font-bold text-purple-400 hover:underline"
-                          >
-                            {tx.customer_username}
-                          </button>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td className="py-3 text-muted-foreground">{tx.created_by}</td>
-                      <td className="py-3">
-                        <span className="text-[10px] font-bold text-emerald-400">{tx.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         )}
@@ -1636,6 +1559,132 @@ export function ResellerProfileView({
                 </div>
               </div>
             ) : null}
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 8: ACTIVITY (Audit Timeline)                         */}
+        {/* ======================================================== */}
+        {activeTab === 'activity' && (
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-6">
+            <div>
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <Clock className="w-4 h-4 text-purple-400" />
+                Reseller Activity & Audit Trail
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Chronological log of balance top-ups, customer recharges, commission updates, and adjustments.
+              </p>
+            </div>
+
+            <div className="relative border-l border-border/80 ml-3 space-y-6 pl-6">
+              {transactions.length === 0 && commissionHistory.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-4">No logged activity recorded for this reseller yet.</p>
+              ) : (
+                transactions.slice(0, 30).map((tx) => (
+                  <div key={tx.id} className="relative group">
+                    {/* Timeline bullet */}
+                    <div className="absolute -left-[31px] top-1.5 w-3 h-3 rounded-full border-2 border-background bg-purple-500 shadow-sm" />
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-foreground">
+                            {tx.type === 'RESELLER_TOPUP_CASH' && `Cash Top-Up: Rs. ${tx.cash_amount.toFixed(2)}`}
+                            {tx.type === 'RESELLER_TOPUP_CREDIT' && `Credit Top-Up: Rs. ${tx.credit_amount.toFixed(2)}`}
+                            {tx.type === 'RESELLER_CUSTOMER_RECHARGE' && `Customer Recharged: ${tx.customer_username || 'Subscriber'}`}
+                            {tx.type === 'RESELLER_TOPUP_REVERSAL' && `Reversal Executed: ${tx.transaction_id}`}
+                            {!['RESELLER_TOPUP_CASH', 'RESELLER_TOPUP_CREDIT', 'RESELLER_CUSTOMER_RECHARGE', 'RESELLER_TOPUP_REVERSAL'].includes(tx.type) && tx.type.replace('RESELLER_', '')}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                            {tx.transaction_id}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase text-emerald-400">
+                            {tx.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {tx.type === 'RESELLER_CUSTOMER_RECHARGE'
+                            ? `Package: ${tx.package_name || '-'} (${tx.duration_months} mo) | Wallet Debit: Rs. ${tx.wallet_debit.toFixed(2)} | Balance: Rs. ${tx.balance_after.toFixed(2)}`
+                            : tx.wallet_value > 0
+                            ? `Wallet Added: Rs. ${tx.wallet_value.toFixed(2)} (Comm: Rs. ${tx.commission_amount.toFixed(2)} @ ${tx.commission_percent.toFixed(2)}%) | Operator: ${tx.created_by}`
+                            : `Balance: Rs. ${tx.balance_after.toFixed(2)} | Operator: ${tx.created_by}`}
+                        </p>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                        {new Date(tx.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 9: NOTES (Administrative Internal Notes)             */}
+        {/* ======================================================== */}
+        {activeTab === 'notes' && (
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4 max-w-3xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-purple-400" />
+                  Administrative & Internal Notes
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Internal notes and terms for ISP staff regarding this reseller. Not visible to end-customers.
+                </p>
+              </div>
+            </div>
+
+            {notesMessage && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  notesMessage.includes('success')
+                    ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                    : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                }`}
+              >
+                {notesMessage.includes('success') ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <AlertCircle className="w-4 h-4" />
+                )}
+                <span>{notesMessage}</span>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <textarea
+                value={notesText}
+                onChange={(e) => setNotesText(e.target.value)}
+                placeholder="Enter internal administrative notes, agreements, or special credit guidelines for this reseller..."
+                rows={6}
+                className="w-full p-3.5 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500 leading-relaxed resize-y"
+              />
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={handleSaveNotes}
+                  disabled={notesSaving}
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors shadow-md shadow-purple-500/20 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {notesSaving ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      <span>Saving Notes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Save Notes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

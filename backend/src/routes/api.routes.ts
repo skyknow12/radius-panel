@@ -1868,10 +1868,12 @@ apiRouter.get(
 // ---- 2. Branches ----
 apiRouter.get(
   '/branches',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
     let branches = await organizationRepository.listBranches();
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'branch' && authReq.user.branchId) {
         branches = branches.filter((b) => b.id === authReq.user!.branchId);
       }
@@ -1882,9 +1884,11 @@ apiRouter.get(
 
 apiRouter.post(
   '/branches',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('branch.create')) {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('branch.create')) {
       throw HttpError.forbidden('Unauthorized to create branches');
     }
     const branch = await organizationRepository.createBranch(req.body);
@@ -1894,10 +1898,12 @@ apiRouter.post(
 
 apiRouter.get(
   '/branches/:id',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'branch' && authReq.user.branchId !== id) {
         throw HttpError.forbidden('Access denied to other branch details');
       }
@@ -1910,10 +1916,12 @@ apiRouter.get(
 
 apiRouter.put(
   '/branches/:id',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('branch.edit')) {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('branch.edit')) {
       throw HttpError.forbidden('Unauthorized to edit branch');
     }
     const updated = await organizationRepository.updateBranch(id, req.body);
@@ -1923,10 +1931,12 @@ apiRouter.put(
 
 apiRouter.get(
   '/branches/:id/dashboard',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'branch' && authReq.user.branchId !== id) {
         throw HttpError.forbidden('Access denied to other branch dashboard');
       }
@@ -1939,11 +1949,13 @@ apiRouter.get(
 // ---- 3. Resellers ----
 apiRouter.get(
   '/resellers',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
     let resellers = await organizationRepository.listResellers(branchId);
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
         resellers = resellers.filter((r) => r.id === authReq.user!.resellerId);
       } else if (authReq.user.userType === 'branch' && authReq.user.branchId) {
@@ -1954,24 +1966,47 @@ apiRouter.get(
   })
 );
 
+const createResellerSchema = z.object({
+  name: z.string().min(1, 'Reseller Name is required'),
+  code: z.string().min(1, 'Reseller Code is required'),
+  phone: z.string().min(1, 'Phone is required'),
+  email: z.string().email().optional().or(z.literal('')).nullable(),
+  address: z.string().optional().nullable(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).default('ACTIVE'),
+  commission_percent: z
+    .number()
+    .min(0, 'Commission must be at least 0%')
+    .refine((val) => val < 100, 'Commission must be less than 100%')
+    .default(50.0),
+  credit_limit: z.number().min(0, 'Credit limit must be 0 or greater').default(50000.0),
+  branch_id: z.number().int().optional().nullable(),
+  contact_person: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
 apiRouter.post(
   '/resellers',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('reseller.create')) {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('reseller.create')) {
       throw HttpError.forbidden('Unauthorized to create resellers');
     }
-    const reseller = await organizationRepository.createReseller(req.body);
+    const validated = createResellerSchema.parse(req.body);
+    const reseller = await organizationRepository.createReseller(validated);
     res.status(201).json(envelope(reseller, 'live'));
   })
 );
 
 apiRouter.get(
   '/resellers/:id',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to other reseller data');
       }
@@ -1984,10 +2019,12 @@ apiRouter.get(
 
 apiRouter.put(
   '/resellers/:id',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('reseller.edit')) {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('reseller.edit')) {
       throw HttpError.forbidden('Unauthorized to edit reseller');
     }
     const updated = await organizationRepository.updateReseller(id, req.body);
@@ -1997,10 +2034,12 @@ apiRouter.put(
 
 apiRouter.get(
   '/resellers/:id/dashboard',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to other reseller dashboard');
       }
@@ -2012,10 +2051,11 @@ apiRouter.get(
 
 apiRouter.post(
   '/resellers/calculate-topup',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const schema = z.object({
       amount: z.number().positive(),
-      commission_percent: z.number().min(0).max(99.99),
+      commission_percent: z.number().min(0).refine((val) => val < 100, 'Commission must be less than 100%'),
       type: z.enum(['CASH', 'CREDIT']),
     });
     const parsed = schema.parse(req.body);
@@ -2026,10 +2066,12 @@ apiRouter.post(
 
 apiRouter.get(
   '/resellers/reports',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
         resellerId = authReq.user.resellerId;
       }
@@ -2049,10 +2091,12 @@ apiRouter.get(
 
 apiRouter.get(
   '/resellers/:id/profile',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to other reseller profile');
       }
@@ -2064,6 +2108,7 @@ apiRouter.get(
 
 apiRouter.post(
   '/resellers/:id/topup',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
@@ -2073,7 +2118,7 @@ apiRouter.post(
     const schema = z.object({
       type: z.enum(['CASH', 'CREDIT']),
       amount: z.number().positive('Top-up amount must be greater than zero'),
-      commission_percent: z.number().min(0).max(99.99).optional(),
+      commission_percent: z.number().min(0).refine((val) => val < 100, 'Commission must be less than 100%').optional(),
       payment_method: z.string().optional(),
       reference: z.string().optional(),
       remarks: z.string().optional(),
@@ -2093,7 +2138,7 @@ apiRouter.post(
     }
 
     if (parsed.commission_percent !== undefined) {
-      if (!isSuperOrOrg && !perms.includes('pricing.commission') && !perms.includes('pricing.edit')) {
+      if (!isSuperOrOrg && !perms.includes('pricing.commission') && !perms.includes('reseller.pricing.commission') && !perms.includes('pricing.edit') && !perms.includes('reseller.edit')) {
         throw HttpError.forbidden('Permission denied to override commission percentage');
       }
     }
@@ -2123,10 +2168,12 @@ apiRouter.post(
 
 apiRouter.post(
   '/resellers/:id/customer-recharge',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to recharge through another reseller');
       }
@@ -2155,11 +2202,12 @@ apiRouter.post(
 
 apiRouter.post(
   '/resellers/:id/reversal',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
     const perms = authReq.user?.permissions || [];
-    if (!isSuperOrOrg && !perms.includes('reseller.wallet.reverse') && !perms.includes('wallet.adjust')) {
+    if (!isSuperOrOrg && !perms.includes('reseller.wallet.reverse') && !perms.includes('reseller.wallet.adjust') && !perms.includes('wallet.adjust')) {
       throw HttpError.forbidden('Permission denied: reseller.wallet.reverse required');
     }
 
@@ -2181,17 +2229,18 @@ apiRouter.post(
 
 apiRouter.patch(
   '/resellers/:id/commission',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
     const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
     const perms = authReq.user?.permissions || [];
-    if (!isSuperOrOrg && !perms.includes('pricing.commission') && !perms.includes('reseller.edit')) {
+    if (!isSuperOrOrg && !perms.includes('pricing.commission') && !perms.includes('reseller.pricing.commission') && !perms.includes('reseller.edit')) {
       throw HttpError.forbidden('Permission denied: pricing.commission or reseller.edit required');
     }
 
     const schema = z.object({
-      commission_percent: z.number().min(0).max(99.99),
+      commission_percent: z.number().min(0).refine((val) => val < 100, 'Commission must be less than 100%'),
       reason: z.string().min(2, 'Reason for commission change is required'),
     });
     const parsed = schema.parse(req.body);
@@ -2209,10 +2258,12 @@ apiRouter.patch(
 
 apiRouter.get(
   '/resellers/:id/commission-history',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to other reseller commission history');
       }
@@ -2224,12 +2275,13 @@ apiRouter.get(
 
 apiRouter.patch(
   '/resellers/:id/credit',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
     const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
     const perms = authReq.user?.permissions || [];
-    if (!isSuperOrOrg && !perms.includes('reseller.credit.edit') && !perms.includes('credit.edit')) {
+    if (!isSuperOrOrg && !perms.includes('reseller.credit.edit') && !perms.includes('reseller.credit.adjust') && !perms.includes('credit.edit')) {
       throw HttpError.forbidden('Permission denied: reseller.credit.edit required');
     }
 
@@ -2254,10 +2306,12 @@ apiRouter.patch(
 
 apiRouter.get(
   '/resellers/:id/transactions',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to other reseller transactions');
       }
@@ -2280,10 +2334,12 @@ apiRouter.get(
 
 apiRouter.get(
   '/resellers/:id/transactions/export',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to export other reseller transactions');
       }
@@ -2304,10 +2360,12 @@ apiRouter.get(
 
 apiRouter.get(
   '/resellers/:id/customers',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to other reseller customer list');
       }
@@ -2320,10 +2378,12 @@ apiRouter.get(
 
 apiRouter.get(
   '/resellers/:id/reports',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId !== id) {
         throw HttpError.forbidden('Access denied to other reseller reports');
       }
@@ -2378,6 +2438,7 @@ apiRouter.get(
 // ---- 5. Wallets & Credit System ----
 apiRouter.get(
   '/wallets/dashboard',
+  authMiddleware,
   asyncHandler(async (_req, res) => {
     const metrics = await organizationRepository.getWalletDashboardMetrics();
     res.json(envelope(metrics, 'live'));
@@ -2386,13 +2447,15 @@ apiRouter.get(
 
 apiRouter.get(
   '/wallets',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const entityType = req.query.entity_type as 'branch' | 'reseller' | undefined;
     const status = req.query.status as string | undefined;
 
     let wallets = await organizationRepository.listWallets({ entityType, status });
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
         wallets = wallets.filter((w) => w.reseller_id === authReq.user!.resellerId);
       } else if (authReq.user.userType === 'branch' && authReq.user.branchId) {
@@ -2405,13 +2468,15 @@ apiRouter.get(
 
 apiRouter.get(
   '/wallets/:id',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const wallet = await organizationRepository.getWallet(id);
     if (!wallet) throw HttpError.notFound('Wallet not found');
 
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (authReq.user && !isSuperOrOrg) {
       if (authReq.user.userType === 'reseller' && wallet.reseller_id !== authReq.user.resellerId) {
         throw HttpError.forbidden('Access denied to other wallet');
       } else if (authReq.user.userType === 'branch' && wallet.branch_id !== authReq.user.branchId) {
@@ -2422,13 +2487,15 @@ apiRouter.get(
   })
 );
 
-// CRITICAL: Top-up Wallet (Super Admin Only)
+// CRITICAL: Top-up Wallet
 apiRouter.post(
   '/wallets/:id/topup',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('wallet.topup')) {
-      throw HttpError.forbidden('Security Restriction: Only Super Admin can perform wallet top-ups');
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('wallet.topup') && !authReq.user?.permissions?.includes('reseller.wallet.topup')) {
+      throw HttpError.forbidden('Security Restriction: Authorized administrator role required for wallet top-ups');
     }
 
     const walletId = Number(req.params.id);
@@ -2450,13 +2517,15 @@ apiRouter.post(
   })
 );
 
-// Manual Adjustment (Super Admin Only)
+// Manual Adjustment
 apiRouter.post(
   '/wallets/:id/adjust',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('wallet.adjust')) {
-      throw HttpError.forbidden('Security Restriction: Only Super Admin can adjust wallet balances');
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('wallet.adjust') && !authReq.user?.permissions?.includes('reseller.wallet.adjust')) {
+      throw HttpError.forbidden('Security Restriction: Authorized administrator role required to adjust wallet balances');
     }
 
     const walletId = Number(req.params.id);
@@ -2476,13 +2545,15 @@ apiRouter.post(
   })
 );
 
-// Configure Credit Limit (Super Admin Only)
+// Configure Credit Limit
 apiRouter.put(
   '/wallets/:id/credit',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('credit.edit')) {
-      throw HttpError.forbidden('Security Restriction: Only Super Admin can configure credit accounts');
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('credit.edit') && !authReq.user?.permissions?.includes('reseller.credit.edit')) {
+      throw HttpError.forbidden('Security Restriction: Authorized administrator role required to configure credit accounts');
     }
 
     const walletId = Number(req.params.id);
@@ -2508,6 +2579,7 @@ apiRouter.put(
 // Wallet Ledger / Transactions
 apiRouter.get(
   '/wallets/:id/ledger',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const walletId = Number(req.params.id);
     const type = req.query.type as string | undefined;
@@ -2526,6 +2598,7 @@ apiRouter.get(
 
 apiRouter.get(
   '/wallets/ledger/all',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const type = req.query.type as string | undefined;
     const limit = req.query.limit ? Number(req.query.limit) : 50;
