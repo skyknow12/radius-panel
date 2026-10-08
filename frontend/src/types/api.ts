@@ -655,6 +655,7 @@ export interface ResellerItem {
   wallet_balance?: number;
   credit_limit?: number;
   used_credit?: number;
+  credit_used?: number;
   credit_remaining?: number;
   customer_count?: number;
   active_customers?: number;
