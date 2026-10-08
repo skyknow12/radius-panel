@@ -292,12 +292,12 @@ export const organizationRepository = {
   async createBranch(input: {
     name: string;
     code: string;
-    address?: string;
-    contact_number?: string;
-    email?: string;
-    manager_name?: string;
+    address?: string | null;
+    contact_number?: string | null;
+    email?: string | null;
+    manager_name?: string | null;
     status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
-    notes?: string;
+    notes?: string | null;
   }): Promise<BranchItem> {
     const org = await this.getPrimaryOrganization();
     const client = await getClient();
@@ -491,16 +491,16 @@ export const organizationRepository = {
     branch_id?: number | null;
     name: string;
     code: string;
-    contact_person?: string;
-    phone?: string;
-    email?: string;
-    address?: string;
+    contact_person?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
     status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
     commission_model?: 'discount' | 'commission';
     commission_percent?: number;
     credit_limit?: number;
     credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-    notes?: string;
+    notes?: string | null;
   }): Promise<ResellerItem> {
     const org = await this.getPrimaryOrganization();
     const client = await getClient();
