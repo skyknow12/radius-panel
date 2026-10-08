@@ -334,12 +334,13 @@ export class ResellerRepository {
       await client.query('COMMIT');
 
       // Audit log
-      auditRepository.log({
-        actor_id: input.operator,
+      await auditRepository.insert({
+        username: input.operator,
         action: txType,
-        entity_type: 'reseller_wallet',
-        entity_id: String(reseller.id),
-        details: {
+        entityType: 'reseller_wallet',
+        entityId: String(reseller.id),
+        status: 'success',
+        metadata: {
           transaction_id: txId,
           type: input.type,
           payment: input.amount,
@@ -538,12 +539,13 @@ export class ResellerRepository {
 
       await client.query('COMMIT');
 
-      auditRepository.log({
-        actor_id: input.operator,
+      await auditRepository.insert({
+        username: input.operator,
         action: 'RESELLER_CUSTOMER_RECHARGE',
-        entity_type: 'reseller_wallet',
-        entity_id: String(input.resellerId),
-        details: {
+        entityType: 'reseller_wallet',
+        entityId: String(input.resellerId),
+        status: 'success',
+        metadata: {
           transaction_id: rchTxId,
           subscriber_username: subscriber.username,
           package_name: pkg.name,
@@ -732,12 +734,13 @@ export class ResellerRepository {
 
       await client.query('COMMIT');
 
-      auditRepository.log({
-        actor_id: operator,
+      await auditRepository.insert({
+        username: operator,
         action: 'RESELLER_COMMISSION_UPDATE',
-        entity_type: 'reseller',
-        entity_id: String(resellerId),
-        details: { previous_percent: previousPercent, new_percent: newPercent, reason },
+        entityType: 'reseller',
+        entityId: String(resellerId),
+        status: 'success',
+        metadata: { previous_percent: previousPercent, new_percent: newPercent, reason },
       }).catch(() => undefined);
 
       return { resellerId, previousPercent, newPercent };

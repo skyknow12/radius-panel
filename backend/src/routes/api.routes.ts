@@ -2029,7 +2029,7 @@ apiRouter.get(
     const authReq = req as AuthenticatedRequest;
     let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
     if (authReq.user && authReq.user.role !== 'super_admin' && authReq.user.role !== 'organization_admin') {
-      if (authReq.user.userType === 'reseller') {
+      if (authReq.user.userType === 'reseller' && authReq.user.resellerId) {
         resellerId = authReq.user.resellerId;
       }
     }
