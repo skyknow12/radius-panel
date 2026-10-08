@@ -2431,7 +2431,7 @@ apiRouter.get(
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 20,
     });
-    res.json(envelope(result.users, { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
+    res.json(envelope(result.users, 'live', { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
   })
 );
 
@@ -2476,7 +2476,7 @@ apiRouter.post(
       createdBy: authReq.user?.userId,
     });
 
-    res.status(201).json(envelope({ id: userId, message: 'User created successfully' }));
+    res.status(201).json(envelope({ id: userId, message: 'User created successfully' }, 'live'));
   })
 );
 
@@ -2486,7 +2486,7 @@ apiRouter.get(
   requirePermission('users.view'),
   asyncHandler(async (req, res) => {
     const user = await userManagementRepository.getUserById(req.params.id);
-    res.json(envelope(user));
+    res.json(envelope(user, 'live'));
   })
 );
 
@@ -2516,7 +2516,7 @@ apiRouter.put(
       updatedBy: authReq.user?.userId,
     });
 
-    res.json(envelope({ success: true, message: 'User updated successfully' }));
+    res.json(envelope({ success: true, message: 'User updated successfully' }, 'live'));
   })
 );
 
@@ -2529,7 +2529,7 @@ apiRouter.patch(
     const { status } = z.object({ status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']) }).parse(req.body);
 
     await userManagementRepository.setStatus(req.params.id, status, authReq.user?.userId);
-    res.json(envelope({ success: true, message: `User status changed to ${status}` }));
+    res.json(envelope({ success: true, message: `User status changed to ${status}` }, 'live'));
   })
 );
 
@@ -2545,7 +2545,7 @@ apiRouter.post(
     }).parse(req.body);
 
     await userManagementRepository.resetPassword(req.params.id, password, !!forceNextReset, authReq.user?.userId);
-    res.json(envelope({ success: true, message: 'User password reset successfully' }));
+    res.json(envelope({ success: true, message: 'User password reset successfully' }, 'live'));
   })
 );
 
@@ -2556,7 +2556,7 @@ apiRouter.post(
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     await userManagementRepository.forceLogout(req.params.id, authReq.user?.userId);
-    res.json(envelope({ success: true, message: 'User forced logged out. Active sessions terminated.' }));
+    res.json(envelope({ success: true, message: 'User forced logged out. Active sessions terminated.' }, 'live'));
   })
 );
 
@@ -2567,7 +2567,7 @@ apiRouter.get(
   asyncHandler(async (req, res) => {
     const limit = req.query.limit ? Number(req.query.limit) : 50;
     const history = await userManagementRepository.getLoginHistory(req.params.id, limit);
-    res.json(envelope(history));
+    res.json(envelope(history, 'live'));
   })
 );
 
@@ -2577,7 +2577,7 @@ apiRouter.get(
   requirePermission('users.view'),
   asyncHandler(async (req, res) => {
     const sessions = await userManagementRepository.getSessions(req.params.id);
-    res.json(envelope(sessions));
+    res.json(envelope(sessions, 'live'));
   })
 );
 
@@ -2588,7 +2588,7 @@ apiRouter.get(
   requirePermission('roles.view'),
   asyncHandler(async (_req, res) => {
     const roles = await userManagementRepository.listRoles();
-    res.json(envelope(roles));
+    res.json(envelope(roles, 'live'));
   })
 );
 
@@ -2598,7 +2598,7 @@ apiRouter.get(
   requirePermission('roles.view'),
   asyncHandler(async (req, res) => {
     const role = await userManagementRepository.getRoleById(Number(req.params.id));
-    res.json(envelope(role));
+    res.json(envelope(role, 'live'));
   })
 );
 
@@ -2620,7 +2620,7 @@ apiRouter.post(
       ...parsed,
       actorId: authReq.user?.userId,
     });
-    res.status(201).json(envelope({ id: roleId, message: 'Custom role created successfully' }));
+    res.status(201).json(envelope({ id: roleId, message: 'Custom role created successfully' }, 'live'));
   })
 );
 
@@ -2641,7 +2641,7 @@ apiRouter.put(
       ...parsed,
       actorId: authReq.user?.userId,
     });
-    res.json(envelope({ success: true, message: 'Role updated successfully' }));
+    res.json(envelope({ success: true, message: 'Role updated successfully' }, 'live'));
   })
 );
 
@@ -2652,7 +2652,7 @@ apiRouter.delete(
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     await userManagementRepository.deleteRole(Number(req.params.id), authReq.user?.userId);
-    res.json(envelope({ success: true, message: 'Custom role deleted' }));
+    res.json(envelope({ success: true, message: 'Custom role deleted' }, 'live'));
   })
 );
 
@@ -2661,7 +2661,7 @@ apiRouter.get(
   authMiddleware,
   asyncHandler(async (_req, res) => {
     const grouped = await userManagementRepository.listPermissions();
-    res.json(envelope(grouped));
+    res.json(envelope(grouped, 'live'));
   })
 );
 
@@ -2675,7 +2675,7 @@ apiRouter.get(
   requirePermission('crm.view'),
   asyncHandler(async (req, res) => {
     const summary = await crmRepository.getSubscriberCrmSummary(Number(req.params.id));
-    res.json(envelope(summary));
+    res.json(envelope(summary, 'live'));
   })
 );
 
@@ -2685,7 +2685,7 @@ apiRouter.get(
   requirePermission('crm.view'),
   asyncHandler(async (req, res) => {
     const notes = await crmRepository.listNotes(Number(req.params.id));
-    res.json(envelope(notes));
+    res.json(envelope(notes, 'live'));
   })
 );
 
@@ -2707,7 +2707,7 @@ apiRouter.post(
       note,
       isPinned,
     });
-    res.status(201).json(envelope(created));
+    res.status(201).json(envelope(created, 'live'));
   })
 );
 
@@ -2718,7 +2718,7 @@ apiRouter.delete(
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     await crmRepository.deleteNote(Number(req.params.noteId), authReq.user?.userId);
-    res.json(envelope({ success: true, message: 'Note deleted' }));
+    res.json(envelope({ success: true, message: 'Note deleted' }, 'live'));
   })
 );
 
@@ -2729,7 +2729,7 @@ apiRouter.patch(
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const isPinned = await crmRepository.togglePinNote(Number(req.params.noteId), authReq.user?.userId);
-    res.json(envelope({ is_pinned: isPinned }));
+    res.json(envelope({ is_pinned: isPinned }, 'live'));
   })
 );
 
@@ -2740,7 +2740,7 @@ apiRouter.get(
   asyncHandler(async (req, res) => {
     const limit = req.query.limit ? Number(req.query.limit) : 50;
     const activities = await crmRepository.listActivities(Number(req.params.id), limit);
-    res.json(envelope(activities));
+    res.json(envelope(activities, 'live'));
   })
 );
 
@@ -2751,7 +2751,7 @@ apiRouter.get(
   asyncHandler(async (req, res) => {
     const limit = req.query.limit ? Number(req.query.limit) : 50;
     const comms = await crmRepository.listCommunications(Number(req.params.id), limit);
-    res.json(envelope(comms));
+    res.json(envelope(comms, 'live'));
   })
 );
 
@@ -2774,7 +2774,7 @@ apiRouter.post(
       ...parsed,
       sentBy: authReq.user?.userId,
     });
-    res.status(201).json(envelope(comm));
+    res.status(201).json(envelope(comm, 'live'));
   })
 );
 
@@ -2814,7 +2814,7 @@ apiRouter.get(
       limit: limit ? Number(limit) : 20,
     });
 
-    res.json(envelope(result.tickets, { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
+    res.json(envelope(result.tickets, 'live', { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
   })
 );
 
@@ -2834,7 +2834,7 @@ apiRouter.get(
     }
 
     const metrics = await ticketRepository.getMetrics({ branch_id: branchId, reseller_id: resellerId });
-    res.json(envelope(metrics));
+    res.json(envelope(metrics, 'live'));
   })
 );
 
@@ -2843,7 +2843,7 @@ apiRouter.get(
   authMiddleware,
   asyncHandler(async (_req, res) => {
     const categories = await ticketRepository.listCategories();
-    res.json(envelope(categories));
+    res.json(envelope(categories, 'live'));
   })
 );
 
@@ -2852,7 +2852,7 @@ apiRouter.get(
   authMiddleware,
   asyncHandler(async (_req, res) => {
     const rules = await ticketRepository.listSlaRules();
-    res.json(envelope(rules));
+    res.json(envelope(rules, 'live'));
   })
 );
 
@@ -2872,7 +2872,7 @@ apiRouter.put(
       ...parsed,
       actorId: authReq.user?.userId,
     });
-    res.json(envelope({ success: true, message: `SLA rule updated for ${req.params.priority}` }));
+    res.json(envelope({ success: true, message: `SLA rule updated for ${req.params.priority}` }, 'live'));
   })
 );
 
@@ -2912,7 +2912,7 @@ apiRouter.post(
       }).catch(() => undefined);
     }
 
-    res.status(201).json(envelope(ticket));
+    res.status(201).json(envelope(ticket, 'live'));
   })
 );
 
@@ -2922,7 +2922,7 @@ apiRouter.get(
   requirePermission('tickets.view'),
   asyncHandler(async (req, res) => {
     const ticket = await ticketRepository.getTicketById(Number(req.params.id));
-    res.json(envelope(ticket));
+    res.json(envelope(ticket, 'live'));
   })
 );
 
@@ -2945,7 +2945,7 @@ apiRouter.post(
       comment: parsed.comment,
       isInternal: parsed.isInternal,
     });
-    res.status(201).json(envelope(comment));
+    res.status(201).json(envelope(comment, 'live'));
   })
 );
 
@@ -2970,7 +2970,7 @@ apiRouter.patch(
       changedById: authReq.user?.userId,
       changedByName: authReq.user?.username || 'Staff',
     });
-    res.json(envelope({ success: true, message: `Ticket status updated to ${parsed.status}` }));
+    res.json(envelope({ success: true, message: `Ticket status updated to ${parsed.status}` }, 'live'));
   })
 );
 
@@ -3002,7 +3002,7 @@ apiRouter.patch(
       }).catch(() => undefined);
     }
 
-    res.json(envelope({ success: true, message: 'Ticket assigned successfully' }));
+    res.json(envelope({ success: true, message: 'Ticket assigned successfully' }, 'live'));
   })
 );
 
@@ -3025,7 +3025,7 @@ apiRouter.post(
       escalatedById: authReq.user?.userId,
       escalatedByName: authReq.user?.username || 'Staff',
     });
-    res.json(envelope({ success: true, message: `Ticket escalated to ${parsed.toPriority}` }));
+    res.json(envelope({ success: true, message: `Ticket escalated to ${parsed.toPriority}` }, 'live'));
   })
 );
 
@@ -3043,7 +3043,7 @@ apiRouter.get(
     const limit = req.query.limit ? Number(req.query.limit) : 30;
 
     const notifs = await notificationService.listForUser(authReq.user.userId, unreadOnly, limit);
-    res.json(envelope(notifs));
+    res.json(envelope(notifs, 'live'));
   })
 );
 
@@ -3055,7 +3055,7 @@ apiRouter.get(
     if (!authReq.user) throw HttpError.unauthorized();
 
     const count = await notificationService.getUnreadCount(authReq.user.userId);
-    res.json(envelope({ unreadCount: count }));
+    res.json(envelope({ unreadCount: count }, 'live'));
   })
 );
 
@@ -3067,7 +3067,7 @@ apiRouter.patch(
     if (!authReq.user) throw HttpError.unauthorized();
 
     await notificationService.markAsRead(Number(req.params.id), authReq.user.userId);
-    res.json(envelope({ success: true }));
+    res.json(envelope({ success: true }, 'live'));
   })
 );
 
@@ -3079,7 +3079,7 @@ apiRouter.post(
     if (!authReq.user) throw HttpError.unauthorized();
 
     await notificationService.markAllAsRead(authReq.user.userId);
-    res.json(envelope({ success: true, message: 'All notifications marked as read' }));
+    res.json(envelope({ success: true, message: 'All notifications marked as read' }, 'live'));
   })
 );
 
@@ -3100,7 +3100,7 @@ apiRouter.post(
 
     const parsed = schema.parse(req.body);
     const count = await notificationService.broadcast(parsed);
-    res.json(envelope({ deliveredCount: count, message: `Notification broadcasted to ${count} users` }));
+    res.json(envelope({ deliveredCount: count, message: `Notification broadcasted to ${count} users` }, 'live'));
   })
 );
 

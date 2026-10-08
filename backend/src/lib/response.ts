@@ -1,13 +1,26 @@
 import type { DataSource, ApiMeta } from '../types/api';
 
 /** Standard success envelope: { data, meta }. */
-export function envelope<T>(data: T, source: DataSource, extra: Partial<ApiMeta> = {}) {
+export function envelope<T>(
+  data: T,
+  sourceOrExtra: DataSource | Partial<ApiMeta> = 'live',
+  extra: Partial<ApiMeta> = {}
+) {
+  let source: DataSource = 'live';
+  let metaExtra: Partial<ApiMeta> = extra;
+
+  if (typeof sourceOrExtra === 'string') {
+    source = sourceOrExtra;
+  } else if (sourceOrExtra && typeof sourceOrExtra === 'object') {
+    metaExtra = { ...sourceOrExtra, ...extra };
+  }
+
   return {
     data,
     meta: {
       source,
       generatedAt: new Date().toISOString(),
-      ...extra,
+      ...metaExtra,
     } satisfies ApiMeta,
   };
 }
