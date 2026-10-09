@@ -25,8 +25,16 @@ async function bootstrap() {
 
   const app = express();
 
+  // Trust proxy for upstream reverse proxy (Nginx)
+  app.set('trust proxy', config.TRUST_PROXY);
+
   // Basic security and parsing
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+      contentSecurityPolicy: false,
+    })
+  );
   app.use(
     cors({
       origin: (origin, callback) => {
