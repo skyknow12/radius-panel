@@ -39,10 +39,31 @@ export function LoginView({ onLoginSuccess }: LoginViewProps) {
         }),
       });
 
-      const data = await res.json();
+      let data: any = null;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+      }
 
       if (!res.ok) {
-        throw new Error(data.error?.message || data.message || 'Invalid login credentials');
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new Error(
+            `Backend API service is currently unreachable (${res.status} Bad Gateway). Please ensure the backend container is started with: docker compose up -d`
+          );
+        }
+        throw new Error(
+          data?.error?.message ||
+            data?.message ||
+            `Authentication failed (HTTP ${res.status}). Please check your username and password.`
+        );
+      }
+
+      if (!data) {
+        throw new Error('Received unexpected non-JSON response from server.');
       }
 
       if (data.data?.token) {

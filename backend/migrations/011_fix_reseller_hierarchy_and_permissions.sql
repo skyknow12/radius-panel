@@ -13,12 +13,37 @@ BEGIN
   END IF;
 END $$;
 
--- 2. Ensure commission_percent and credit columns exist on resellers
-ALTER TABLE resellers
-  ADD COLUMN IF NOT EXISTS commission_percent NUMERIC(5,2) NOT NULL DEFAULT 50.00 CHECK (commission_percent >= 0 AND commission_percent < 100),
-  ADD COLUMN IF NOT EXISTS credit_limit NUMERIC(12,2) NOT NULL DEFAULT 50000.00 CHECK (credit_limit >= 0),
-  ADD COLUMN IF NOT EXISTS credit_used NUMERIC(12,2) NOT NULL DEFAULT 0.00 CHECK (credit_used >= 0),
-  ADD COLUMN IF NOT EXISTS credit_status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' CHECK (credit_status IN ('ACTIVE', 'SUSPENDED', 'EXPIRED'));
+-- 2. Ensure commission_percent and credit columns exist on resellers safely
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'resellers' AND column_name = 'commission_percent'
+  ) THEN
+    ALTER TABLE resellers ADD COLUMN commission_percent NUMERIC(5,2) NOT NULL DEFAULT 50.00;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'resellers' AND column_name = 'credit_limit'
+  ) THEN
+    ALTER TABLE resellers ADD COLUMN credit_limit NUMERIC(12,2) NOT NULL DEFAULT 50000.00;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'resellers' AND column_name = 'credit_used'
+  ) THEN
+    ALTER TABLE resellers ADD COLUMN credit_used NUMERIC(12,2) NOT NULL DEFAULT 0.00;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'resellers' AND column_name = 'credit_status'
+  ) THEN
+    ALTER TABLE resellers ADD COLUMN credit_status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE';
+  END IF;
+END $$;
 
 -- 3. Ensure Wallets exist for all resellers
 INSERT INTO wallets (wallet_number, entity_type, reseller_id, balance, total_topup, total_used, status)
@@ -154,4 +179,4 @@ SELECT r.id, p.id
      'wallet.view', 'wallet.topup', 'wallet.adjust', 'wallet.refund',
      'credit.view', 'credit.create', 'credit.edit', 'credit.suspend'
    )
-ON CONFLICT DO NOTHING;
+ON CONFLICT (role_id, permission_id) DO NOTHING;
