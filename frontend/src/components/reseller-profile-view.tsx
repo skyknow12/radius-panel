@@ -34,6 +34,7 @@ import {
   ExternalLink,
   Edit2,
   Zap,
+  Settings,
 } from 'lucide-react';
 import type {
   ResellerItem,
@@ -110,6 +111,25 @@ export function ResellerProfileView({
   const [reversalReason, setReversalReason] = React.useState('');
   const [reversalSubmitting, setReversalSubmitting] = React.useState(false);
 
+  // Credit Repayment modal state
+  const [repayModalOpen, setRepayModalOpen] = React.useState(false);
+  const [repayAmount, setRepayAmount] = React.useState('');
+  const [repayPaymentMethod, setRepayPaymentMethod] = React.useState('Cash');
+  const [repayReference, setRepayReference] = React.useState('');
+  const [repayRemarks, setRepayRemarks] = React.useState('');
+  const [repaySaving, setRepaySaving] = React.useState(false);
+  const [repayError, setRepayError] = React.useState<string | null>(null);
+
+  // Settings tab form state
+  const [settingsName, setSettingsName] = React.useState('');
+  const [settingsContactPerson, setSettingsContactPerson] = React.useState('');
+  const [settingsPhone, setSettingsPhone] = React.useState('');
+  const [settingsEmail, setSettingsEmail] = React.useState('');
+  const [settingsAddress, setSettingsAddress] = React.useState('');
+  const [settingsStatus, setSettingsStatus] = React.useState('ACTIVE');
+  const [settingsSaving, setSettingsSaving] = React.useState(false);
+  const [settingsMessage, setSettingsMessage] = React.useState<string | null>(null);
+
   // Customer recharge form state
   const [rechargeSubId, setRechargeSubId] = React.useState<number | ''>('');
   const [rechargePkgId, setRechargePkgId] = React.useState<number | ''>('');
@@ -133,8 +153,15 @@ export function ResellerProfileView({
       }
       const json = await res.json();
       setData(json.data);
-      if (json.data?.reseller?.notes) {
-        setNotesText(json.data.reseller.notes);
+      if (json.data?.reseller) {
+        const r = json.data.reseller;
+        if (r.notes) setNotesText(r.notes);
+        setSettingsName(r.name || '');
+        setSettingsContactPerson(r.contact_person || '');
+        setSettingsPhone(r.phone || '');
+        setSettingsEmail(r.email || '');
+        setSettingsAddress(r.address || '');
+        setSettingsStatus(r.status || 'ACTIVE');
       }
     } catch (err: any) {
       setError(err.message || 'Error loading reseller profile');
@@ -242,6 +269,84 @@ export function ResellerProfileView({
       setNotesMessage('Failed to save notes.');
     } finally {
       setNotesSaving(false);
+    }
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSettingsSaving(true);
+      setSettingsMessage(null);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/resellers/${resellerId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          name: settingsName.trim(),
+          contact_person: settingsContactPerson.trim() || null,
+          phone: settingsPhone.trim() || null,
+          email: settingsEmail.trim() || null,
+          address: settingsAddress.trim() || null,
+          status: settingsStatus,
+          notes: notesText.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setSettingsMessage('Reseller profile and settings saved successfully.');
+        setTimeout(() => setSettingsMessage(null), 3000);
+        fetchProfile();
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        setSettingsMessage(errJson.error?.message || errJson.message || 'Failed to update reseller settings.');
+      }
+    } catch {
+      setSettingsMessage('Failed to update reseller settings.');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleCreditRepay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!repayAmount || Number(repayAmount) <= 0) {
+      setRepayError('Please enter a valid repayment amount');
+      return;
+    }
+    try {
+      setRepaySaving(true);
+      setRepayError(null);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/resellers/${resellerId}/credit-repay`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          amount: Number(repayAmount),
+          payment_method: repayPaymentMethod,
+          reference: repayReference.trim() || undefined,
+          remarks: repayRemarks.trim() || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || errJson.message || 'Failed to process credit repayment');
+      }
+
+      setRepayModalOpen(false);
+      setRepayAmount('');
+      setRepayReference('');
+      setRepayRemarks('');
+      fetchProfile();
+      fetchTransactions();
+    } catch (err: any) {
+      setRepayError(err.message || 'Error processing credit repayment');
+    } finally {
+      setRepaySaving(false);
     }
   };
 
@@ -663,11 +768,9 @@ export function ResellerProfileView({
             { id: 'customers', label: `Customers (${cards.customers})`, icon: Users },
             { id: 'balance_transactions', label: 'Balance & Transactions', icon: Wallet },
             { id: 'credit', label: 'Credit', icon: ShieldAlert },
-            { id: 'commission', label: 'Commission', icon: Percent },
-            { id: 'recharge_history', label: 'Recharge History', icon: CreditCard },
+            { id: 'commission', label: 'Commission History', icon: Percent },
             { id: 'reports', label: 'Reports', icon: FileBarChart },
-            { id: 'activity', label: 'Activity', icon: Clock },
-            { id: 'notes', label: 'Notes', icon: FileText },
+            { id: 'settings', label: 'Settings', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1217,22 +1320,40 @@ export function ResellerProfileView({
                 </div>
               </div>
 
-              <button
-                onClick={() => {
-                  setNewCreditLimit(String(reseller.credit_limit));
-                  setNewCreditStatus((reseller.credit_status as any) || 'ACTIVE');
-                  setCreditModalOpen(true);
-                }}
-                className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition-colors shadow-md shadow-amber-500/20"
-              >
-                Adjust Credit Terms
-              </button>
+              <div className="flex flex-col gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    setRepayAmount('');
+                    setRepayReference('');
+                    setRepayRemarks('');
+                    setRepayError(null);
+                    setRepayModalOpen(true);
+                  }}
+                  disabled={reseller.credit_used <= 0}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-md shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Repay / Settle Credit</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setNewCreditLimit(String(reseller.credit_limit));
+                    setNewCreditStatus((reseller.credit_status as any) || 'ACTIVE');
+                    setCreditModalOpen(true);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition-colors shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Adjust Credit Terms</span>
+                </button>
+              </div>
             </div>
 
             <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-4 md:col-span-2">
               <h3 className="text-sm font-bold text-foreground">Credit History & Utilisation</h3>
               <p className="text-xs text-muted-foreground">
-                All credit top-ups are recorded against the approved limit. Once repaid or adjusted, the remaining capacity restores automatically.
+                All credit top-ups and repayments are recorded against the approved limit. Once repaid, the available capacity restores immediately.
               </p>
 
               <div className="overflow-x-auto">
@@ -1241,9 +1362,10 @@ export function ResellerProfileView({
                     <tr className="border-b border-border/80 text-[11px] font-bold text-muted-foreground uppercase">
                       <th className="pb-2.5">Date</th>
                       <th className="pb-2.5">Tx ID</th>
-                      <th className="pb-2.5 text-right">Credit Amount</th>
-                      <th className="pb-2.5 text-right">Credit Used Before</th>
-                      <th className="pb-2.5 text-right">Credit Used After</th>
+                      <th className="pb-2.5">Type</th>
+                      <th className="pb-2.5 text-right">Amount</th>
+                      <th className="pb-2.5 text-right">Used Before</th>
+                      <th className="pb-2.5 text-right">Used After</th>
                       <th className="pb-2.5">Operator</th>
                     </tr>
                   </thead>
@@ -1256,8 +1378,21 @@ export function ResellerProfileView({
                             {new Date(tx.created_at).toLocaleDateString()}
                           </td>
                           <td className="py-3 font-mono font-medium text-foreground">{tx.transaction_id}</td>
-                          <td className="py-3 text-right font-bold text-amber-400">
-                            Rs. {tx.credit_amount.toFixed(2)}
+                          <td className="py-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                tx.type === 'RESELLER_CREDIT_REPAYMENT'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              }`}
+                            >
+                              {tx.type === 'RESELLER_CREDIT_REPAYMENT' ? 'Repayment' : 'Credit Top-Up'}
+                            </span>
+                          </td>
+                          <td className={`py-3 text-right font-bold ${
+                            tx.type === 'RESELLER_CREDIT_REPAYMENT' ? 'text-emerald-400' : 'text-amber-400'
+                          }`}>
+                            {tx.type === 'RESELLER_CREDIT_REPAYMENT' ? `-Rs. ${tx.cash_amount.toFixed(2)}` : `+Rs. ${tx.credit_amount.toFixed(2)}`}
                           </td>
                           <td className="py-3 text-right text-muted-foreground">
                             Rs. {tx.credit_used_before.toFixed(2)}
@@ -1563,128 +1698,149 @@ export function ResellerProfileView({
         )}
 
         {/* ======================================================== */}
-        {/* TAB 8: ACTIVITY (Audit Timeline)                         */}
+        {/* TAB 7: SETTINGS & PROFILE                                */}
         {/* ======================================================== */}
-        {activeTab === 'activity' && (
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-6">
+        {(activeTab === 'settings' || activeTab === 'notes') && (
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-6 max-w-3xl">
             <div>
               <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <Clock className="w-4 h-4 text-purple-400" />
-                Reseller Activity & Audit Trail
+                <Settings className="w-4 h-4 text-purple-400" />
+                Reseller Profile & Settings
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Chronological log of balance top-ups, customer recharges, commission updates, and adjustments.
+                Update organization details, contact information, operational status, and internal administrative guidelines.
               </p>
             </div>
 
-            <div className="relative border-l border-border/80 ml-3 space-y-6 pl-6">
-              {transactions.length === 0 && commissionHistory.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-4">No logged activity recorded for this reseller yet.</p>
-              ) : (
-                transactions.slice(0, 30).map((tx) => (
-                  <div key={tx.id} className="relative group">
-                    {/* Timeline bullet */}
-                    <div className="absolute -left-[31px] top-1.5 w-3 h-3 rounded-full border-2 border-background bg-purple-500 shadow-sm" />
-
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-bold text-foreground">
-                            {tx.type === 'RESELLER_TOPUP_CASH' && `Cash Top-Up: Rs. ${tx.cash_amount.toFixed(2)}`}
-                            {tx.type === 'RESELLER_TOPUP_CREDIT' && `Credit Top-Up: Rs. ${tx.credit_amount.toFixed(2)}`}
-                            {tx.type === 'RESELLER_CUSTOMER_RECHARGE' && `Customer Recharged: ${tx.customer_username || 'Subscriber'}`}
-                            {tx.type === 'RESELLER_TOPUP_REVERSAL' && `Reversal Executed: ${tx.transaction_id}`}
-                            {!['RESELLER_TOPUP_CASH', 'RESELLER_TOPUP_CREDIT', 'RESELLER_CUSTOMER_RECHARGE', 'RESELLER_TOPUP_REVERSAL'].includes(tx.type) && tx.type.replace('RESELLER_', '')}
-                          </span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                            {tx.transaction_id}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase text-emerald-400">
-                            {tx.status}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {tx.type === 'RESELLER_CUSTOMER_RECHARGE'
-                            ? `Package: ${tx.package_name || '-'} (${tx.duration_months} mo) | Wallet Debit: Rs. ${tx.wallet_debit.toFixed(2)} | Balance: Rs. ${tx.balance_after.toFixed(2)}`
-                            : tx.wallet_value > 0
-                            ? `Wallet Added: Rs. ${tx.wallet_value.toFixed(2)} (Comm: Rs. ${tx.commission_amount.toFixed(2)} @ ${tx.commission_percent.toFixed(2)}%) | Operator: ${tx.created_by}`
-                            : `Balance: Rs. ${tx.balance_after.toFixed(2)} | Operator: ${tx.created_by}`}
-                        </p>
-                      </div>
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                        {new Date(tx.created_at).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 9: NOTES (Administrative Internal Notes)             */}
-        {/* ======================================================== */}
-        {activeTab === 'notes' && (
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4 max-w-3xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-purple-400" />
-                  Administrative & Internal Notes
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Internal notes and terms for ISP staff regarding this reseller. Not visible to end-customers.
-                </p>
-              </div>
-            </div>
-
-            {notesMessage && (
+            {settingsMessage && (
               <div
                 className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
-                  notesMessage.includes('success')
+                  settingsMessage.includes('success')
                     ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
                     : 'bg-red-500/10 border border-red-500/20 text-red-400'
                 }`}
               >
-                {notesMessage.includes('success') ? (
+                {settingsMessage.includes('success') ? (
                   <CheckCircle2 className="w-4 h-4" />
                 ) : (
                   <AlertCircle className="w-4 h-4" />
                 )}
-                <span>{notesMessage}</span>
+                <span>{settingsMessage}</span>
               </div>
             )}
 
-            <div className="space-y-3">
-              <textarea
-                value={notesText}
-                onChange={(e) => setNotesText(e.target.value)}
-                placeholder="Enter internal administrative notes, agreements, or special credit guidelines for this reseller..."
-                rows={6}
-                className="w-full p-3.5 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500 leading-relaxed resize-y"
-              />
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground block">Reseller Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsName}
+                    onChange={(e) => setSettingsName(e.target.value)}
+                    className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
 
-              <div className="flex items-center justify-end gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground block">Reseller Code (Unique ID)</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={reseller.code}
+                    className="w-full px-3 py-2 bg-muted/20 border border-border/50 rounded-xl text-xs text-muted-foreground cursor-not-allowed font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground block">Contact Person</label>
+                  <input
+                    type="text"
+                    value={settingsContactPerson}
+                    onChange={(e) => setSettingsContactPerson(e.target.value)}
+                    placeholder="e.g. Anil Thapa"
+                    className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground block">Phone Number *</label>
+                  <input
+                    type="text"
+                    value={settingsPhone}
+                    onChange={(e) => setSettingsPhone(e.target.value)}
+                    placeholder="e.g. 9841000000"
+                    className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground block">Email Address</label>
+                  <input
+                    type="email"
+                    value={settingsEmail}
+                    onChange={(e) => setSettingsEmail(e.target.value)}
+                    placeholder="e.g. reseller@example.com"
+                    className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground block">Operational Status</label>
+                  <select
+                    value={settingsStatus}
+                    onChange={(e) => setSettingsStatus(e.target.value)}
+                    className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="SUSPENDED">SUSPENDED</option>
+                    <option value="INACTIVE">INACTIVE</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground block">Physical Address</label>
+                <input
+                  type="text"
+                  value={settingsAddress}
+                  onChange={(e) => setSettingsAddress(e.target.value)}
+                  placeholder="e.g. Ward No. 4, Biratnagar"
+                  className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground block">Internal Administrative Notes & Guidelines</label>
+                <textarea
+                  value={notesText}
+                  onChange={(e) => setNotesText(e.target.value)}
+                  placeholder="Enter internal administrative notes, agreements, or special credit guidelines for this reseller..."
+                  rows={4}
+                  className="w-full p-3 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-purple-500 leading-relaxed resize-y"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
                 <button
-                  onClick={handleSaveNotes}
-                  disabled={notesSaving}
+                  type="submit"
+                  disabled={settingsSaving}
                   className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors shadow-md shadow-purple-500/20 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {notesSaving ? (
+                  {settingsSaving ? (
                     <>
                       <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                      <span>Saving Notes...</span>
+                      <span>Saving Settings...</span>
                     </>
                   ) : (
                     <>
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>Save Notes</span>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Save Changes</span>
                     </>
                   )}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         )}
       </div>
@@ -1977,6 +2133,131 @@ export function ResellerProfileView({
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-500 text-white"
                 >
                   {reversalSubmitting ? 'Reversing...' : 'Confirm Reversal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 6: CREDIT REPAYMENT MODAL                          */}
+      {/* ======================================================== */}
+      {repayModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-card border border-border w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                Repay / Settle Reseller Credit
+              </h3>
+              <button
+                onClick={() => setRepayModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            {repayError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                {repayError}
+              </div>
+            )}
+
+            <div className="p-3.5 rounded-xl bg-muted/40 border border-border text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Reseller:</span>
+                <span className="font-bold text-foreground">{reseller.name} ({reseller.code})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Authorized Limit:</span>
+                <span className="font-semibold text-foreground">Rs. {Number(reseller.credit_limit).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Outstanding Credit Due:</span>
+                <span className="font-black text-rose-400">Rs. {Number(reseller.credit_used).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreditRepay} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Repayment Amount (Rs.) *</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    max={reseller.credit_used}
+                    step="0.01"
+                    required
+                    value={repayAmount}
+                    onChange={(e) => setRepayAmount(e.target.value)}
+                    placeholder={`Max: ${reseller.credit_used}`}
+                    className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-sm font-bold text-foreground focus:ring-2 focus:ring-emerald-500"
+                  />
+                  {reseller.credit_used > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setRepayAmount(String(reseller.credit_used))}
+                      className="absolute right-2 top-2 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold hover:bg-emerald-500/20"
+                    >
+                      FULL SETTLE
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Payment Method *</label>
+                <select
+                  value={repayPaymentMethod}
+                  onChange={(e) => setRepayPaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Online">Online / Digital Payment</option>
+                  <option value="Adjustment">Adjustment / Internal</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Deposit Slip / Reference (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Bank deposit slip # or Cheque #"
+                  value={repayReference}
+                  onChange={(e) => setRepayReference(e.target.value)}
+                  className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Remarks (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Cleared pending dues for October"
+                  value={repayRemarks}
+                  onChange={(e) => setRepayRemarks(e.target.value)}
+                  className="w-full px-3 py-2 bg-muted/40 border border-border rounded-xl text-xs text-foreground focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRepayModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-muted-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={repaySaving || !repayAmount || Number(repayAmount) <= 0}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
+                >
+                  {repaySaving ? 'Processing...' : 'Confirm Repayment'}
                 </button>
               </div>
             </form>

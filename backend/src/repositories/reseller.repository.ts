@@ -398,6 +398,11 @@ export class ResellerRepository {
       }
       const subscriber = subRes.rows[0];
 
+      // Validate customer ownership (Prevent cross-reseller recharge)
+      if (subscriber.reseller_id && subscriber.reseller_id !== input.resellerId) {
+        throw HttpError.forbidden('Customer belongs to another reseller');
+      }
+
       // 3. Lock Reseller and Wallet
       const wltRes = await client.query<{
         id: number;
@@ -442,10 +447,15 @@ export class ResellerRepository {
       `, [balanceAfter, totalUsedAfter, wallet.id]);
 
       // 5. Update Subscriber Expiry & Package
-      const currentExpiry = subscriber.expiry_date ? new Date(subscriber.expiry_date) : new Date();
-      const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
+      const prevExpiry = subscriber.expiry_date ? new Date(subscriber.expiry_date) : null;
+      const prevExpiryStr = prevExpiry ? prevExpiry.toISOString() : 'None';
+      const baseDate = prevExpiry && prevExpiry > new Date() ? prevExpiry : new Date();
       const newExpiry = new Date(baseDate);
       newExpiry.setMonth(newExpiry.getMonth() + duration);
+      const newExpiryStr = newExpiry.toISOString();
+      const rechargeRemarks = input.remarks
+        ? `${input.remarks} (Prev Expiry: ${prevExpiryStr}, New Expiry: ${newExpiryStr})`
+        : `Recharge package ${pkg.name} (${duration} mo) - Prev Expiry: ${prevExpiryStr}, New Expiry: ${newExpiryStr}`;
 
       await client.query(`
         UPDATE subscribers
@@ -456,19 +466,23 @@ export class ResellerRepository {
                expiry_date = $3,
                updated_at = NOW()
          WHERE id = $4
-      `, [pkg.id, input.resellerId, newExpiry.toISOString(), subscriber.id]);
+      `, [pkg.id, input.resellerId, newExpiryStr, subscriber.id]);
 
       // 6. Record in recharge_transactions for ISP billing history
       const rchTxId = `RCH-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
       await client.query(`
         INSERT INTO recharge_transactions (
-          transaction_id, subscriber_id, username, package_id, package_name,
-          duration, base_amount, discount_amount, final_amount,
-          commission_amount, payment_method, status, reseller_id, created_by
+          receipt_no, transaction_id, subscriber_id, username,
+          package_id, package_name, duration_months, duration,
+          amount, original_price, final_amount, commission_amount,
+          previous_expiry, new_expiry, payment_method, status,
+          reseller_id, created_by, notes
         ) VALUES (
-          $1, $2, $3, $4, $5,
-          $6, $7, 0.00, $7,
-          0.00, 'RESELLER_WALLET', 'COMPLETED', $8, $9
+          $1, $1, $2, $3,
+          $4, $5, $6, $6,
+          $7, $7, $7, 0.00,
+          $8, $9, 'RESELLER_WALLET', 'COMPLETED',
+          $10, $11, $12
         )
       `, [
         rchTxId,
@@ -478,8 +492,11 @@ export class ResellerRepository {
         pkg.name,
         duration,
         packagePrice,
+        prevExpiry ? prevExpiry.toISOString() : null,
+        newExpiryStr,
         input.resellerId,
         input.operator,
+        rechargeRemarks,
       ]);
 
       // 7. Insert dedicated RESELLER_CUSTOMER_RECHARGE ledger record
@@ -513,7 +530,7 @@ export class ResellerRepository {
         pkg.name,
         duration,
         `SUB-${subscriber.username}`,
-        input.remarks || `Recharge package ${pkg.name} (${duration} mo)`,
+        rechargeRemarks,
         input.operator,
       ]);
 
@@ -796,6 +813,120 @@ export class ResellerRepository {
 
       await client.query('COMMIT');
       return { resellerId, creditLimit, creditStatus };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Process Reseller Credit Repayment / Settlement
+   */
+  async repayCredit(input: {
+    resellerId: number;
+    amount: number;
+    paymentMethod: string;
+    reference?: string;
+    remarks?: string;
+    operator: string;
+  }): Promise<ResellerWalletTxRow> {
+    if (isNaN(input.amount) || input.amount <= 0) {
+      throw HttpError.badRequest('Repayment amount must be greater than zero');
+    }
+
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+
+      const resRes = await client.query<{
+        id: number;
+        name: string;
+        code: string;
+        credit_limit: string;
+        credit_used: string;
+        credit_status: string;
+      }>(`
+        SELECT id, name, code, credit_limit, credit_used, credit_status
+          FROM resellers
+         WHERE id = $1
+         FOR UPDATE
+      `, [input.resellerId]);
+
+      if (resRes.rows.length === 0) throw HttpError.notFound('Reseller not found');
+      const reseller = resRes.rows[0];
+
+      const creditUsedBefore = Number(reseller.credit_used || 0);
+      if (creditUsedBefore <= 0) {
+        throw HttpError.badRequest('Reseller has no outstanding credit to repay');
+      }
+
+      if (input.amount > creditUsedBefore) {
+        throw HttpError.badRequest(
+          `Repayment amount (Rs. ${input.amount.toFixed(2)}) exceeds outstanding credit (Rs. ${creditUsedBefore.toFixed(2)})`
+        );
+      }
+
+      const creditUsedAfter = Math.round((creditUsedBefore - input.amount) * 100) / 100;
+
+      // Update reseller credit_used
+      await client.query(`
+        UPDATE resellers
+           SET credit_used = $1,
+               updated_at = NOW()
+         WHERE id = $2
+      `, [creditUsedAfter, reseller.id]);
+
+      // Update credit_accounts
+      await client.query(`
+        UPDATE credit_accounts ca
+           SET used_credit = $1,
+               updated_at = NOW()
+          FROM wallets w
+         WHERE ca.wallet_id = w.id AND w.reseller_id = $2
+      `, [creditUsedAfter, reseller.id]);
+
+      // Fetch wallet for balance snapshot
+      const wltRes = await client.query<{ id: number; balance: string }>(`
+        SELECT id, balance FROM wallets WHERE reseller_id = $1
+      `, [reseller.id]);
+      const walletId = wltRes.rows[0]?.id || null;
+      const currentBalance = Number(wltRes.rows[0]?.balance || 0);
+
+      const txId = `TXN-CREP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const { rows } = await client.query<ResellerWalletTxRow>(`
+        INSERT INTO reseller_wallet_transactions (
+          transaction_id, reseller_id, wallet_id, type, status,
+          cash_amount, credit_amount, commission_percent, commission_amount,
+          wallet_value, wallet_debit, balance_before, balance_after,
+          credit_used_before, credit_used_after,
+          payment_method, reference, remarks, created_by
+        ) VALUES (
+          $1, $2, $3, 'RESELLER_CREDIT_REPAYMENT', 'COMPLETED',
+          $4, 0.00, 0.00, 0.00,
+          0.00, 0.00, $5, $5,
+          $6, $7,
+          $8, $9, $10, $11
+        )
+        RETURNING *
+      `, [
+        txId,
+        reseller.id,
+        walletId,
+        input.amount,
+        currentBalance,
+        creditUsedBefore,
+        creditUsedAfter,
+        input.paymentMethod || 'Cash',
+        input.reference || null,
+        input.remarks || 'Credit Repayment / Settlement',
+        input.operator,
+      ]);
+
+      await client.query('COMMIT');
+      return rows[0];
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -1155,6 +1286,7 @@ export class ResellerRepository {
     const totalsRes = await query<{
       total_cash_received: string;
       total_credit_granted: string;
+      total_credit_repaid: string;
       total_commission_granted: string;
       total_wallet_value_added: string;
       total_customer_recharge: string;
@@ -1162,11 +1294,13 @@ export class ResellerRepository {
       total_reversal: string;
     }>(`
       SELECT
-        COALESCE(SUM(t.cash_amount) FILTER (WHERE t.type = 'RESELLER_TOPUP_CASH' AND t.status = 'COMPLETED'), 0) -
+        COALESCE(SUM(t.cash_amount) FILTER (WHERE t.type IN ('RESELLER_TOPUP_CASH', 'RESELLER_CREDIT_REPAYMENT') AND t.status = 'COMPLETED'), 0) -
         COALESCE(SUM(t.cash_amount) FILTER (WHERE t.type = 'RESELLER_TOPUP_REVERSAL'), 0) AS total_cash_received,
 
         COALESCE(SUM(t.credit_amount) FILTER (WHERE t.type = 'RESELLER_TOPUP_CREDIT' AND t.status = 'COMPLETED'), 0) -
         COALESCE(SUM(t.credit_amount) FILTER (WHERE t.type = 'RESELLER_TOPUP_REVERSAL'), 0) AS total_credit_granted,
+
+        COALESCE(SUM(t.cash_amount) FILTER (WHERE t.type = 'RESELLER_CREDIT_REPAYMENT' AND t.status = 'COMPLETED'), 0) AS total_credit_repaid,
 
         COALESCE(SUM(t.commission_amount) FILTER (WHERE t.type IN ('RESELLER_TOPUP_CASH', 'RESELLER_TOPUP_CREDIT') AND t.status = 'COMPLETED'), 0) -
         COALESCE(SUM(t.commission_amount) FILTER (WHERE t.type = 'RESELLER_TOPUP_REVERSAL'), 0) AS total_commission_granted,
@@ -1186,6 +1320,7 @@ export class ResellerRepository {
     const tot = totalsRes.rows[0];
     const totalCashReceived = Number(tot?.total_cash_received || 0);
     const totalCreditGranted = Number(tot?.total_credit_granted || 0);
+    const totalCreditRepaid = Number(tot?.total_credit_repaid || 0);
     const totalCommissionGranted = Number(tot?.total_commission_granted || 0);
     const totalWalletValueAdded = Number(tot?.total_wallet_value_added || 0);
     const totalCustomerRecharge = Number(tot?.total_customer_recharge || 0);
@@ -1200,14 +1335,16 @@ export class ResellerRepository {
       date: string;
       cash_received: string;
       credit_granted: string;
+      credit_repaid: string;
       commission_granted: string;
       wallet_added: string;
       customer_recharge: string;
     }>(`
       SELECT
         TO_CHAR(t.created_at, 'YYYY-MM-DD') AS date,
-        COALESCE(SUM(t.cash_amount) FILTER (WHERE t.type = 'RESELLER_TOPUP_CASH' AND t.status = 'COMPLETED'), 0) AS cash_received,
+        COALESCE(SUM(t.cash_amount) FILTER (WHERE t.type IN ('RESELLER_TOPUP_CASH', 'RESELLER_CREDIT_REPAYMENT') AND t.status = 'COMPLETED'), 0) AS cash_received,
         COALESCE(SUM(t.credit_amount) FILTER (WHERE t.type = 'RESELLER_TOPUP_CREDIT' AND t.status = 'COMPLETED'), 0) AS credit_granted,
+        COALESCE(SUM(t.cash_amount) FILTER (WHERE t.type = 'RESELLER_CREDIT_REPAYMENT' AND t.status = 'COMPLETED'), 0) AS credit_repaid,
         COALESCE(SUM(t.commission_amount) FILTER (WHERE t.type IN ('RESELLER_TOPUP_CASH', 'RESELLER_TOPUP_CREDIT') AND t.status = 'COMPLETED'), 0) AS commission_granted,
         COALESCE(SUM(t.wallet_value) FILTER (WHERE t.type IN ('RESELLER_TOPUP_CASH', 'RESELLER_TOPUP_CREDIT') AND t.status = 'COMPLETED'), 0) AS wallet_added,
         COALESCE(SUM(t.wallet_debit) FILTER (WHERE t.type = 'RESELLER_CUSTOMER_RECHARGE' AND t.status = 'COMPLETED'), 0) AS customer_recharge
@@ -1257,6 +1394,7 @@ export class ResellerRepository {
       totals: {
         totalCashReceived,
         totalCreditGranted,
+        totalCreditRepaid,
         totalCommissionGranted,
         totalWalletValueAdded,
         totalCustomerRecharge,
@@ -1268,6 +1406,7 @@ export class ResellerRepository {
         date: row.date,
         cash_received: Number(row.cash_received),
         credit_granted: Number(row.credit_granted),
+        credit_repaid: Number(row.credit_repaid || 0),
         commission_granted: Number(row.commission_granted),
         wallet_added: Number(row.wallet_added),
         customer_recharge: Number(row.customer_recharge),

@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { query, getClient } from '../db/pool';
 import { HttpError } from '../lib/http-error';
 import { auditRepository } from '../repositories/audit.repository';
@@ -501,6 +502,8 @@ export const organizationRepository = {
     credit_limit?: number;
     credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
     notes?: string | null;
+    login_username?: string | null;
+    login_password?: string | null;
   }): Promise<ResellerItem> {
     const org = await this.getPrimaryOrganization();
     const client = await getClient();
@@ -555,6 +558,35 @@ export const organizationRepository = {
         INSERT INTO reseller_commission_history (reseller_id, previous_percent, new_percent, changed_by, reason)
         VALUES ($1, $2, $2, 'SYSTEM', 'Initial configuration')
       `, [reseller.id, commPercent]);
+
+      // Optional: Provision reseller login portal account
+      if (input.login_username && input.login_password) {
+        const usernameClean = input.login_username.trim().toLowerCase();
+        const existingUser = await client.query(`SELECT id FROM users WHERE lower(username) = $1`, [usernameClean]);
+        if (existingUser.rows.length === 0) {
+          const passwordHash = await bcrypt.hash(input.login_password, 10);
+          const roleRes = await client.query<{ id: number }>(`SELECT id FROM roles WHERE name = 'reseller_admin'`);
+          const roleId = roleRes.rows[0]?.id || 1;
+          const userRes = await client.query<{ id: string }>(`
+            INSERT INTO users (
+              username, email, full_name, password_hash, role_id,
+              user_type, reseller_id, status, is_active
+            ) VALUES ($1, $2, $3, $4, $5, 'reseller', $6, 'ACTIVE', TRUE)
+            RETURNING id
+          `, [
+            usernameClean,
+            input.email || null,
+            input.contact_person || input.name,
+            passwordHash,
+            roleId,
+            reseller.id,
+          ]);
+
+          if (userRes.rows[0]?.id) {
+            await client.query(`UPDATE resellers SET user_id = $1 WHERE id = $2`, [userRes.rows[0].id, reseller.id]);
+          }
+        }
+      }
 
       await client.query('COMMIT');
       return (await this.getReseller(reseller.id))!;

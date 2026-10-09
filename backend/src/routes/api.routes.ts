@@ -1982,6 +1982,8 @@ const createResellerSchema = z.object({
   branch_id: z.number().int().optional().nullable(),
   contact_person: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  login_username: z.string().min(3).optional().or(z.literal('')).nullable(),
+  login_password: z.string().min(6).optional().or(z.literal('')).nullable(),
 });
 
 apiRouter.post(
@@ -2301,6 +2303,45 @@ apiRouter.patch(
     );
 
     res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/resellers/:id/credit-repay',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      authReq.user?.roles?.includes('super_admin') ||
+      authReq.user?.roles?.includes('admin') ||
+      authReq.user?.roles?.includes('organization_admin');
+    const perms = authReq.user?.permissions || [];
+    if (!isSuperOrOrg && !perms.includes('reseller.credit.repay') && !perms.includes('reseller.credit.adjust') && !perms.includes('credit.edit')) {
+      throw HttpError.forbidden('Permission denied: reseller.credit.repay required');
+    }
+
+    const schema = z.object({
+      amount: z.number().positive('Repayment amount must be positive'),
+      payment_method: z.string().min(1, 'Payment method is required'),
+      reference: z.string().optional(),
+      remarks: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const result = await resellerRepository.repayCredit({
+      resellerId: id,
+      amount: parsed.amount,
+      paymentMethod: parsed.payment_method,
+      reference: parsed.reference,
+      remarks: parsed.remarks,
+      operator: authReq.user?.username || 'admin',
+    });
+
+    res.status(201).json(envelope(result, 'live'));
   })
 );
 

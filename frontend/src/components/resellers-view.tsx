@@ -67,6 +67,9 @@ export function ResellersView({
   const [commissionModel, setCommissionModel] = React.useState<'discount' | 'commission'>('commission');
   const [notes, setNotes] = React.useState('');
   const [status, setStatus] = React.useState<'ACTIVE' | 'INACTIVE' | 'SUSPENDED'>('ACTIVE');
+  const [createLoginUser, setCreateLoginUser] = React.useState(false);
+  const [loginUsername, setLoginUsername] = React.useState('');
+  const [loginPassword, setLoginPassword] = React.useState('');
 
   const fetchDependencies = async () => {
     try {
@@ -131,23 +134,34 @@ export function ResellersView({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      const payload: Record<string, any> = {
+        name: name.trim(),
+        code: code.trim().toUpperCase(),
+        branch_id: null, // Resellers belong to Organization, NOT Branch
+        contact_person: contactPerson.trim() || undefined,
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+        address: address.trim() || undefined,
+        commission_model: commissionModel,
+        commission_percent: commVal,
+        credit_limit: credVal,
+        notes: notes.trim() || undefined,
+        status,
+      };
+
+      if (createLoginUser) {
+        if (!loginUsername.trim()) throw new Error('Portal login username is required');
+        if (!loginPassword.trim() || loginPassword.trim().length < 6) {
+          throw new Error('Portal login password must be at least 6 characters');
+        }
+        payload.login_username = loginUsername.trim();
+        payload.login_password = loginPassword.trim();
+      }
+
       const res = await fetch('/api/resellers', {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          name: name.trim(),
-          code: code.trim().toUpperCase(),
-          branch_id: null, // Resellers belong to Organization, NOT Branch
-          contact_person: contactPerson.trim() || undefined,
-          phone: phone.trim(),
-          email: email.trim() || undefined,
-          address: address.trim() || undefined,
-          commission_model: commissionModel,
-          commission_percent: commVal,
-          credit_limit: credVal,
-          notes: notes.trim() || undefined,
-          status,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -165,6 +179,9 @@ export function ResellersView({
       setCommissionPercent('50');
       setCreditLimit('50000');
       setNotes('');
+      setCreateLoginUser(false);
+      setLoginUsername('');
+      setLoginPassword('');
       fetchDependencies();
     } catch (err: any) {
       setError(err.message);
@@ -687,6 +704,55 @@ export function ResellersView({
                   placeholder="Optional internal remarks or agreements..."
                   className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                 />
+              </div>
+
+              {/* Portal Login Account (Section 6) */}
+              <div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={createLoginUser}
+                    onChange={(e) => {
+                      setCreateLoginUser(e.target.checked);
+                      if (e.target.checked && !loginUsername && code) {
+                        setLoginUsername(code.toLowerCase().replace(/[^a-z0-9]/g, ''));
+                      }
+                    }}
+                    className="w-4 h-4 rounded text-primary focus:ring-primary border-border bg-background"
+                  />
+                  <span className="text-xs font-bold text-foreground">Create Reseller Portal Login Account</span>
+                </label>
+
+                {createLoginUser && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                        Portal Username *
+                      </label>
+                      <input
+                        type="text"
+                        required={createLoginUser}
+                        value={loginUsername}
+                        onChange={(e) => setLoginUsername(e.target.value)}
+                        placeholder="e.g. reseller_user"
+                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                        Portal Password *
+                      </label>
+                      <input
+                        type="password"
+                        required={createLoginUser}
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        placeholder="Min 6 characters"
+                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[11px]">
