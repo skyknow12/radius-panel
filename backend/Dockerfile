@@ -27,7 +27,7 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY migrations ./migrations
-USER node
+# Retain root in runner container to communicate with mounted docker.sock for FreeRADIUS restart
 EXPOSE 4000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=5 \
   CMD wget -qO- http://127.0.0.1:4000/api/health >/dev/null || exit 1

@@ -85,6 +85,8 @@ services:
     image: radius-panel/backend:latest
     container_name: radius-backend
     restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       <<: *db-env
       NODE_ENV: production

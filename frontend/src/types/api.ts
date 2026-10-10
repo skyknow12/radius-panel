@@ -100,6 +100,21 @@ export interface NasDeviceItem {
   updated_at: string;
 }
 
+export interface RadiusRestartResponse {
+  success: boolean;
+  message: string;
+  method: 'docker_socket' | 'docker_cli' | 'systemctl' | 'verified_probe' | 'failed';
+  restartedAt: string;
+  containerName?: string;
+  health: {
+    status: 'healthy' | 'warning' | 'offline';
+    latencyMs: number | null;
+    authPort: number;
+    acctPort: number;
+    message: string;
+  };
+}
+
 export interface RadiusCatalogItem {
   id: number;
   vendor: string;

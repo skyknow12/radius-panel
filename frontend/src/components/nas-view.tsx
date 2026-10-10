@@ -17,8 +17,10 @@ import {
   Radio,
   Lock,
   Layers,
+  RotateCcw,
 } from 'lucide-react';
 import type { NasDeviceItem } from '@/types/api';
+import { RadiusRestartModal, RadiusServiceControlTab } from './radius-restart-control';
 
 interface NasViewProps {
   onViewSessions?: (nasIp: string) => void;
@@ -28,6 +30,8 @@ export function NasView({ onViewSessions }: NasViewProps) {
   const [devices, setDevices] = React.useState<NasDeviceItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
+  const [activeTab, setActiveTab] = React.useState<'devices' | 'restart'>('devices');
+  const [restartModalOpen, setRestartModalOpen] = React.useState(false);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [editingDevice, setEditingDevice] = React.useState<NasDeviceItem | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<number | null>(null);
@@ -233,27 +237,63 @@ export function NasView({ onViewSessions }: NasViewProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Navigation Tabs */}
+          <div className="flex bg-muted p-1 rounded-xl text-xs font-semibold">
+            <button
+              onClick={() => setActiveTab('devices')}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                activeTab === 'devices' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              NAS Gateways ({devices.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('restart')}
+              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                activeTab === 'restart' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-rose-500" />
+              <span>Service Control & Restart</span>
+            </button>
+          </div>
+
           <button
-            onClick={fetchNasDevices}
-            disabled={loading}
-            className="p-2 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-medium flex items-center gap-1.5 transition-colors"
-            title="Refresh NAS list"
+            onClick={() => setRestartModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Restart FreeRADIUS service"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Restart RADIUS</span>
           </button>
-          <button
-            onClick={openAddModal}
-            className="px-3.5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold flex items-center gap-2 shadow-md shadow-primary/20 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add NAS</span>
-          </button>
+
+          {activeTab === 'devices' && (
+            <>
+              <button
+                onClick={fetchNasDevices}
+                disabled={loading}
+                className="p-2 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-medium flex items-center gap-1.5 transition-colors"
+                title="Refresh NAS list"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+              <button
+                onClick={openAddModal}
+                className="px-3.5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold flex items-center gap-2 shadow-md shadow-primary/20 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add NAS</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Filter / Search Bar */}
+      {activeTab === 'devices' ? (
+        <>
+          {/* Filter / Search Bar */}
       <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-border bg-card/60 backdrop-blur-sm">
         <div className="relative w-full max-w-sm">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -460,6 +500,10 @@ export function NasView({ onViewSessions }: NasViewProps) {
           </table>
         </div>
       </div>
+        </>
+      ) : (
+        <RadiusServiceControlTab />
+      )}
 
       {/* Add / Edit NAS Modal */}
       {modalOpen && (
@@ -702,6 +746,11 @@ export function NasView({ onViewSessions }: NasViewProps) {
           </div>
         </div>
       )}
+      <RadiusRestartModal
+        isOpen={restartModalOpen}
+        onClose={() => setRestartModalOpen(false)}
+        onRestartSuccess={() => fetchNasDevices()}
+      />
     </div>
   );
 }

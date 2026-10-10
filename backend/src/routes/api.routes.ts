@@ -27,6 +27,7 @@ import { ticketRepository } from '../repositories/ticket.repository';
 import { notificationService } from '../services/notification.service';
 import { settingsRepository } from '../repositories/settings.repository';
 import { radiusCatalogRepository } from '../repositories/radius-catalog.repository';
+import { radiusManagementService } from '../services/radius-management.service';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
@@ -1127,6 +1128,88 @@ apiRouter.post(
         )
       );
     }
+  })
+);
+
+apiRouter.post(
+  '/radius/restart',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const user = req.user;
+    const isSuper = user?.role === 'super_admin' || (user?.roles && user.roles.includes('super_admin'));
+    const isIsp = user?.role === 'isp_admin' || user?.role === 'admin' || (user?.roles && (user.roles.includes('isp_admin') || user.roles.includes('admin')));
+    const hasPerm = Boolean(
+      user?.permissions && (
+        user.permissions.includes('radius.test') ||
+        user.permissions.includes('nas.edit') ||
+        user.permissions.includes('system.diagnostics') ||
+        user.permissions.includes('radius.manage') ||
+        user.permissions.includes('*')
+      )
+    );
+
+    if (!isSuper && !isIsp && !hasPerm) {
+      throw HttpError.forbidden('Permission denied: requires RADIUS management or administrator privileges');
+    }
+
+    const result = await radiusManagementService.restartRadius();
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'radius.restart',
+      entityType: 'radius_service',
+      entityId: result.containerName || 'radius-freeradius',
+      status: result.success ? 'success' : 'failure',
+      metadata: {
+        method: result.method,
+        health: result.health,
+        message: result.message,
+      },
+    });
+
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/nas/restart-radius',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const user = req.user;
+    const isSuper = user?.role === 'super_admin' || (user?.roles && user.roles.includes('super_admin'));
+    const isIsp = user?.role === 'isp_admin' || user?.role === 'admin' || (user?.roles && (user.roles.includes('isp_admin') || user.roles.includes('admin')));
+    const hasPerm = Boolean(
+      user?.permissions && (
+        user.permissions.includes('radius.test') ||
+        user.permissions.includes('nas.edit') ||
+        user.permissions.includes('system.diagnostics') ||
+        user.permissions.includes('radius.manage') ||
+        user.permissions.includes('*')
+      )
+    );
+
+    if (!isSuper && !isIsp && !hasPerm) {
+      throw HttpError.forbidden('Permission denied: requires RADIUS management or administrator privileges');
+    }
+
+    const result = await radiusManagementService.restartRadius();
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'radius.restart',
+      entityType: 'radius_service',
+      entityId: result.containerName || 'radius-freeradius',
+      status: result.success ? 'success' : 'failure',
+      metadata: {
+        method: result.method,
+        health: result.health,
+        message: result.message,
+      },
+    });
+
+    res.json(envelope(result, 'live'));
   })
 );
 

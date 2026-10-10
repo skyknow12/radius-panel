@@ -18,16 +18,11 @@ COPY mods-enabled/sql ${RADDB}/mods-available/sql
 # Virtual server handling auth / acct
 COPY sites-enabled/default ${RADDB}/sites-available/default
 
-# Custom Dictionary (Juniper BNG VSAs & local additions)
-COPY dictionary ${RADDB}/dictionary.juniper-bng
-
 RUN set -eux; \
     ln -sf ../mods-available/sql ${RADDB}/mods-enabled/sql; \
     ln -sf ../sites-available/default ${RADDB}/sites-enabled/default; \
-    echo '$INCLUDE dictionary.juniper-bng' >> ${RADDB}/dictionary; \
     chown -R freerad:freerad ${RADDB} 2>/dev/null || true; \
-    chmod 640 ${RADDB}/clients.conf ${RADDB}/mods-available/sql; \
-    chmod 644 ${RADDB}/dictionary.juniper-bng
+    chmod 640 ${RADDB}/clients.conf ${RADDB}/mods-available/sql
 
 EXPOSE 1812/udp 1813/udp
 
