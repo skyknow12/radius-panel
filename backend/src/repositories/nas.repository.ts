@@ -7,6 +7,9 @@ export interface NasDeviceRow {
   nas_type: string;
   vendor?: string | null;
   model?: string | null;
+  os_version?: string | null;
+  dynamic_profile_name?: string | null;
+  coa_enabled?: boolean;
   location?: string | null;
   description?: string | null;
   coa_port: number;
@@ -22,6 +25,11 @@ export interface CreateNasInput {
   name: string;
   ip_address: string;
   nas_type: string;
+  vendor?: string;
+  model?: string;
+  os_version?: string;
+  dynamic_profile_name?: string;
+  coa_enabled?: boolean;
   secret: string;
   description?: string;
   location?: string;
@@ -33,6 +41,11 @@ export interface UpdateNasInput {
   name?: string;
   ip_address?: string;
   nas_type?: string;
+  vendor?: string;
+  model?: string;
+  os_version?: string;
+  dynamic_profile_name?: string;
+  coa_enabled?: boolean;
   secret?: string;
   description?: string;
   location?: string;
@@ -45,7 +58,8 @@ export const nasRepository = {
   async listWithSessions(): Promise<NasDeviceRow[]> {
     const { rows } = await query<any>(
       `SELECT nd.id, nd.name, host(nd.ip_address) AS ip_address, nd.nas_type,
-              nd.vendor, nd.model, nd.location, nd.description, nd.coa_port,
+              nd.vendor, nd.model, nd.os_version, nd.dynamic_profile_name, nd.coa_enabled,
+              nd.location, nd.description, nd.coa_port,
               nd.status, nd.last_seen_at, nd.is_active, nd.created_at, nd.updated_at,
               COALESCE(s.sessions, 0)::integer AS sessions
          FROM nas_devices nd
@@ -62,7 +76,8 @@ export const nasRepository = {
   async findById(id: number): Promise<(NasDeviceRow & { secret?: string }) | null> {
     const { rows } = await query<any>(
       `SELECT nd.id, nd.name, host(nd.ip_address) AS ip_address, nd.nas_type,
-              nd.vendor, nd.model, nd.location, nd.description, nd.coa_port,
+              nd.vendor, nd.model, nd.os_version, nd.dynamic_profile_name, nd.coa_enabled,
+              nd.location, nd.description, nd.coa_port,
               nd.status, nd.last_seen_at, nd.is_active, nd.created_at, nd.updated_at,
               nd.secret,
               COALESCE(s.sessions, 0)::integer AS sessions
@@ -81,6 +96,7 @@ export const nasRepository = {
   async findByIp(ip: string): Promise<NasDeviceRow | null> {
     const { rows } = await query<any>(
       `SELECT nd.id, nd.name, host(nd.ip_address) AS ip_address, nd.nas_type,
+              nd.vendor, nd.model, nd.os_version, nd.dynamic_profile_name, nd.coa_enabled,
               nd.description, nd.coa_port, nd.status, nd.last_seen_at, nd.is_active
          FROM nas_devices nd WHERE nd.ip_address = $1::inet`,
       [ip],
@@ -103,19 +119,26 @@ export const nasRepository = {
     );
     const radiusNasId = nasResult.rows[0]?.id;
 
+    const vendor = input.vendor || (input.nas_type?.toLowerCase().includes('juniper') ? 'juniper' : input.nas_type?.toLowerCase().includes('mikrotik') ? 'mikrotik' : 'generic');
+
     // 2. Insert into application inventory nas_devices
     const { rows } = await query<any>(
       `INSERT INTO nas_devices (
-         name, ip_address, nas_type, description, location, secret, coa_port,
-         status, radius_nas_id, is_active, last_seen_at
-       ) VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8, $9, TRUE, NOW())
-       RETURNING id, name, host(ip_address) AS ip_address, nas_type, vendor, model,
+         name, ip_address, nas_type, vendor, model, os_version, dynamic_profile_name, coa_enabled,
+         description, location, secret, coa_port, status, radius_nas_id, is_active, last_seen_at
+       ) VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE, NOW())
+       RETURNING id, name, host(ip_address) AS ip_address, nas_type, vendor, model, os_version, dynamic_profile_name, coa_enabled,
                  location, description, coa_port, status, last_seen_at, is_active,
                  created_at, updated_at`,
       [
         input.name,
         input.ip_address,
         input.nas_type || 'other',
+        vendor,
+        input.model || null,
+        input.os_version || null,
+        input.dynamic_profile_name || null,
+        input.coa_enabled ?? true,
         input.description || null,
         input.location || null,
         input.secret,
@@ -135,6 +158,11 @@ export const nasRepository = {
     const name = input.name ?? existing.name;
     const ip = input.ip_address ?? existing.ip_address;
     const nasType = input.nas_type ?? existing.nas_type;
+    const vendor = input.vendor ?? existing.vendor ?? 'generic';
+    const model = input.model !== undefined ? input.model : existing.model;
+    const osVersion = input.os_version !== undefined ? input.os_version : existing.os_version;
+    const dynProfile = input.dynamic_profile_name !== undefined ? input.dynamic_profile_name : existing.dynamic_profile_name;
+    const coaEnabled = input.coa_enabled !== undefined ? input.coa_enabled : (existing.coa_enabled ?? true);
     const desc = input.description ?? existing.description;
     const loc = input.location ?? existing.location;
     const coaPort = input.coa_port ?? existing.coa_port;
@@ -157,15 +185,16 @@ export const nasRepository = {
     // 2. Update nas_devices
     const { rows } = await query<any>(
       `UPDATE nas_devices
-          SET name = $1, ip_address = $2::inet, nas_type = $3, description = $4,
-              location = $5, coa_port = $6, status = $7, is_active = $8,
-              secret = CASE WHEN $9 <> '' THEN $9 ELSE secret END,
+          SET name = $1, ip_address = $2::inet, nas_type = $3, vendor = $4, model = $5,
+              os_version = $6, dynamic_profile_name = $7, coa_enabled = $8,
+              description = $9, location = $10, coa_port = $11, status = $12, is_active = $13,
+              secret = CASE WHEN $14 <> '' THEN $14 ELSE secret END,
               updated_at = NOW()
-        WHERE id = $10
-        RETURNING id, name, host(ip_address) AS ip_address, nas_type, vendor, model,
+        WHERE id = $15
+        RETURNING id, name, host(ip_address) AS ip_address, nas_type, vendor, model, os_version, dynamic_profile_name, coa_enabled,
                   location, description, coa_port, status, last_seen_at, is_active,
                   created_at, updated_at`,
-      [name, ip, nasType, desc, loc, coaPort, status, isActive, secret, id],
+      [name, ip, nasType, vendor, model, osVersion, dynProfile, coaEnabled, desc, loc, coaPort, status, isActive, secret, id],
     );
 
     return { ...rows[0], sessions: existing.sessions };

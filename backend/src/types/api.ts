@@ -86,10 +86,31 @@ export interface NasDevice {
   name: string;
   ipAddress: string;
   type: string;
+  vendor?: string | null;
+  model?: string | null;
+  os_version?: string | null;
+  dynamic_profile_name?: string | null;
+  coa_enabled?: boolean;
   location: string | null;
   status: 'online' | 'warning' | 'offline' | 'unknown';
   sessions: number;
   lastSeenAt: string | null;
+}
+
+export interface RadiusCatalogItem {
+  id: number;
+  vendor: string;
+  vendor_id?: number | null;
+  attribute_code: number;
+  attribute_name: string;
+  data_type: 'string' | 'integer' | 'ipaddr' | 'ipv6addr' | 'ipv6prefix';
+  has_tag: boolean;
+  coa_supported: boolean;
+  dynamic_profile_var?: string | null;
+  description?: string | null;
+  default_op: string;
+  sample_value?: string | null;
+  is_common: boolean;
 }
 
 export interface AuthStatistics {

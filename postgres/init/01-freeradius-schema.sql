@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS radacct (
 	ConnectInfo_stop	text,
 	AcctInputOctets		bigint,
 	AcctOutputOctets	bigint,
+	AcctInputGigawords	bigint DEFAULT 0,
+	AcctOutputGigawords	bigint DEFAULT 0,
 	CalledStationId		text,
 	CallingStationId	text,
 	AcctTerminateCause	text,

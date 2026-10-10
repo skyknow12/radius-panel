@@ -72,6 +72,15 @@ export interface RadiusAttribute {
   textValue?: string;
 }
 
+export interface JuniperSessionAttributes {
+  ingressPolicy?: string | null;
+  egressPolicy?: string | null;
+  activateService?: string | null;
+  cosShapingRate?: string | null;
+  virtualRouter?: string | null;
+  raw: Record<number, string>;
+}
+
 export interface RadiusResponse {
   code: number;
   codeName: string;
@@ -79,6 +88,7 @@ export interface RadiusResponse {
   attributes: RadiusAttribute[];
   replyMessage: string | null;
   mikrotikRateLimit?: string | null;
+  juniperAttributes?: JuniperSessionAttributes | null;
   latencyMs: number;
 }
 
@@ -213,6 +223,38 @@ export class RadiusClient {
         const mikrotikVsa = attributes.find(
           (a) => a.vendorId === 14988 && (a.vendorType === 8 || a.textValue?.includes('M/')),
         );
+
+        const juniperVsas = attributes.filter((a) => a.vendorId === 2636 || a.vendorId === 4874);
+        let juniperAttributes: JuniperSessionAttributes | null = null;
+        if (juniperVsas.length > 0) {
+          const raw: Record<number, string> = {};
+          let ingressPolicy: string | null = null;
+          let egressPolicy: string | null = null;
+          let activateService: string | null = null;
+          let cosShapingRate: string | null = null;
+          let virtualRouter: string | null = null;
+
+          for (const a of juniperVsas) {
+            if (a.vendorType !== undefined && a.textValue) {
+              raw[a.vendorType] = a.textValue;
+              if (a.vendorType === 1) virtualRouter = a.textValue;
+              if (a.vendorType === 10) ingressPolicy = a.textValue;
+              if (a.vendorType === 11) egressPolicy = a.textValue;
+              if (a.vendorType === 65) activateService = a.textValue;
+              if (a.vendorType === 177) cosShapingRate = a.textValue;
+            }
+          }
+
+          juniperAttributes = {
+            ingressPolicy,
+            egressPolicy,
+            activateService,
+            cosShapingRate,
+            virtualRouter,
+            raw,
+          };
+        }
+
         const latencyMs = Number(process.hrtime.bigint() - started) / 1e6;
         finish(() =>
           resolve({
@@ -222,6 +264,7 @@ export class RadiusClient {
             attributes,
             replyMessage: reply ? reply.value.toString('utf8') : null,
             mikrotikRateLimit: mikrotikVsa?.textValue || null,
+            juniperAttributes,
             latencyMs: Math.round(latencyMs * 10) / 10,
           }),
         );
@@ -343,4 +386,47 @@ function decodeAttributes(buf: Buffer): RadiusAttribute[] {
     offset += len;
   }
   return attrs;
+}
+
+/**
+ * Encodes an RFC 2865 §5.26 Vendor-Specific Attribute (VSA Type 26).
+ * Format: 4-byte Vendor ID + 1-byte Vendor Type + 1-byte Length + Value.
+ */
+export function encodeVsa(
+  vendorId: number,
+  vendorType: number,
+  value: Buffer | string | number,
+  dataType: 'string' | 'integer' | 'ipaddr' = 'string',
+): RadiusAttribute {
+  let valBuf: Buffer;
+  let textVal: string | undefined;
+
+  if (Buffer.isBuffer(value)) {
+    valBuf = value;
+    textVal = value.toString('utf8');
+  } else if (dataType === 'integer' || typeof value === 'number') {
+    valBuf = Buffer.alloc(4);
+    valBuf.writeUInt32BE(Number(value) >>> 0);
+    textVal = String(value);
+  } else if (dataType === 'ipaddr' && typeof value === 'string' && /^\d+\.\d+\.\d+\.\d+$/.test(value)) {
+    valBuf = Buffer.from(value.split('.').map((p) => parseInt(p, 10)));
+    textVal = value;
+  } else {
+    valBuf = Buffer.from(String(value), 'utf8');
+    textVal = String(value);
+  }
+
+  const vsaBuf = Buffer.alloc(4 + 2 + valBuf.length);
+  vsaBuf.writeUInt32BE(vendorId, 0);
+  vsaBuf[4] = vendorType;
+  vsaBuf[5] = valBuf.length + 2;
+  valBuf.copy(vsaBuf, 6);
+
+  return {
+    type: RadiusAttr.VendorSpecific,
+    value: vsaBuf,
+    vendorId,
+    vendorType,
+    textValue: textVal,
+  };
 }

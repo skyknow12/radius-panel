@@ -17,10 +17,13 @@ export interface ActiveSessionRow {
   nasipaddress: string;
   nas_name: string | null;
   nas_type: string | null;
+  nas_vendor?: string | null;
   acctstarttime: Date | null;
   session_seconds: number;
   acctinputoctets: number;
   acctoutputoctets: number;
+  acctinputgigawords?: number;
+  acctoutputgigawords?: number;
   callingstationid: string | null;
   status: 'online' | 'stopped';
 }
@@ -126,10 +129,13 @@ export const radAcctRepository = {
              host(r.nasipaddress) AS nasipaddress,
              COALESCE(nd.name, host(r.nasipaddress)) AS nas_name,
              nd.nas_type,
+             COALESCE(nd.vendor, nd.nas_type, 'generic') AS nas_vendor,
              r.acctstarttime,
              GREATEST(0, EXTRACT(EPOCH FROM (NOW() - r.acctstarttime)))::bigint AS session_seconds,
-             COALESCE(r.acctinputoctets, 0)::bigint AS acctinputoctets,
-             COALESCE(r.acctoutputoctets, 0)::bigint AS acctoutputoctets,
+             (COALESCE(r.acctinputoctets, 0)::bigint + (COALESCE(r.acctinputgigawords, 0)::bigint * 4294967296)) AS acctinputoctets,
+             (COALESCE(r.acctoutputoctets, 0)::bigint + (COALESCE(r.acctoutputgigawords, 0)::bigint * 4294967296)) AS acctoutputoctets,
+             COALESCE(r.acctinputgigawords, 0)::bigint AS acctinputgigawords,
+             COALESCE(r.acctoutputgigawords, 0)::bigint AS acctoutputgigawords,
              r.callingstationid,
              'online' AS status
         FROM radacct r
@@ -177,10 +183,13 @@ export const radAcctRepository = {
               host(r.nasipaddress) AS nasipaddress,
               COALESCE(nd.name, host(r.nasipaddress)) AS nas_name,
               nd.nas_type,
+              COALESCE(nd.vendor, nd.nas_type, 'generic') AS nas_vendor,
               r.acctstarttime,
               GREATEST(0, EXTRACT(EPOCH FROM (NOW() - r.acctstarttime)))::bigint AS session_seconds,
-              COALESCE(r.acctinputoctets, 0)::bigint AS acctinputoctets,
-              COALESCE(r.acctoutputoctets, 0)::bigint AS acctoutputoctets,
+              (COALESCE(r.acctinputoctets, 0)::bigint + (COALESCE(r.acctinputgigawords, 0)::bigint * 4294967296)) AS acctinputoctets,
+              (COALESCE(r.acctoutputoctets, 0)::bigint + (COALESCE(r.acctoutputgigawords, 0)::bigint * 4294967296)) AS acctoutputoctets,
+              COALESCE(r.acctinputgigawords, 0)::bigint AS acctinputgigawords,
+              COALESCE(r.acctoutputgigawords, 0)::bigint AS acctoutputgigawords,
               r.callingstationid,
               CASE WHEN r.acctstoptime IS NULL THEN 'online' ELSE 'stopped' END AS status
          FROM radacct r
@@ -261,11 +270,12 @@ export const radAcctRepository = {
               host(r.framedipaddress) AS framed_ip,
               host(r.nasipaddress) AS nas_ip,
               nd.name AS nas_name,
+              COALESCE(nd.vendor, nd.nas_type, 'generic') AS nas_vendor,
               r.acctstarttime,
               r.acctstoptime,
               r.acctsessiontime,
-              r.acctinputoctets,
-              r.acctoutputoctets,
+              (COALESCE(r.acctinputoctets, 0)::bigint + (COALESCE(r.acctinputgigawords, 0)::bigint * 4294967296)) AS acctinputoctets,
+              (COALESCE(r.acctoutputoctets, 0)::bigint + (COALESCE(r.acctoutputgigawords, 0)::bigint * 4294967296)) AS acctoutputoctets,
               r.acctterminatecause,
               r.callingstationid
          FROM radacct r

@@ -26,6 +26,7 @@ import { crmRepository } from '../repositories/crm.repository';
 import { ticketRepository } from '../repositories/ticket.repository';
 import { notificationService } from '../services/notification.service';
 import { settingsRepository } from '../repositories/settings.repository';
+import { radiusCatalogRepository } from '../repositories/radius-catalog.repository';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
@@ -112,6 +113,11 @@ const createNasSchema = z.object({
   name: z.string().min(1).max(64),
   ip_address: z.string().ip({ version: 'v4' }),
   nas_type: z.enum(['mikrotik', 'cisco', 'juniper', 'huawei', 'other']).default('mikrotik'),
+  vendor: z.enum(['mikrotik', 'juniper', 'cisco', 'huawei', 'generic']).optional(),
+  model: z.string().optional(),
+  os_version: z.string().optional(),
+  dynamic_profile_name: z.string().optional(),
+  coa_enabled: z.boolean().optional(),
   secret: z.string().min(1),
   description: z.string().optional(),
   location: z.string().optional(),
@@ -123,6 +129,11 @@ const updateNasSchema = z.object({
   name: z.string().min(1).max(64).optional(),
   ip_address: z.string().ip({ version: 'v4' }).optional(),
   nas_type: z.enum(['mikrotik', 'cisco', 'juniper', 'huawei', 'other']).optional(),
+  vendor: z.enum(['mikrotik', 'juniper', 'cisco', 'huawei', 'generic']).optional(),
+  model: z.string().optional(),
+  os_version: z.string().optional(),
+  dynamic_profile_name: z.string().optional(),
+  coa_enabled: z.boolean().optional(),
   secret: z.string().optional(),
   description: z.string().optional(),
   location: z.string().optional(),
@@ -280,11 +291,16 @@ const createPackageSchema = z.object({
   burst_threshold_ul_mbps: z.number().int().positive().optional(),
   burst_time_seconds: z.number().int().positive().optional(),
   radius_profile_id: z.number().int().optional(),
+  juniper_ingress_policy: z.string().optional(),
+  juniper_egress_policy: z.string().optional(),
+  juniper_activate_service: z.string().optional(),
+  juniper_cos_shaping_rate: z.string().optional(),
+  juniper_dynamic_profile: z.string().optional(),
   validity_days: z.number().int().positive().default(30),
   price: z.number().nonnegative().default(0),
   currency: z.string().default('NPR'),
   description: z.string().optional(),
-  attributes: z.array(z.object({ attribute: z.string(), op: z.string().default(':='), value: z.string() })).optional(),
+  attributes: z.array(z.object({ attribute: z.string(), op: z.string().default(':='), value: z.string(), vendor: z.string().optional() })).optional(),
 });
 
 const updatePackageSchema = z.object({
@@ -298,12 +314,17 @@ const updatePackageSchema = z.object({
   burst_threshold_ul_mbps: z.number().int().positive().nullable().optional(),
   burst_time_seconds: z.number().int().positive().nullable().optional(),
   radius_profile_id: z.number().int().nullable().optional(),
+  juniper_ingress_policy: z.string().nullable().optional(),
+  juniper_egress_policy: z.string().nullable().optional(),
+  juniper_activate_service: z.string().nullable().optional(),
+  juniper_cos_shaping_rate: z.string().nullable().optional(),
+  juniper_dynamic_profile: z.string().nullable().optional(),
   validity_days: z.number().int().positive().optional(),
   price: z.number().nonnegative().optional(),
   currency: z.string().optional(),
   description: z.string().optional(),
   is_active: z.boolean().optional(),
-  attributes: z.array(z.object({ attribute: z.string(), op: z.string().default(':='), value: z.string() })).optional(),
+  attributes: z.array(z.object({ attribute: z.string(), op: z.string().default(':='), value: z.string(), vendor: z.string().optional() })).optional(),
 });
 
 apiRouter.get(
@@ -345,6 +366,20 @@ apiRouter.get(
       return;
     }
     res.json(envelope(item, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/packages/:id/preview-radius',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const vendor = ((req.query.vendor as string) || 'all') as any;
+    const preview = await packageRepository.simulateAccessAccept(id, vendor);
+    if (!preview) {
+      res.status(404).json(envelope(null, 'live'));
+      return;
+    }
+    res.json(envelope(preview, 'live'));
   })
 );
 
@@ -1157,6 +1192,83 @@ apiRouter.delete(
   })
 );
 
+// ---- RADIUS Attribute Catalog & Dynamic Profile Simulator ----
+apiRouter.get(
+  '/radius/catalog',
+  asyncHandler(async (req, res) => {
+    const vendor = req.query.vendor as string | undefined;
+    const search = req.query.search as string | undefined;
+    const catalog = await radiusCatalogRepository.list(vendor, search);
+    res.json(envelope(catalog, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/radius/preview',
+  asyncHandler(async (req, res) => {
+    const previewSchema = z.object({
+      vendor: z.enum(['mikrotik', 'juniper', 'generic', 'all']).default('all'),
+      attributes: z.array(
+        z.object({
+          attribute: z.string().min(1),
+          value: z.string(),
+          op: z.string().default(':='),
+          vendor: z.string().optional(),
+        })
+      ),
+    });
+    const body = previewSchema.parse(req.body);
+
+    const validations: Array<{ attribute: string; valid: boolean; error?: string }> = [];
+    for (const a of body.attributes) {
+      const cat = await radiusCatalogRepository.findByName(a.attribute);
+      if (cat) {
+        const valRes = radiusCatalogRepository.validateAttributeValue(cat, a.value);
+        validations.push({ attribute: a.attribute, ...valRes });
+      } else {
+        validations.push({ attribute: a.attribute, valid: true });
+      }
+    }
+
+    let filtered = body.attributes;
+    if (body.vendor === 'mikrotik') {
+      filtered = body.attributes.filter(
+        (a) => a.vendor === 'mikrotik' || a.vendor === 'generic' || (!a.attribute.startsWith('Juniper-') && !a.attribute.startsWith('ERX-'))
+      );
+    } else if (body.vendor === 'juniper') {
+      filtered = body.attributes.filter(
+        (a) => a.vendor === 'juniper' || a.vendor === 'generic' || !a.attribute.startsWith('Mikrotik-')
+      );
+    } else if (body.vendor === 'generic') {
+      filtered = body.attributes.filter(
+        (a) => a.vendor === 'generic' || (!a.attribute.startsWith('Mikrotik-') && !a.attribute.startsWith('Juniper-'))
+      );
+    }
+
+    const previewMap: Record<string, string> = {};
+    for (const a of filtered) {
+      previewMap[a.attribute] = a.value;
+    }
+
+    res.json(
+      envelope(
+        {
+          vendor: body.vendor,
+          valid: validations.every((v) => v.valid),
+          validations,
+          attributes: filtered,
+          simulatedResponse: {
+            code: 'Access-Accept',
+            code_number: 2,
+            attributes: previewMap,
+          },
+        },
+        'live'
+      )
+    );
+  })
+);
+
 // ---- IP Pools Management Routes ----
 const createPoolSchema = z.object({
   name: z.string().min(1).max(64),
@@ -1415,6 +1527,10 @@ const changeSpeedSchema = z.object({
   sessionId: z.string().optional(),
   nasIp: z.string().optional(),
   framedIp: z.string().optional(),
+  ingressPolicy: z.string().optional(),
+  egressPolicy: z.string().optional(),
+  activateService: z.string().optional(),
+  cosShapingRate: z.string().optional(),
 });
 
 apiRouter.post(

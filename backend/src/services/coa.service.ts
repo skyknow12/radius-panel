@@ -1,5 +1,5 @@
 import { query } from '../db/pool';
-import { RadiusClient, RadiusAttribute, RadiusAttr } from '../radius/radius-client';
+import { RadiusClient, RadiusAttribute, RadiusAttr, encodeVsa } from '../radius/radius-client';
 import { logger } from '../lib/logger';
 import { config } from '../config/env';
 
@@ -24,6 +24,10 @@ export interface ChangeSpeedInput {
   nasIp?: string;
   framedIp?: string;
   operatorUsername?: string;
+  ingressPolicy?: string;
+  egressPolicy?: string;
+  activateService?: string;
+  cosShapingRate?: string;
 }
 
 export const coaService = {
@@ -128,13 +132,20 @@ export const coaService = {
         }
 
         if (vendor === 'MikroTik') {
-          const valBuf = Buffer.from(rateLimit, 'utf8');
-          const vsa = Buffer.alloc(6 + valBuf.length);
-          vsa.writeUInt32BE(14988, 0);
-          vsa[4] = 8;
-          vsa[5] = 2 + valBuf.length;
-          valBuf.copy(vsa, 6);
-          attributes.push({ type: RadiusAttr.VendorSpecific, value: vsa });
+          attributes.push(encodeVsa(14988, 8, rateLimit));
+        } else if (vendor === 'Juniper') {
+          // Juniper BNG Dynamic Profile rate-limit via firewall filter or dynamic service
+          const inPolicy = input.ingressPolicy || (rateLimit.includes('/') ? `BW-${rateLimit.split('/')[0]}-IN` : `BW-${rateLimit}-IN`);
+          const outPolicy = input.egressPolicy || (rateLimit.includes('/') ? `BW-${rateLimit.split('/')[1]}-OUT` : `BW-${rateLimit}-OUT`);
+          attributes.push(encodeVsa(2636, 10, inPolicy)); // Juniper-Ingress-Policy-Name (VSA 10)
+          attributes.push(encodeVsa(2636, 11, outPolicy)); // Juniper-Egress-Policy-Name (VSA 11)
+
+          if (input.activateService) {
+            attributes.push(encodeVsa(2636, 65, input.activateService)); // Juniper-Activate-Service (VSA 65)
+          }
+          if (input.cosShapingRate) {
+            attributes.push(encodeVsa(2636, 177, input.cosShapingRate)); // Juniper-Cos-Shaping-Rate (VSA 177)
+          }
         } else {
           attributes.push({ type: RadiusAttr.ReplyMessage, value: Buffer.from(rateLimit, 'utf8') });
         }
@@ -144,7 +155,9 @@ export const coaService = {
 
         if (res.codeName === 'CoA-ACK') {
           status = 'SUCCESS';
-          details = `Received CoA-ACK from ${vendor} NAS: rate limit set to ${rateLimit}`;
+          details = vendor === 'Juniper'
+            ? `Received CoA-ACK from Juniper BNG: filters updated (Ingress/Egress)`
+            : `Received CoA-ACK from ${vendor} NAS: rate limit set to ${rateLimit}`;
         } else if (res.codeName === 'CoA-NAK') {
           status = 'FAILED';
           details = `Received CoA-NAK from ${vendor} NAS (${nasIp}:${port})`;
@@ -176,11 +189,20 @@ export const coaService = {
       `SELECT vendor, nas_type FROM nas_devices WHERE host(ip_address) = $1 LIMIT 1`,
       [nasIp],
     );
-    if (rows[0]?.nas_type) {
-      if (/mikrotik/i.test(rows[0].nas_type)) return 'MikroTik';
-      if (/juniper/i.test(rows[0].nas_type)) return 'Juniper';
-      if (/cisco/i.test(rows[0].nas_type)) return 'Cisco';
+    const row = rows[0];
+    if (row?.vendor) {
+      if (/juniper/i.test(row.vendor)) return 'Juniper';
+      if (/mikrotik/i.test(row.vendor)) return 'MikroTik';
+      if (/cisco/i.test(row.vendor)) return 'Cisco';
+      if (/huawei/i.test(row.vendor)) return 'Huawei';
+      if (/generic/i.test(row.vendor)) return 'Generic';
     }
-    return rows[0]?.vendor || 'Generic';
+    if (row?.nas_type) {
+      if (/juniper/i.test(row.nas_type)) return 'Juniper';
+      if (/mikrotik/i.test(row.nas_type)) return 'MikroTik';
+      if (/cisco/i.test(row.nas_type)) return 'Cisco';
+      if (/huawei/i.test(row.nas_type)) return 'Huawei';
+    }
+    return row?.vendor || 'Generic';
   },
 };

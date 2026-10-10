@@ -38,6 +38,11 @@ export function NasView({ onViewSessions }: NasViewProps) {
   const [formName, setFormName] = React.useState('');
   const [formIp, setFormIp] = React.useState('');
   const [formType, setFormType] = React.useState('mikrotik');
+  const [formVendor, setFormVendor] = React.useState('mikrotik');
+  const [formModel, setFormModel] = React.useState('');
+  const [formOsVersion, setFormOsVersion] = React.useState('');
+  const [formDynamicProfile, setFormDynamicProfile] = React.useState('');
+  const [formCoaEnabled, setFormCoaEnabled] = React.useState(true);
   const [formSecret, setFormSecret] = React.useState('');
   const [formLocation, setFormLocation] = React.useState('');
   const [formDescription, setFormDescription] = React.useState('');
@@ -69,6 +74,11 @@ export function NasView({ onViewSessions }: NasViewProps) {
     setFormName('');
     setFormIp('');
     setFormType('mikrotik');
+    setFormVendor('mikrotik');
+    setFormModel('');
+    setFormOsVersion('');
+    setFormDynamicProfile('');
+    setFormCoaEnabled(true);
     setFormSecret('');
     setFormLocation('');
     setFormDescription('');
@@ -83,6 +93,11 @@ export function NasView({ onViewSessions }: NasViewProps) {
     setFormName(dev.name);
     setFormIp(dev.ip_address);
     setFormType(dev.nas_type);
+    setFormVendor(dev.vendor || (dev.nas_type === 'juniper' ? 'juniper' : dev.nas_type === 'cisco' ? 'cisco' : dev.nas_type === 'huawei' ? 'huawei' : 'mikrotik'));
+    setFormModel(dev.model || '');
+    setFormOsVersion(dev.os_version || '');
+    setFormDynamicProfile(dev.dynamic_profile_name || '');
+    setFormCoaEnabled(dev.coa_enabled ?? true);
     setFormSecret(''); // Keep blank unless changing
     setFormLocation(dev.location || '');
     setFormDescription(dev.description || '');
@@ -121,6 +136,11 @@ export function NasView({ onViewSessions }: NasViewProps) {
         name: formName.trim(),
         ip_address: formIp.trim(),
         nas_type: formType,
+        vendor: formVendor,
+        model: formModel.trim() || undefined,
+        os_version: formOsVersion.trim() || undefined,
+        dynamic_profile_name: formDynamicProfile.trim() || undefined,
+        coa_enabled: formCoaEnabled,
         secret: formSecret.trim() || undefined,
         location: formLocation.trim() || undefined,
         description: formDescription.trim() || undefined,
@@ -277,7 +297,7 @@ export function NasView({ onViewSessions }: NasViewProps) {
               <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold">
                 <th className="py-3 px-4">Name</th>
                 <th className="py-3 px-4">IP Address</th>
-                <th className="py-3 px-4">Type</th>
+                <th className="py-3 px-4">Vendor & Profile</th>
                 <th className="py-3 px-4">Location / Description</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Active Sessions</th>
@@ -302,6 +322,9 @@ export function NasView({ onViewSessions }: NasViewProps) {
                 filtered.map((dev) => {
                   const isOnline = dev.status === 'online';
                   const isWarning = dev.status === 'warning';
+                  const isJuniper = dev.vendor === 'juniper' || dev.nas_type === 'juniper';
+                  const isMikrotik = dev.vendor === 'mikrotik' || dev.nas_type === 'mikrotik';
+                  const isCisco = dev.vendor === 'cisco' || dev.nas_type === 'cisco';
                   return (
                     <tr key={dev.id} className="hover:bg-muted/40 transition-colors group">
                       <td className="py-3 px-4 font-semibold text-foreground flex items-center gap-2">
@@ -312,9 +335,36 @@ export function NasView({ onViewSessions }: NasViewProps) {
                         {dev.ip_address}
                       </td>
                       <td className="py-3 px-4">
-                        <span className="capitalize px-2 py-0.5 rounded-md text-[11px] font-medium bg-muted border border-border">
-                          {dev.nas_type}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                              isJuniper
+                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                : isMikrotik
+                                ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30'
+                                : isCisco
+                                ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30'
+                                : 'bg-muted text-foreground border-border'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isJuniper ? 'bg-emerald-500' : isMikrotik ? 'bg-sky-500' : isCisco ? 'bg-orange-500' : 'bg-muted-foreground'
+                              }`}
+                            />
+                            {isJuniper ? 'Juniper BNG' : isMikrotik ? 'MikroTik' : isCisco ? 'Cisco' : dev.vendor || dev.nas_type}
+                          </span>
+                          {dev.model && (
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {dev.model} {dev.os_version ? `(${dev.os_version})` : ''}
+                            </span>
+                          )}
+                          {dev.dynamic_profile_name && (
+                            <span className="text-[10px] text-primary font-mono bg-primary/10 px-1 rounded border border-primary/20">
+                              Profile: {dev.dynamic_profile_name}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">
                         <div>{dev.location || '-'}</div>
@@ -478,21 +528,72 @@ export function NasView({ onViewSessions }: NasViewProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-medium text-foreground mb-1">
-                    NAS Type
+                    Vendor / Architecture *
                   </label>
                   <select
-                    value={formType}
-                    onChange={(e) => setFormType(e.target.value)}
-                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                    value={formVendor}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setFormVendor(v);
+                      if (v === 'juniper') setFormType('juniper');
+                      else if (v === 'mikrotik') setFormType('mikrotik');
+                      else if (v === 'cisco') setFormType('cisco');
+                      else if (v === 'huawei') setFormType('huawei');
+                      else setFormType('other');
+                    }}
+                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary font-medium"
                   >
+                    <option value="juniper">Juniper Networks (MX / Junos BNG)</option>
                     <option value="mikrotik">MikroTik RouterOS</option>
-                    <option value="cisco">Cisco ASR / IOS</option>
-                    <option value="juniper">Juniper MX / Junos</option>
-                    <option value="huawei">Huawei NE / VRP</option>
-                    <option value="other">Other Standard RADIUS NAS</option>
+                    <option value="cisco">Cisco Systems (ASR / IOS-XE)</option>
+                    <option value="huawei">Huawei (NE / VRP)</option>
+                    <option value="generic">Generic / RFC Standard</option>
                   </select>
                 </div>
 
+                <div>
+                  <label className="block font-medium text-foreground mb-1">
+                    Hardware Model / Platform
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={formVendor === 'juniper' ? 'MX204, MX480, vMX' : formVendor === 'mikrotik' ? 'CCR2004, CCR1036, RB4011' : 'ASR9001, NE40E'}
+                    value={formModel}
+                    onChange={(e) => setFormModel(e.target.value)}
+                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-medium text-foreground mb-1">
+                    Software / Junos Version
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={formVendor === 'juniper' ? 'Junos 21.4R3-S5' : 'RouterOS 7.15'}
+                    value={formOsVersion}
+                    onChange={(e) => setFormOsVersion(e.target.value)}
+                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-foreground mb-1">
+                    Dynamic Profile Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="PPPOE-PROFILE"
+                    value={formDynamicProfile}
+                    onChange={(e) => setFormDynamicProfile(e.target.value)}
+                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-medium text-foreground mb-1">
                     CoA / Disconnect Port
@@ -503,6 +604,19 @@ export function NasView({ onViewSessions }: NasViewProps) {
                     onChange={(e) => setFormCoaPort(parseInt(e.target.value, 10))}
                     className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                   />
+                </div>
+
+                <div className="flex items-center gap-2 pt-6">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formCoaEnabled}
+                      onChange={(e) => setFormCoaEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                    <span className="ml-2 font-medium text-foreground">Enable RFC 5176 CoA / PoD</span>
+                  </label>
                 </div>
               </div>
 

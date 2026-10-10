@@ -83,6 +83,11 @@ export interface NasDeviceItem {
   name: string;
   ip_address: string;
   nas_type: string;
+  vendor?: string | null;
+  model?: string | null;
+  os_version?: string | null;
+  dynamic_profile_name?: string | null;
+  coa_enabled?: boolean;
   description: string | null;
   location: string | null;
   coa_port: number;
@@ -93,6 +98,22 @@ export interface NasDeviceItem {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface RadiusCatalogItem {
+  id: number;
+  vendor: string;
+  vendor_id?: number | null;
+  attribute_code: number;
+  attribute_name: string;
+  data_type: 'string' | 'integer' | 'ipaddr' | 'ipv6addr' | 'ipv6prefix';
+  has_tag: boolean;
+  coa_supported: boolean;
+  dynamic_profile_var?: string | null;
+  description?: string | null;
+  default_op: string;
+  sample_value?: string | null;
+  is_common: boolean;
 }
 
 export interface PackageItem {
@@ -108,13 +129,18 @@ export interface PackageItem {
   burst_time_seconds?: number | null;
   radius_profile_id?: number | null;
   radius_profile_name?: string | null;
+  juniper_ingress_policy?: string | null;
+  juniper_egress_policy?: string | null;
+  juniper_activate_service?: string | null;
+  juniper_cos_shaping_rate?: string | null;
+  juniper_dynamic_profile?: string | null;
   validity_days: number;
   price: number;
   currency: string;
   description: string | null;
   is_active: boolean;
   subscribers_count: number;
-  attributes?: { id?: number; attribute: string; op: string; value: string }[];
+  attributes?: { id?: number; attribute: string; op: string; value: string; vendor?: string }[];
   created_at: string;
   updated_at: string;
 }

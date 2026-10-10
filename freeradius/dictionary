@@ -1,0 +1,41 @@
+# =============================================================================
+# RADIUS PRO — FreeRADIUS Custom Dictionary
+# Juniper Networks BNG Subscriber Management VSAs (Vendor ID 2636)
+#
+# Official Reference:
+# https://www.juniper.net/documentation/us/en/software/junos/subscriber-mgmt-sessions/topics/topic-map/radius-std-attributes-vsas-support.html
+# =============================================================================
+
+VENDOR		Juniper-BNG				2636
+
+BEGIN-VENDOR	Juniper-BNG
+
+ATTRIBUTE	Juniper-Virtual-Router			1	string
+ATTRIBUTE	Juniper-Default-IPv4-Address		2	ipaddr
+ATTRIBUTE	Juniper-Default-IPv6-Address		3	ipv6addr
+ATTRIBUTE	Juniper-Primary-Dns			4	ipaddr
+ATTRIBUTE	Juniper-Secondary-Dns			5	ipaddr
+ATTRIBUTE	Juniper-Primary-Wins			6	ipaddr
+ATTRIBUTE	Juniper-Secondary-Wins			7	ipaddr
+ATTRIBUTE	Juniper-Radius-Profile			8	string
+ATTRIBUTE	Juniper-Ingress-Policy-Name		10	string
+ATTRIBUTE	Juniper-Egress-Policy-Name		11	string
+ATTRIBUTE	Juniper-Interface-Desc			63	string
+ATTRIBUTE	Juniper-Activate-Service		65	string
+ATTRIBUTE	Juniper-Deactivate-Service		66	string
+ATTRIBUTE	Juniper-Service-Volume			67	integer
+ATTRIBUTE	Juniper-Service-Timeout			68	integer
+ATTRIBUTE	Juniper-Service-Statistics		69	integer
+ATTRIBUTE	Juniper-IPv6-Ingress-Policy-Name	106	string
+ATTRIBUTE	Juniper-IPv6-Egress-Policy-Name		107	string
+ATTRIBUTE	Juniper-CoS-Parameter-Type		108	string
+ATTRIBUTE	Juniper-CoS-Scheduler-Pmt-Type		146	string
+ATTRIBUTE	Juniper-Cos-Rewrite-Rules		157	string
+ATTRIBUTE	Juniper-IPv6-Delegated-Pool-Name	161	string
+ATTRIBUTE	Juniper-Client-Profile-Name		174	string
+ATTRIBUTE	Juniper-Cos-Shaping-Rate		177	string
+ATTRIBUTE	Juniper-Update-Service			180	string
+ATTRIBUTE	Juniper-Input-Interface-Filter		191	string
+ATTRIBUTE	Juniper-Output-Interface-Filter		192	string
+
+END-VENDOR	Juniper-BNG
