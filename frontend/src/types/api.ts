@@ -183,6 +183,19 @@ export interface SubscriberItem {
   ipv6_prefix?: string | null;
   ipv6_prefix_length?: number | null;
   mac_address: string | null;
+  mac_binding_enabled?: boolean;
+  mac_bound_at?: string | null;
+  mac_bound_by?: string | null;
+  grace_period_override_days?: number | null;
+  grace_status?: 'none' | 'active' | 'expired';
+  grace_days_granted?: number | null;
+  grace_start_date?: string | null;
+  grace_end_date?: string | null;
+  grace_granted_by?: string | null;
+  grace_granted_at?: string | null;
+  grace_notes?: string | null;
+  is_in_grace?: boolean;
+  effective_expiry_date?: string | null;
   vlan_id: number | null;
   nas_restriction_id: number | null;
   nas_name: string | null;
@@ -205,6 +218,29 @@ export interface SubscriberItem {
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface MacAuthLogItem {
+  id: number;
+  presented_mac: string | null;
+  expected_mac: string | null;
+  nas_ip: string | null;
+  nas_identifier: string | null;
+  status: 'accepted' | 'rejected';
+  rejection_reason: string | null;
+  auth_date: string;
+}
+
+export interface GraceInfo {
+  effective_grace_days: number;
+  customer_override_days: number | null;
+  branch_grace_days: number | null;
+  reseller_grace_days: number | null;
+  org_grace_days: number;
+  org_name?: string;
+  branch_name?: string;
+  reseller_name?: string;
+  ownership_type?: string;
 }
 
 export interface SubscriberServiceItem {
@@ -278,6 +314,8 @@ export interface SubscriberProfileData {
   services: SubscriberServiceItem[];
   notes: SubscriberNoteItem[];
   activity: SubscriberActivityItem[];
+  macAuthLogs?: MacAuthLogItem[];
+  graceInfo?: GraceInfo;
   radiusAttributes: {
     check: { id: number; attribute: string; op: string; value: string }[];
     reply: { id: number; attribute: string; op: string; value: string }[];
@@ -652,6 +690,7 @@ export interface OrganizationItem {
   timezone: string;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   settings: Record<string, any>;
+  default_grace_period_days?: number;
   created_at: string;
   updated_at: string;
 }
@@ -667,6 +706,7 @@ export interface BranchItem {
   manager_name: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   notes: string | null;
+  grace_period_days?: number | null;
   wallet_id?: number | null;
   wallet_balance?: number;
   credit_limit?: number;
@@ -692,6 +732,7 @@ export interface ResellerItem {
   commission_percent?: number;
   credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   notes: string | null;
+  grace_period_days?: number | null;
   wallet_id?: number | null;
   wallet_balance?: number;
   credit_limit?: number;

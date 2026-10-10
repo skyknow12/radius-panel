@@ -465,6 +465,8 @@ const createSubscriberSchema = z.object({
   ipv6_prefix: z.string().optional().or(z.literal('')),
   ipv6_prefix_length: z.number().int().optional(),
   mac_address: z.string().optional(),
+  mac_binding_enabled: z.boolean().optional(),
+  grace_period_override_days: z.number().int().min(0).max(30).nullable().optional(),
   vlan_id: z.number().int().optional(),
   nas_restriction_id: z.number().int().optional(),
   olt_pon_port: z.string().optional(),
@@ -497,6 +499,8 @@ const updateSubscriberSchema = z.object({
   ipv6_prefix: z.string().optional().or(z.literal('')),
   ipv6_prefix_length: z.number().int().nullable().optional(),
   mac_address: z.string().optional(),
+  mac_binding_enabled: z.boolean().optional(),
+  grace_period_override_days: z.number().int().min(0).max(30).nullable().optional(),
   vlan_id: z.number().int().nullable().optional(),
   nas_restriction_id: z.number().int().nullable().optional(),
   olt_pon_port: z.string().optional(),
@@ -939,6 +943,199 @@ apiRouter.get(
 
     const history = await radPostAuthRepository.userAuthHistory(sub.username, 50);
     res.json(envelope(history, 'live'));
+  })
+);
+
+// ---- Customer MAC Binding & Grace Period Management Routes ----
+apiRouter.post(
+  '/subscribers/:id/bind-mac',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) throw HttpError.notFound('Subscriber not found');
+    assertCanAccessSubscriber(req.user, sub);
+
+    const schema = z.object({ mac_address: z.string().min(1) });
+    const { mac_address } = schema.parse(req.body);
+
+    const updated = await subscriberRepository.bindMac(id, mac_address, req.user?.username || 'admin');
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.bind_mac',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: { username: sub.username, mac_address: updated.mac_address },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/unbind-mac',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) throw HttpError.notFound('Subscriber not found');
+    assertCanAccessSubscriber(req.user, sub);
+
+    const previousMac = sub.mac_address;
+    const updated = await subscriberRepository.unbindMac(id, req.user?.username || 'admin');
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.unbind_mac',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: { username: sub.username, previousMac },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/toggle-mac-binding',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) throw HttpError.notFound('Subscriber not found');
+    assertCanAccessSubscriber(req.user, sub);
+
+    const schema = z.object({ enabled: z.boolean() });
+    const { enabled } = schema.parse(req.body);
+
+    const updated = await subscriberRepository.toggleMacBinding(id, enabled, req.user?.username || 'admin');
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.toggle_mac_binding',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: { username: sub.username, enabled },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/mac-auth-logs',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const limit = Number(req.query.limit) || 25;
+    const logs = await subscriberRepository.getMacAuthLogs(id, limit);
+    res.json(envelope(logs, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/grace-info',
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const info = await subscriberRepository.getEffectiveGraceDays(id);
+    res.json(envelope(info, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/add-grace',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) throw HttpError.notFound('Subscriber not found');
+    assertCanAccessSubscriber(req.user, sub);
+
+    const schema = z.object({
+      days: z.number().int().min(1).max(30),
+      notes: z.string().optional().nullable(),
+    });
+    const { days, notes } = schema.parse(req.body);
+
+    const updated = await subscriberRepository.addGrace(id, days, notes || null, req.user?.username || 'admin');
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.add_grace',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: {
+        username: sub.username,
+        days_granted: days,
+        grace_end_date: updated.grace_end_date,
+        notes,
+      },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/revoke-grace',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) throw HttpError.notFound('Subscriber not found');
+    assertCanAccessSubscriber(req.user, sub);
+
+    const updated = await subscriberRepository.revokeGrace(id, req.user?.username || 'admin');
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.revoke_grace',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: { username: sub.username },
+    });
+
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.put(
+  '/subscribers/:id/grace-override',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) throw HttpError.notFound('Subscriber not found');
+    assertCanAccessSubscriber(req.user, sub);
+
+    const schema = z.object({
+      override_days: z.number().int().min(0).max(30).nullable(),
+    });
+    const { override_days } = schema.parse(req.body);
+
+    const updated = await subscriberRepository.updateGraceOverride(id, override_days, req.user?.username || 'admin');
+
+    await auditRepository.insert({
+      userId: req.user?.userId,
+      username: req.user?.username,
+      action: 'subscriber.grace_override',
+      entityType: 'subscriber',
+      entityId: String(id),
+      status: 'success',
+      metadata: { username: sub.username, override_days },
+    });
+
+    res.json(envelope(updated, 'live'));
   })
 );
 
@@ -2257,6 +2454,7 @@ const createResellerSchema = z.object({
   branch_id: z.number().int().optional().nullable(),
   contact_person: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  grace_period_days: z.number().int().min(0).max(30).nullable().optional(),
   login_username: z.string().min(3).optional().or(z.literal('')).nullable(),
   login_password: z.string().min(6).optional().or(z.literal('')).nullable(),
 });

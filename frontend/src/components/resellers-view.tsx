@@ -67,6 +67,7 @@ export function ResellersView({
   const [commissionModel, setCommissionModel] = React.useState<'discount' | 'commission'>('commission');
   const [notes, setNotes] = React.useState('');
   const [status, setStatus] = React.useState<'ACTIVE' | 'INACTIVE' | 'SUSPENDED'>('ACTIVE');
+  const [gracePeriodDays, setGracePeriodDays] = React.useState('');
   const [createLoginUser, setCreateLoginUser] = React.useState(false);
   const [loginUsername, setLoginUsername] = React.useState('');
   const [loginPassword, setLoginPassword] = React.useState('');
@@ -147,6 +148,7 @@ export function ResellersView({
         credit_limit: credVal,
         notes: notes.trim() || undefined,
         status,
+        grace_period_days: gracePeriodDays ? parseInt(gracePeriodDays, 10) : null,
       };
 
       if (createLoginUser) {
@@ -179,6 +181,7 @@ export function ResellersView({
       setCommissionPercent('50');
       setCreditLimit('50000');
       setNotes('');
+      setGracePeriodDays('');
       setCreateLoginUser(false);
       setLoginUsername('');
       setLoginPassword('');
@@ -211,6 +214,12 @@ export function ResellersView({
           commission_model: selectedReseller.commission_model,
           status: selectedReseller.status,
           notes: selectedReseller.notes,
+          grace_period_days:
+            selectedReseller.grace_period_days !== undefined &&
+            selectedReseller.grace_period_days !== null &&
+            (selectedReseller.grace_period_days as any) !== ''
+              ? parseInt(String(selectedReseller.grace_period_days), 10)
+              : null,
         }),
       });
 
@@ -381,6 +390,9 @@ export function ResellersView({
                       <td className="py-3 px-4">
                         <div className="font-bold text-foreground">
                           {r.customer_count || 0}
+                        </div>
+                        <div className="text-[10px] text-amber-500/80 font-medium mt-0.5">
+                          Grace: {r.grace_period_days !== null && r.grace_period_days !== undefined ? `${r.grace_period_days}d` : 'Org Default'}
                         </div>
                       </td>
                       <td className="py-3 px-4">
@@ -706,6 +718,25 @@ export function ResellersView({
                 />
               </div>
 
+              {/* Default Grace Period */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Default Grace Period (Days)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={gracePeriodDays}
+                  onChange={(e) => setGracePeriodDays(e.target.value)}
+                  placeholder="Inherit from Organization (leave blank)"
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Leave empty to inherit organization default. Set to 0 to disable grace for this reseller (0–30 days).
+                </p>
+              </div>
+
               {/* Portal Login Account (Section 6) */}
               <div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-3">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -861,6 +892,29 @@ export function ResellersView({
                   <option value="discount">Discount Model (Wholesale Purchase)</option>
                   <option value="commission">Commission Model (Percentage Incentive)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Default Grace Period (Days)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={selectedReseller.grace_period_days ?? ''}
+                  onChange={(e) =>
+                    setSelectedReseller({
+                      ...selectedReseller,
+                      grace_period_days: e.target.value === '' ? null : parseInt(e.target.value, 10),
+                    })
+                  }
+                  placeholder="Inherit from Organization (leave blank)"
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Leave empty to inherit organization default. Set to 0 to disable grace for this reseller (0–30 days).
+                </p>
               </div>
 
               <div className="pt-3 flex justify-end gap-2 border-t border-border">

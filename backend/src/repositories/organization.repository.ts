@@ -16,6 +16,7 @@ export interface OrganizationItem {
   timezone: string;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   settings: Record<string, any>;
+  default_grace_period_days?: number;
   created_at: string;
   updated_at: string;
 }
@@ -31,6 +32,7 @@ export interface BranchItem {
   manager_name: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   notes: string | null;
+  grace_period_days?: number | null;
   wallet_id?: number | null;
   wallet_balance?: number;
   credit_limit?: number;
@@ -56,6 +58,7 @@ export interface ResellerItem {
   commission_percent?: number;
   credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   notes: string | null;
+  grace_period_days?: number | null;
   wallet_id?: number | null;
   wallet_balance?: number;
   credit_limit?: number;
@@ -155,7 +158,7 @@ export const organizationRepository = {
   async getPrimaryOrganization(): Promise<OrganizationItem> {
     const { rows } = await query<OrganizationItem>(
       `SELECT id, name, code, logo_url, address, phone, email, website,
-              currency, timezone, status, settings, created_at, updated_at
+              currency, timezone, status, settings, default_grace_period_days, created_at, updated_at
          FROM organizations
         ORDER BY id ASC LIMIT 1`
     );
@@ -180,6 +183,7 @@ export const organizationRepository = {
     if (input.timezone !== undefined) { fields.push(`timezone = $${idx++}`); values.push(input.timezone); }
     if (input.status !== undefined) { fields.push(`status = $${idx++}`); values.push(input.status); }
     if (input.settings !== undefined) { fields.push(`settings = $${idx++}`); values.push(JSON.stringify(input.settings)); }
+    if (input.default_grace_period_days !== undefined) { fields.push(`default_grace_period_days = $${idx++}`); values.push(input.default_grace_period_days); }
 
     if (fields.length === 0) {
       return this.getPrimaryOrganization();
@@ -255,7 +259,7 @@ export const organizationRepository = {
   async listBranches(): Promise<BranchItem[]> {
     const { rows } = await query<BranchItem>(`
       SELECT b.id, b.organization_id, b.name, b.code, b.address, b.contact_number,
-             b.email, b.manager_name, b.status, b.notes, b.created_at, b.updated_at,
+             b.email, b.manager_name, b.status, b.notes, b.grace_period_days, b.created_at, b.updated_at,
              w.id AS wallet_id,
              COALESCE(w.balance, 0)::float AS wallet_balance,
              COALESCE(c.credit_limit, 0)::float AS credit_limit,
@@ -265,7 +269,7 @@ export const organizationRepository = {
         LEFT JOIN wallets w ON w.branch_id = b.id
         LEFT JOIN credit_accounts c ON c.wallet_id = w.id
         LEFT JOIN subscribers s ON s.branch_id = b.id
-       GROUP BY b.id, w.id, w.balance, c.credit_limit
+       GROUP BY b.id, w.id, w.balance, c.credit_limit, b.grace_period_days
        ORDER BY b.name ASC
     `);
     return rows;
@@ -274,7 +278,7 @@ export const organizationRepository = {
   async getBranch(id: number): Promise<BranchItem | null> {
     const { rows } = await query<BranchItem>(`
       SELECT b.id, b.organization_id, b.name, b.code, b.address, b.contact_number,
-             b.email, b.manager_name, b.status, b.notes, b.created_at, b.updated_at,
+             b.email, b.manager_name, b.status, b.notes, b.grace_period_days, b.created_at, b.updated_at,
              w.id AS wallet_id,
              COALESCE(w.balance, 0)::float AS wallet_balance,
              COALESCE(c.credit_limit, 0)::float AS credit_limit,
@@ -285,7 +289,7 @@ export const organizationRepository = {
         LEFT JOIN credit_accounts c ON c.wallet_id = w.id
         LEFT JOIN subscribers s ON s.branch_id = b.id
        WHERE b.id = $1
-       GROUP BY b.id, w.id, w.balance, c.credit_limit
+       GROUP BY b.id, w.id, w.balance, c.credit_limit, b.grace_period_days
     `, [id]);
     return rows[0] ?? null;
   },
@@ -299,14 +303,15 @@ export const organizationRepository = {
     manager_name?: string | null;
     status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
     notes?: string | null;
+    grace_period_days?: number | null;
   }): Promise<BranchItem> {
     const org = await this.getPrimaryOrganization();
     const client = await getClient();
     try {
       await client.query('BEGIN');
       const { rows } = await client.query<BranchItem>(`
-        INSERT INTO branches (organization_id, name, code, address, contact_number, email, manager_name, status, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO branches (organization_id, name, code, address, contact_number, email, manager_name, status, notes, grace_period_days)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
       `, [
         org.id,
@@ -318,6 +323,7 @@ export const organizationRepository = {
         input.manager_name || null,
         input.status || 'ACTIVE',
         input.notes || null,
+        input.grace_period_days !== undefined ? input.grace_period_days : null,
       ]);
       const branch = rows[0];
 
@@ -358,6 +364,7 @@ export const organizationRepository = {
     if (input.manager_name !== undefined) { fields.push(`manager_name = $${idx++}`); values.push(input.manager_name); }
     if (input.status !== undefined) { fields.push(`status = $${idx++}`); values.push(input.status); }
     if (input.notes !== undefined) { fields.push(`notes = $${idx++}`); values.push(input.notes); }
+    if (input.grace_period_days !== undefined) { fields.push(`grace_period_days = $${idx++}`); values.push(input.grace_period_days); }
 
     if (fields.length > 0) {
       values.push(id);
@@ -444,7 +451,7 @@ export const organizationRepository = {
              r.status, r.commission_model,
              COALESCE(r.commission_percent, 50.00)::float AS commission_percent,
              COALESCE(r.credit_status, 'ACTIVE') AS credit_status,
-             r.notes, r.created_at, r.updated_at,
+             r.notes, r.grace_period_days, r.created_at, r.updated_at,
              w.id AS wallet_id,
              COALESCE(w.balance, 0)::float AS wallet_balance,
              COALESCE(r.credit_limit, c.credit_limit, 0)::float AS credit_limit,
@@ -457,7 +464,7 @@ export const organizationRepository = {
         LEFT JOIN credit_accounts c ON c.wallet_id = w.id
         LEFT JOIN subscribers s ON s.reseller_id = r.id
        ${filter}
-       GROUP BY r.id, b.name, w.id, w.balance, r.credit_limit, c.credit_limit, r.credit_used, c.used_credit, r.commission_percent, r.credit_status
+       GROUP BY r.id, b.name, w.id, w.balance, r.credit_limit, c.credit_limit, r.credit_used, c.used_credit, r.commission_percent, r.credit_status, r.grace_period_days
        ORDER BY r.name ASC
     `, params);
     return rows;
@@ -470,7 +477,7 @@ export const organizationRepository = {
              r.status, r.commission_model,
              COALESCE(r.commission_percent, 50.00)::float AS commission_percent,
              COALESCE(r.credit_status, 'ACTIVE') AS credit_status,
-             r.notes, r.created_at, r.updated_at,
+             r.notes, r.grace_period_days, r.created_at, r.updated_at,
              w.id AS wallet_id,
              COALESCE(w.balance, 0)::float AS wallet_balance,
              COALESCE(r.credit_limit, c.credit_limit, 0)::float AS credit_limit,
@@ -483,7 +490,7 @@ export const organizationRepository = {
         LEFT JOIN credit_accounts c ON c.wallet_id = w.id
         LEFT JOIN subscribers s ON s.reseller_id = r.id
        WHERE r.id = $1
-       GROUP BY r.id, b.name, w.id, w.balance, r.credit_limit, c.credit_limit, r.credit_used, c.used_credit, r.commission_percent, r.credit_status
+       GROUP BY r.id, b.name, w.id, w.balance, r.credit_limit, c.credit_limit, r.credit_used, c.used_credit, r.commission_percent, r.credit_status, r.grace_period_days
     `, [id]);
     return rows[0] ?? null;
   },
@@ -502,6 +509,7 @@ export const organizationRepository = {
     credit_limit?: number;
     credit_status?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
     notes?: string | null;
+    grace_period_days?: number | null;
     login_username?: string | null;
     login_password?: string | null;
   }): Promise<ResellerItem> {
@@ -517,9 +525,9 @@ export const organizationRepository = {
         INSERT INTO resellers (
           organization_id, branch_id, name, code, contact_person,
           phone, email, address, status, commission_model,
-          commission_percent, credit_limit, credit_used, credit_status, notes
+          commission_percent, credit_limit, credit_used, credit_status, notes, grace_period_days
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0.00, $13, $14)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0.00, $13, $14, $15)
         RETURNING *
       `, [
         org.id,
@@ -536,6 +544,7 @@ export const organizationRepository = {
         credLimit,
         credStatus,
         input.notes || null,
+        input.grace_period_days !== undefined ? input.grace_period_days : null,
       ]);
       const reseller = rows[0];
 
@@ -616,6 +625,7 @@ export const organizationRepository = {
     if (input.credit_limit !== undefined) { fields.push(`credit_limit = $${idx++}`); values.push(input.credit_limit); }
     if (input.credit_status !== undefined) { fields.push(`credit_status = $${idx++}`); values.push(input.credit_status); }
     if (input.notes !== undefined) { fields.push(`notes = $${idx++}`); values.push(input.notes); }
+    if (input.grace_period_days !== undefined) { fields.push(`grace_period_days = $${idx++}`); values.push(input.grace_period_days); }
 
     if (fields.length > 0) {
       values.push(id);

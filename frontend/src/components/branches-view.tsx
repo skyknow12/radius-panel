@@ -48,6 +48,7 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
   const [email, setEmail] = React.useState('');
   const [address, setAddress] = React.useState('');
   const [notes, setNotes] = React.useState('');
+  const [gracePeriodDays, setGracePeriodDays] = React.useState('');
   const [status, setStatus] = React.useState<'ACTIVE' | 'INACTIVE' | 'SUSPENDED'>('ACTIVE');
 
   const fetchBranches = async () => {
@@ -111,6 +112,7 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
           address: address.trim(),
           notes: notes.trim(),
           status,
+          grace_period_days: gracePeriodDays ? parseInt(gracePeriodDays, 10) : null,
         }),
       });
 
@@ -127,6 +129,7 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
       setEmail('');
       setAddress('');
       setNotes('');
+      setGracePeriodDays('');
       fetchBranches();
     } catch (err: any) {
       setError(err.message);
@@ -154,6 +157,12 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
           address: selectedBranch.address,
           status: selectedBranch.status,
           notes: selectedBranch.notes,
+          grace_period_days:
+            selectedBranch.grace_period_days !== undefined &&
+            selectedBranch.grace_period_days !== null &&
+            (selectedBranch.grace_period_days as any) !== ''
+              ? parseInt(String(selectedBranch.grace_period_days), 10)
+              : null,
         }),
       });
 
@@ -281,6 +290,9 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
                     <td className="py-3 px-4">
                       <div className="font-medium text-foreground">{b.manager_name || 'Unassigned'}</div>
                       <div className="text-[10px] text-muted-foreground font-mono">{b.contact_number || b.email || '—'}</div>
+                      <div className="text-[10px] text-amber-500/80 font-medium mt-0.5">
+                        Grace: {b.grace_period_days !== null && b.grace_period_days !== undefined ? `${b.grace_period_days}d` : 'Org Default'}
+                      </div>
                     </td>
                     <td className="py-3 px-4">
                       <div className="font-bold text-foreground">
@@ -556,6 +568,24 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
                 />
               </div>
 
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Default Grace Period (Days)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={gracePeriodDays}
+                  onChange={(e) => setGracePeriodDays(e.target.value)}
+                  placeholder="Inherit from Organization (leave blank)"
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Leave empty to inherit organization default. Set to 0 to disable grace for this branch (0–30 days).
+                </p>
+              </div>
+
               <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[11px]">
                 💡 A dedicated prepaid operational wallet (e.g. <span className="font-mono font-bold">WLT-BRN-{code || 'XXX'}</span>) and credit account will be provisioned automatically for this branch.
               </div>
@@ -670,6 +700,29 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
                   rows={2}
                   className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Default Grace Period (Days)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={selectedBranch.grace_period_days ?? ''}
+                  onChange={(e) =>
+                    setSelectedBranch({
+                      ...selectedBranch,
+                      grace_period_days: e.target.value === '' ? null : parseInt(e.target.value, 10),
+                    })
+                  }
+                  placeholder="Inherit from Organization (leave blank)"
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Leave empty to inherit organization default. Set to 0 to disable grace for this branch (0–30 days).
+                </p>
               </div>
 
               <div className="pt-3 flex justify-end gap-2 border-t border-border">

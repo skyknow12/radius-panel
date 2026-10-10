@@ -33,13 +33,46 @@ class AutoExpiryService {
     this.isRunning = true;
 
     try {
-      // Find active subscribers whose expiry_date has passed
+      // 1. Process subscribers with active grace periods that have now lapsed
+      const { rows: expiredGraceSubs } = await query<{ id: number; username: string }>(
+        `SELECT id, username
+           FROM subscribers
+          WHERE grace_status = 'active'
+            AND grace_end_date IS NOT NULL
+            AND grace_end_date < NOW()`,
+      );
+
+      for (const sub of expiredGraceSubs) {
+        try {
+          await query(
+            `UPDATE subscribers
+                SET grace_status = 'expired',
+                    status = CASE WHEN (expiry_date IS NOT NULL AND expiry_date < NOW()) THEN 'expired' ELSE status END,
+                    updated_at = NOW()
+              WHERE id = $1`,
+            [sub.id],
+          );
+          await subscriberRepository.syncToRadius(sub.id);
+          await subscriberRepository.logActivity(
+            sub.id,
+            'grace_expired',
+            'Subscriber grace period lapsed automatically',
+            'auto_expiry_engine',
+          );
+          logger.info({ subscriber: sub.username, id: sub.id }, 'Subscriber grace period marked as expired');
+        } catch (err: any) {
+          logger.error({ err: err.message, subscriber: sub.username }, 'Failed to lapse grace period for subscriber');
+        }
+      }
+
+      // 2. Find active subscribers whose expiry_date has passed AND who are NOT in active grace
       const { rows } = await query<{ id: number; username: string; customer_id: string }>(
         `SELECT id, username, customer_id
            FROM subscribers
           WHERE status IN ('active', 'enabled')
             AND expiry_date IS NOT NULL
-            AND expiry_date < NOW()`,
+            AND expiry_date < NOW()
+            AND (grace_status != 'active' OR grace_end_date IS NULL OR grace_end_date < NOW())`,
       );
 
       if (rows.length === 0) {

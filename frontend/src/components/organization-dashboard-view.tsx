@@ -44,6 +44,7 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
   const [website, setWebsite] = React.useState('');
   const [currency, setCurrency] = React.useState('NPR');
   const [timezone, setTimezone] = React.useState('Asia/Kathmandu');
+  const [defaultGracePeriodDays, setDefaultGracePeriodDays] = React.useState<number>(3);
 
   const fetchData = async () => {
     try {
@@ -64,6 +65,7 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
           setWebsite(json.data.website || '');
           setCurrency(json.data.currency || 'NPR');
           setTimezone(json.data.timezone || 'Asia/Kathmandu');
+          setDefaultGracePeriodDays(json.data.default_grace_period_days ?? 3);
         }
       }
 
@@ -89,7 +91,16 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
       const res = await fetch('/api/organization', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, email, address, website, currency, timezone }),
+        body: JSON.stringify({
+          name,
+          phone,
+          email,
+          address,
+          website,
+          currency,
+          timezone,
+          default_grace_period_days: defaultGracePeriodDays,
+        }),
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
@@ -148,6 +159,8 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
                 <span className="font-mono text-primary font-semibold">Currency: {org?.currency}</span>
                 <span>•</span>
                 <span className="font-mono text-muted-foreground">{org?.timezone}</span>
+                <span>•</span>
+                <span className="font-mono text-amber-400 font-semibold">Default Grace: {org?.default_grace_period_days ?? 3} Days</span>
               </p>
             </div>
           </div>
@@ -573,6 +586,24 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
                     className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Organization Default Grace Period (Days)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={defaultGracePeriodDays}
+                  onChange={(e) => setDefaultGracePeriodDays(Math.max(0, Math.min(30, parseInt(e.target.value, 10) || 0)))}
+                  required
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Global organization fallback grace period when a subscriber&apos;s service expires (0–30 days). Default is 3. Set to 0 to disable grace globally.
+                </p>
               </div>
 
               <div className="pt-3 flex justify-end gap-2 border-t border-border">

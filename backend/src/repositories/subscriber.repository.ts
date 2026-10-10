@@ -2,6 +2,8 @@ import { query } from '../db/pool';
 import { ipPoolRepository } from './ip-pool.repository';
 import { packageRepository } from './package.repository';
 import { RadiusClient } from '../radius/radius-client';
+import { normalizeMacAddress, isValidMacAddress } from '../lib/mac-utils';
+import { HttpError } from '../lib/http-error';
 
 export interface SubscriberRow {
   id: number;
@@ -26,6 +28,19 @@ export interface SubscriberRow {
   ipv6_prefix: string | null;
   ipv6_prefix_length: number | null;
   mac_address: string | null;
+  mac_binding_enabled?: boolean;
+  mac_bound_at?: Date | null;
+  mac_bound_by?: string | null;
+  grace_period_override_days?: number | null;
+  grace_status?: 'none' | 'active' | 'expired';
+  grace_days_granted?: number;
+  grace_start_date?: Date | null;
+  grace_end_date?: Date | null;
+  grace_granted_by?: string | null;
+  grace_granted_at?: Date | null;
+  grace_notes?: string | null;
+  is_in_grace?: boolean;
+  effective_expiry_date?: Date | null;
   vlan_id: number | null;
   nas_restriction_id: number | null;
   nas_name: string | null;
@@ -162,6 +177,8 @@ export interface CreateSubscriberInput {
   ipv6_prefix?: string;
   ipv6_prefix_length?: number;
   mac_address?: string;
+  mac_binding_enabled?: boolean;
+  grace_period_override_days?: number | null;
   vlan_id?: number;
   nas_restriction_id?: number;
   olt_pon_port?: string;
@@ -194,6 +211,8 @@ export interface UpdateSubscriberInput {
   ipv6_prefix?: string | null;
   ipv6_prefix_length?: number | null;
   mac_address?: string | null;
+  mac_binding_enabled?: boolean;
+  grace_period_override_days?: number | null;
   vlan_id?: number | null;
   nas_restriction_id?: number | null;
   olt_pon_port?: string | null;
@@ -380,11 +399,19 @@ export const subscriberRepository = {
              s.ip_pool_id, pool.name AS ip_pool_name,
              host(s.static_ip) AS static_ip,
              host(s.ipv6_address) AS ipv6_address, s.ipv6_prefix, s.ipv6_prefix_length,
-             s.mac_address, s.vlan_id,
+             s.mac_address, s.mac_binding_enabled, s.mac_bound_at, s.mac_bound_by,
+             s.grace_period_override_days, s.grace_status, s.grace_days_granted,
+             s.grace_start_date, s.grace_end_date, s.grace_granted_by, s.grace_granted_at, s.grace_notes,
+             (s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW()) AS is_in_grace,
+             CASE
+               WHEN s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW() THEN s.grace_end_date
+               ELSE s.expiry_date
+             END AS effective_expiry_date,
+             (s.expiry_date IS NOT NULL AND s.expiry_date < NOW() AND (s.grace_status != 'active' OR s.grace_end_date < NOW())) AS is_expired,
+             s.vlan_id,
              s.nas_restriction_id, n.name AS nas_name,
              s.olt_pon_port, s.onu_mac_sn, s.onu_model,
              s.expiry_date,
-             (s.expiry_date IS NOT NULL AND s.expiry_date < NOW()) AS is_expired,
              (act.radacctid IS NOT NULL) AS is_online,
              host(act.framedipaddress) AS current_ip,
              host(act.nasipaddress) AS current_nas_ip,
@@ -434,11 +461,19 @@ export const subscriberRepository = {
               s.ip_pool_id, pool.name AS ip_pool_name,
               host(s.static_ip) AS static_ip,
               host(s.ipv6_address) AS ipv6_address, s.ipv6_prefix, s.ipv6_prefix_length,
-              s.mac_address, s.vlan_id,
+              s.mac_address, s.mac_binding_enabled, s.mac_bound_at, s.mac_bound_by,
+              s.grace_period_override_days, s.grace_status, s.grace_days_granted,
+              s.grace_start_date, s.grace_end_date, s.grace_granted_by, s.grace_granted_at, s.grace_notes,
+              (s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW()) AS is_in_grace,
+              CASE
+                WHEN s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW() THEN s.grace_end_date
+                ELSE s.expiry_date
+              END AS effective_expiry_date,
+              (s.expiry_date IS NOT NULL AND s.expiry_date < NOW() AND (s.grace_status != 'active' OR s.grace_end_date < NOW())) AS is_expired,
+              s.vlan_id,
               s.nas_restriction_id, n.name AS nas_name,
               s.olt_pon_port, s.onu_mac_sn, s.onu_model,
               s.expiry_date,
-              (s.expiry_date IS NOT NULL AND s.expiry_date < NOW()) AS is_expired,
               (act.radacctid IS NOT NULL) AS is_online,
               host(act.framedipaddress) AS current_ip,
               host(act.nasipaddress) AS current_nas_ip,
@@ -475,11 +510,19 @@ export const subscriberRepository = {
               s.ip_pool_id, pool.name AS ip_pool_name,
               host(s.static_ip) AS static_ip,
               host(s.ipv6_address) AS ipv6_address, s.ipv6_prefix, s.ipv6_prefix_length,
-              s.mac_address, s.vlan_id,
+              s.mac_address, s.mac_binding_enabled, s.mac_bound_at, s.mac_bound_by,
+              s.grace_period_override_days, s.grace_status, s.grace_days_granted,
+              s.grace_start_date, s.grace_end_date, s.grace_granted_by, s.grace_granted_at, s.grace_notes,
+              (s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW()) AS is_in_grace,
+              CASE
+                WHEN s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW() THEN s.grace_end_date
+                ELSE s.expiry_date
+              END AS effective_expiry_date,
+              (s.expiry_date IS NOT NULL AND s.expiry_date < NOW() AND (s.grace_status != 'active' OR s.grace_end_date < NOW())) AS is_expired,
+              s.vlan_id,
               s.nas_restriction_id, n.name AS nas_name,
               s.olt_pon_port, s.onu_mac_sn, s.onu_model,
               s.expiry_date,
-              (s.expiry_date IS NOT NULL AND s.expiry_date < NOW()) AS is_expired,
               (act.radacctid IS NOT NULL) AS is_online,
               host(act.framedipaddress) AS current_ip,
               host(act.nasipaddress) AS current_nas_ip,
@@ -565,11 +608,59 @@ export const subscriberRepository = {
       [subscriber.username],
     );
 
+    // 5. Recent MAC Authentication attempts & rejections
+    const { rows: macAuthLogs } = await query<any>(
+      `SELECT id, presented_mac, expected_mac, host(nas_ip) AS nas_ip, nas_identifier, status, rejection_reason, auth_date
+         FROM subscriber_mac_auth_logs
+        WHERE subscriber_id = $1
+        ORDER BY auth_date DESC
+        LIMIT 25`,
+      [id],
+    );
+
+    // 6. Grace Period inheritance calculation
+    const { rows: graceCalc } = await query<any>(
+      `SELECT 
+         COALESCE(
+           s.grace_period_override_days,
+           CASE 
+             WHEN s.ownership_type = 'reseller' AND s.reseller_id IS NOT NULL THEN r.grace_period_days
+             WHEN s.ownership_type = 'branch' AND s.branch_id IS NOT NULL THEN b.grace_period_days
+             ELSE NULL
+           END,
+           COALESCE(r.grace_period_days, b.grace_period_days),
+           o.default_grace_period_days,
+           3
+         ) AS effective_grace_days,
+         s.grace_period_override_days AS customer_override_days,
+         b.grace_period_days AS branch_grace_days,
+         r.grace_period_days AS reseller_grace_days,
+         o.default_grace_period_days AS org_grace_days,
+         o.name AS org_name,
+         b.name AS branch_name,
+         r.name AS reseller_name,
+         s.ownership_type
+        FROM subscribers s
+        LEFT JOIN organizations o ON o.id = s.organization_id
+        LEFT JOIN branches b ON b.id = s.branch_id
+        LEFT JOIN resellers r ON r.id = s.reseller_id
+       WHERE s.id = $1`,
+      [id],
+    );
+
     return {
       subscriber,
       services,
       notes,
       activity,
+      macAuthLogs,
+      graceInfo: graceCalc[0] || {
+        effective_grace_days: 3,
+        customer_override_days: null,
+        branch_grace_days: null,
+        reseller_grace_days: null,
+        org_grace_days: 3,
+      },
       radiusAttributes: {
         check: radcheck,
         reply: radreply,
@@ -591,6 +682,12 @@ export const subscriberRepository = {
       }
     }
 
+    const normalizedMac = input.mac_address ? normalizeMacAddress(input.mac_address) : null;
+    const macBindingEnabled = input.mac_binding_enabled !== undefined ? Boolean(input.mac_binding_enabled) : Boolean(normalizedMac);
+    const macBoundAt = normalizedMac ? new Date() : null;
+    const macBoundBy = normalizedMac ? adminUsername : null;
+    const graceOverrideDays = input.grace_period_override_days !== undefined ? input.grace_period_override_days : null;
+
     const { rows } = await query<any>(
       `INSERT INTO subscribers (
          customer_id, username, password_cleartext, full_name, email, phone,
@@ -598,14 +695,16 @@ export const subscriberRepository = {
          current_package_id, ip_pool_id, static_ip, ipv6_address, ipv6_prefix,
          ipv6_prefix_length, mac_address, vlan_id, nas_restriction_id,
          olt_pon_port, onu_mac_sn, onu_model, expiry_date, notes,
-         organization_id, branch_id, reseller_id, ownership_type
+         organization_id, branch_id, reseller_id, ownership_type,
+         mac_binding_enabled, grace_period_override_days, mac_bound_at, mac_bound_by
        ) VALUES (
          $1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10, $11, $12,
          $13, $14, $15, $16, $17,
          $18, $19, $20, $21,
          $22, $23, $24, $25, $26,
-         $27, $28, $29, $30
+         $27, $28, $29, $30,
+         $31, $32, $33, $34
        ) RETURNING id`,
       [
         rawCustomerId,
@@ -626,7 +725,7 @@ export const subscriberRepository = {
         input.ipv6_address ? input.ipv6_address.trim() : null,
         input.ipv6_prefix ? input.ipv6_prefix.trim() : null,
         input.ipv6_prefix_length || 64,
-        input.mac_address?.trim() || null,
+        normalizedMac,
         input.vlan_id || null,
         input.nas_restriction_id || null,
         input.olt_pon_port?.trim() || null,
@@ -638,6 +737,10 @@ export const subscriberRepository = {
         input.branch_id || null,
         input.reseller_id || null,
         input.ownership_type || (input.reseller_id ? 'reseller' : (input.branch_id ? 'branch' : 'head_office')),
+        macBindingEnabled,
+        graceOverrideDays,
+        macBoundAt,
+        macBoundBy,
       ],
     );
 
@@ -692,6 +795,36 @@ export const subscriberRepository = {
 
     const newStatus = input.status ? (input.status === 'enabled' ? 'active' : input.status) : existing.status;
 
+    let newMac = existing.mac_address;
+    let macBoundAt = existing.mac_bound_at;
+    let macBoundBy = existing.mac_bound_by;
+
+    if (input.mac_address !== undefined) {
+      if (input.mac_address && input.mac_address.trim()) {
+        const norm = normalizeMacAddress(input.mac_address);
+        if (!norm) {
+          throw new Error('Invalid MAC address format. Expected valid 6-octet MAC address.');
+        }
+        newMac = norm;
+        if (newMac !== existing.mac_address) {
+          macBoundAt = new Date();
+          macBoundBy = adminUsername;
+        }
+      } else {
+        newMac = null;
+        macBoundAt = null;
+        macBoundBy = null;
+      }
+    }
+
+    const newMacBindingEnabled = input.mac_binding_enabled !== undefined
+      ? input.mac_binding_enabled
+      : existing.mac_binding_enabled;
+
+    const newGraceOverride = input.grace_period_override_days !== undefined
+      ? input.grace_period_override_days
+      : existing.grace_period_override_days;
+
     await query(
       `UPDATE subscribers
           SET customer_id = COALESCE($1, customer_id),
@@ -723,8 +856,12 @@ export const subscriberRepository = {
               branch_id = $27,
               reseller_id = $28,
               ownership_type = COALESCE($29, ownership_type),
+              mac_binding_enabled = $30,
+              grace_period_override_days = $31,
+              mac_bound_at = $32,
+              mac_bound_by = $33,
               updated_at = NOW()
-        WHERE id = $30`,
+        WHERE id = $34`,
       [
         input.customer_id?.trim() || null,
         input.full_name?.trim() || null,
@@ -742,7 +879,7 @@ export const subscriberRepository = {
         input.ipv6_address !== undefined ? input.ipv6_address?.trim() || null : existing.ipv6_address,
         input.ipv6_prefix !== undefined ? input.ipv6_prefix?.trim() || null : existing.ipv6_prefix,
         input.ipv6_prefix_length !== undefined ? input.ipv6_prefix_length : existing.ipv6_prefix_length,
-        input.mac_address !== undefined ? input.mac_address?.trim() || null : existing.mac_address,
+        newMac,
         input.vlan_id !== undefined ? input.vlan_id : existing.vlan_id,
         input.nas_restriction_id !== undefined ? input.nas_restriction_id : existing.nas_restriction_id,
         input.olt_pon_port !== undefined ? input.olt_pon_port?.trim() || null : existing.olt_pon_port,
@@ -755,6 +892,10 @@ export const subscriberRepository = {
         input.branch_id !== undefined ? input.branch_id : existing.branch_id,
         input.reseller_id !== undefined ? input.reseller_id : existing.reseller_id,
         input.ownership_type !== undefined ? input.ownership_type : existing.ownership_type,
+        newMacBindingEnabled,
+        newGraceOverride,
+        macBoundAt,
+        macBoundBy,
         id,
       ],
     );
@@ -1155,6 +1296,9 @@ export const subscriberRepository = {
       `SELECT s.username, s.password_cleartext, s.status,
               host(s.static_ip) AS static_ip,
               s.expiry_date,
+              s.mac_address, s.mac_binding_enabled,
+              s.grace_status, s.grace_end_date,
+              (s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW()) AS is_in_grace,
               p.name AS package_name,
               pool.name AS pool_name
          FROM subscribers s
@@ -1167,6 +1311,7 @@ export const subscriberRepository = {
     if (!rows[0]) return;
     const sub = rows[0];
     const username = sub.username.toLowerCase();
+    const isInGrace = Boolean(sub.is_in_grace);
 
     // 1. Wipe existing check and reply entries
     await query(`DELETE FROM radcheck WHERE lower(username) = $1`, [username]);
@@ -1181,7 +1326,14 @@ export const subscriberRepository = {
     );
 
     // 3. Status checks: if suspended, disabled, or terminated -> Auth-Type := Reject
+    // Expired check: only reject if NOT in active grace!
     if (sub.status === 'suspended' || sub.status === 'disabled' || sub.status === 'terminated') {
+      await query(
+        `INSERT INTO radcheck (username, attribute, op, value)
+         VALUES ($1, 'Auth-Type', ':=', 'Reject')`,
+        [username],
+      );
+    } else if (sub.status === 'expired' && !isInGrace) {
       await query(
         `INSERT INTO radcheck (username, attribute, op, value)
          VALUES ($1, 'Auth-Type', ':=', 'Reject')`,
@@ -1190,8 +1342,10 @@ export const subscriberRepository = {
     }
 
     // 4. Expiration check: Format DD Mon YYYY HH:MI:SS
-    if (sub.expiry_date) {
-      const exp = new Date(sub.expiry_date);
+    // When subscriber is in active grace, effective expiry is grace_end_date!
+    const effectiveExpiry = isInGrace ? sub.grace_end_date : sub.expiry_date;
+    if (effectiveExpiry) {
+      const exp = new Date(effectiveExpiry);
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const day = String(exp.getUTCDate()).padStart(2, '0');
       const mon = months[exp.getUTCMonth()];
@@ -1208,7 +1362,22 @@ export const subscriberRepository = {
       );
     }
 
-    // 5. Framed-IP-Address (Static IP)
+    // 5. Calling-Station-Id (MAC Binding)
+    // If MAC binding is enabled and subscriber has a bound MAC address:
+    // Insert Calling-Station-Id == <MAC> into radcheck.
+    // If unbound, no check is inserted yet so first valid login auto-binds via DB trigger!
+    if (sub.mac_binding_enabled && sub.mac_address) {
+      const normMac = normalizeMacAddress(sub.mac_address);
+      if (normMac) {
+        await query(
+          `INSERT INTO radcheck (username, attribute, op, value)
+           VALUES ($1, 'Calling-Station-Id', '==', $2)`,
+          [username, normMac],
+        );
+      }
+    }
+
+    // 6. Framed-IP-Address (Static IP)
     if (sub.static_ip) {
       await query(
         `INSERT INTO radreply (username, attribute, op, value)
@@ -1217,7 +1386,7 @@ export const subscriberRepository = {
       );
     }
 
-    // 6. Framed-Pool (if IP Pool assigned and not static IP)
+    // 7. Framed-Pool (if IP Pool assigned and not static IP)
     if (!sub.static_ip && sub.pool_name) {
       await query(
         `INSERT INTO radreply (username, attribute, op, value)
@@ -1226,7 +1395,7 @@ export const subscriberRepository = {
       );
     }
 
-    // 7. Group assignment
+    // 8. Group assignment
     if (sub.package_name) {
       await query(
         `INSERT INTO radusergroup (username, groupname, priority)
@@ -1234,6 +1403,222 @@ export const subscriberRepository = {
         [username, sub.package_name],
       );
     }
+  },
+
+  async bindMac(id: number, mac: string, adminUsername = 'admin'): Promise<SubscriberRow> {
+    const sub = await this.findById(id);
+    if (!sub) throw new Error('Subscriber not found');
+    const norm = normalizeMacAddress(mac);
+    if (!norm) {
+      throw new Error('Invalid MAC address format. Expected valid 6-octet MAC address (e.g. AA:BB:CC:DD:EE:FF).');
+    }
+
+    await query(
+      `UPDATE subscribers
+          SET mac_address = $1,
+              mac_binding_enabled = true,
+              mac_bound_at = NOW(),
+              mac_bound_by = $2,
+              updated_at = NOW()
+        WHERE id = $3`,
+      [norm, adminUsername, id],
+    );
+
+    await this.logActivity(id, 'mac_bound', `MAC address manually bound to ${norm}`, adminUsername);
+    await this.syncToRadius(id);
+    return (await this.findById(id))!;
+  },
+
+  async unbindMac(id: number, adminUsername = 'admin'): Promise<SubscriberRow> {
+    const sub = await this.findById(id);
+    if (!sub) throw new Error('Subscriber not found');
+
+    const previousMac = sub.mac_address || 'None';
+    await query(
+      `UPDATE subscribers
+          SET mac_address = NULL,
+              mac_bound_at = NULL,
+              mac_bound_by = NULL,
+              updated_at = NOW()
+        WHERE id = $1`,
+      [id],
+    );
+
+    await this.logActivity(
+      id,
+      'mac_unbound',
+      `MAC address unbound (previously ${previousMac}). Next successful authentication will automatically bind new device MAC.`,
+      adminUsername,
+    );
+    await this.syncToRadius(id);
+    return (await this.findById(id))!;
+  },
+
+  async toggleMacBinding(id: number, enabled: boolean, adminUsername = 'admin'): Promise<SubscriberRow> {
+    const sub = await this.findById(id);
+    if (!sub) throw new Error('Subscriber not found');
+
+    await query(
+      `UPDATE subscribers
+          SET mac_binding_enabled = $1,
+              updated_at = NOW()
+        WHERE id = $2`,
+      [enabled, id],
+    );
+
+    await this.logActivity(
+      id,
+      'mac_binding_toggle',
+      `MAC address binding ${enabled ? 'enabled' : 'disabled'}`,
+      adminUsername,
+    );
+    await this.syncToRadius(id);
+    return (await this.findById(id))!;
+  },
+
+  async getMacAuthLogs(subscriberId: number, limit = 50): Promise<any[]> {
+    const { rows } = await query<any>(
+      `SELECT id, presented_mac, expected_mac, host(nas_ip) AS nas_ip, nas_identifier,
+              status, rejection_reason, auth_date
+         FROM subscriber_mac_auth_logs
+        WHERE subscriber_id = $1
+        ORDER BY auth_date DESC
+        LIMIT $2`,
+      [subscriberId, limit],
+    );
+    return rows;
+  },
+
+  async getEffectiveGraceDays(subscriberId: number) {
+    const { rows } = await query<any>(
+      `SELECT 
+         COALESCE(
+           s.grace_period_override_days,
+           CASE 
+             WHEN s.ownership_type = 'reseller' AND s.reseller_id IS NOT NULL THEN r.grace_period_days
+             WHEN s.ownership_type = 'branch' AND s.branch_id IS NOT NULL THEN b.grace_period_days
+             ELSE NULL
+           END,
+           COALESCE(r.grace_period_days, b.grace_period_days),
+           o.default_grace_period_days,
+           3
+         ) AS effective_grace_days,
+         s.grace_period_override_days AS customer_override_days,
+         b.grace_period_days AS branch_grace_days,
+         r.grace_period_days AS reseller_grace_days,
+         o.default_grace_period_days AS org_grace_days,
+         o.name AS org_name,
+         b.name AS branch_name,
+         r.name AS reseller_name,
+         s.ownership_type
+        FROM subscribers s
+        LEFT JOIN organizations o ON o.id = s.organization_id
+        LEFT JOIN branches b ON b.id = s.branch_id
+        LEFT JOIN resellers r ON r.id = s.reseller_id
+       WHERE s.id = $1`,
+      [subscriberId],
+    );
+    return rows[0] || {
+      effective_grace_days: 3,
+      customer_override_days: null,
+      branch_grace_days: null,
+      reseller_grace_days: null,
+      org_grace_days: 3,
+    };
+  },
+
+  async addGrace(subscriberId: number, days: number, notes?: string | null, adminUsername = 'admin') {
+    const sub = await this.findById(subscriberId);
+    if (!sub) throw new Error('Subscriber not found');
+    if (!days || days < 1 || days > 30) {
+      throw new Error('Grace period duration must be between 1 and 30 days');
+    }
+
+    const now = new Date();
+    let graceStart = now;
+    let graceEnd = new Date(now.getTime() + days * 86400000);
+
+    // If subscriber has not expired yet, grace period starts from expiration date!
+    if (sub.expiry_date && new Date(sub.expiry_date) > now) {
+      graceStart = new Date(sub.expiry_date);
+      graceEnd = new Date(new Date(sub.expiry_date).getTime() + days * 86400000);
+    }
+
+    await query(
+      `UPDATE subscribers
+          SET grace_status = 'active',
+              grace_days_granted = $1,
+              grace_start_date = $2,
+              grace_end_date = $3,
+              grace_granted_by = $4,
+              grace_granted_at = NOW(),
+              grace_notes = $5,
+              status = CASE WHEN status = 'expired' THEN 'active' ELSE status END,
+              updated_at = NOW()
+        WHERE id = $6`,
+      [days, graceStart, graceEnd, adminUsername, notes || null, subscriberId],
+    );
+
+    await this.logActivity(
+      subscriberId,
+      'grace_granted',
+      `Granted ${days} day(s) grace period until ${graceEnd.toISOString().split('T')[0]}` + (notes ? ` (${notes})` : ''),
+      adminUsername,
+    );
+    await this.syncToRadius(subscriberId);
+    return (await this.findById(subscriberId))!;
+  },
+
+  async revokeGrace(subscriberId: number, adminUsername = 'admin') {
+    const sub = await this.findById(subscriberId);
+    if (!sub) throw new Error('Subscriber not found');
+
+    const isPastExpiry = sub.expiry_date ? new Date(sub.expiry_date) <= new Date() : false;
+
+    await query(
+      `UPDATE subscribers
+          SET grace_status = 'expired',
+              status = CASE WHEN $1::boolean = true THEN 'expired' ELSE status END,
+              grace_notes = COALESCE(grace_notes, '') || ' [Revoked by ' || $2 || ' at ' || NOW() || ']',
+              updated_at = NOW()
+        WHERE id = $3`,
+      [isPastExpiry, adminUsername, subscriberId],
+    );
+
+    await this.logActivity(
+      subscriberId,
+      'grace_revoked',
+      `Grace period revoked by ${adminUsername}`,
+      adminUsername,
+    );
+    await this.syncToRadius(subscriberId);
+    return (await this.findById(subscriberId))!;
+  },
+
+  async updateGraceOverride(subscriberId: number, overrideDays: number | null, adminUsername = 'admin') {
+    const sub = await this.findById(subscriberId);
+    if (!sub) throw new Error('Subscriber not found');
+    if (overrideDays !== null && (overrideDays < 0 || overrideDays > 30)) {
+      throw new Error('Grace override days must be between 0 and 30, or null to inherit');
+    }
+
+    await query(
+      `UPDATE subscribers
+          SET grace_period_override_days = $1,
+              updated_at = NOW()
+        WHERE id = $2`,
+      [overrideDays, subscriberId],
+    );
+
+    await this.logActivity(
+      subscriberId,
+      'grace_override_updated',
+      overrideDays !== null
+        ? `Grace period override set to ${overrideDays} days`
+        : `Grace period override removed (inheriting from branch/reseller/org)`,
+      adminUsername,
+    );
+    return (await this.findById(subscriberId))!;
   },
 
   async countSubscribers(): Promise<number> {

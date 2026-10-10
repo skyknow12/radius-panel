@@ -28,6 +28,10 @@ import {
   LifeBuoy,
   Pin,
   Trash2,
+  Lock,
+  Unlock,
+  ShieldAlert,
+  Sparkles,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -97,6 +101,20 @@ export function SubscriberProfileModal({
   const [ticketPriority, setTicketPriority] = React.useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('MEDIUM');
   const [showCreateTicketInModal, setShowCreateTicketInModal] = React.useState(false);
 
+  // MAC Binding states
+  const [bindMacModalOpen, setBindMacModalOpen] = React.useState(false);
+  const [manualMacInput, setManualMacInput] = React.useState('');
+  const [manualMacError, setManualMacError] = React.useState<string | null>(null);
+  const [unbindConfirmOpen, setUnbindConfirmOpen] = React.useState(false);
+
+  // Grace Period states
+  const [addGraceModalOpen, setAddGraceModalOpen] = React.useState(false);
+  const [graceDaysInput, setGraceDaysInput] = React.useState<number>(3);
+  const [graceNotesInput, setGraceNotesInput] = React.useState('');
+  const [revokeGraceConfirmOpen, setRevokeGraceConfirmOpen] = React.useState(false);
+  const [overrideModalOpen, setOverrideModalOpen] = React.useState(false);
+  const [overrideDaysInput, setOverrideDaysInput] = React.useState<string>('');
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
@@ -113,6 +131,16 @@ export function SubscriberProfileModal({
       if (profRes.ok) {
         const json = await profRes.json();
         setProfile(json.data);
+        if (json.data?.graceInfo?.effective_grace_days) {
+          setGraceDaysInput(json.data.graceInfo.effective_grace_days);
+        }
+        if (json.data?.subscriber?.grace_period_override_days !== undefined) {
+          setOverrideDaysInput(
+            json.data.subscriber.grace_period_override_days !== null
+              ? String(json.data.subscriber.grace_period_override_days)
+              : ''
+          );
+        }
       }
       if (usageRes.ok) {
         const json = await usageRes.json();
@@ -289,6 +317,153 @@ export function SubscriberProfileModal({
         fetchProfile();
       }
     } catch {}
+  };
+
+  const handleToggleMacBinding = async (enabled: boolean) => {
+    try {
+      setActionLoading(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/toggle-mac-binding`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (res.ok) {
+        showNotice(`MAC address binding ${enabled ? 'enabled' : 'disabled'}.`);
+        fetchProfile();
+        onUpdate();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showNotice(err.error || 'Failed to toggle MAC binding.');
+      }
+    } catch {
+      showNotice('Network error while toggling MAC binding.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleManualBindMac = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualMacInput.trim()) return;
+    try {
+      setActionLoading(true);
+      setManualMacError(null);
+      const res = await fetch(`/api/subscribers/${subscriberId}/bind-mac`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac_address: manualMacInput.trim() }),
+      });
+      if (res.ok) {
+        showNotice('MAC address successfully bound.');
+        setBindMacModalOpen(false);
+        setManualMacInput('');
+        fetchProfile();
+        onUpdate();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setManualMacError(err.error || 'Failed to bind MAC address. Ensure format is AA:BB:CC:DD:EE:FF.');
+      }
+    } catch {
+      setManualMacError('Network error while binding MAC address.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnbindMac = async () => {
+    try {
+      setActionLoading(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/unbind-mac`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        showNotice('MAC address unbound. Next successful authentication will automatically bind the new MAC.');
+        setUnbindConfirmOpen(false);
+        fetchProfile();
+        onUpdate();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showNotice(err.error || 'Failed to unbind MAC address.');
+      }
+    } catch {
+      showNotice('Network error while unbinding MAC.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAddGrace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setActionLoading(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/add-grace`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: Number(graceDaysInput), notes: graceNotesInput.trim() || undefined }),
+      });
+      if (res.ok) {
+        showNotice(`Grace period of ${graceDaysInput} days successfully granted.`);
+        setAddGraceModalOpen(false);
+        setGraceNotesInput('');
+        fetchProfile();
+        onUpdate();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showNotice(err.error || 'Failed to grant grace period.');
+      }
+    } catch {
+      showNotice('Network error while granting grace period.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRevokeGrace = async () => {
+    try {
+      setActionLoading(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/revoke-grace`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        showNotice('Grace period revoked. Effective status updated.');
+        setRevokeGraceConfirmOpen(false);
+        fetchProfile();
+        onUpdate();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showNotice(err.error || 'Failed to revoke grace period.');
+      }
+    } catch {
+      showNotice('Network error while revoking grace period.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSaveGraceOverride = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setActionLoading(true);
+      const overrideVal = overrideDaysInput.trim() === '' ? null : parseInt(overrideDaysInput, 10);
+      const res = await fetch(`/api/subscribers/${subscriberId}/grace-override`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ override_days: overrideVal }),
+      });
+      if (res.ok) {
+        showNotice('Customer grace override updated.');
+        setOverrideModalOpen(false);
+        fetchProfile();
+        onUpdate();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showNotice(err.error || 'Failed to update grace override.');
+      }
+    } catch {
+      showNotice('Network error while updating grace override.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const sub = profile?.subscriber;
@@ -612,6 +787,198 @@ export function SubscriberProfileModal({
                           {sub.onu_mac_sn || sub.onu_model ? `${sub.onu_mac_sn || ''} ${sub.onu_model || ''}` : '—'}
                         </p>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: MAC Address Binding & Hardware Security */}
+                  <div className="p-5 rounded-xl border border-border bg-card/60 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Lock className="w-4 h-4 text-primary" /> Customer MAC Binding
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        {sub.mac_binding_enabled ? (
+                          sub.mac_address ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                              <Lock className="w-3.5 h-3.5" /> Bound & Locked
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                              <Sparkles className="w-3.5 h-3.5" /> Auto-Bind on 1st Login
+                            </span>
+                          )
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-border">
+                            <Unlock className="w-3.5 h-3.5" /> Binding Disabled
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-background border border-border/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-muted-foreground font-medium">Bound MAC Address:</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMacBinding(!sub.mac_binding_enabled)}
+                            disabled={actionLoading}
+                            className={`text-[11px] px-2 py-0.5 rounded font-semibold transition-colors ${
+                              sub.mac_binding_enabled
+                                ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'
+                                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            }`}
+                            title="Toggle whether MAC binding is enforced on RADIUS login"
+                          >
+                            {sub.mac_binding_enabled ? 'Enforcement: ON' : 'Enforcement: OFF'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-base font-bold text-foreground tracking-wider">
+                          {sub.mac_address || (
+                            <span className="text-xs font-normal text-muted-foreground italic">
+                              {sub.mac_binding_enabled
+                                ? 'Unbound — First valid authentication will automatically lock to device'
+                                : 'No MAC binding configured'}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      {sub.mac_bound_at && (
+                        <div className="pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>Bound At: {new Date(sub.mac_bound_at).toLocaleString()}</span>
+                          <span>By: {sub.mac_bound_by || 'system'}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {sub.mac_address && (
+                        <button
+                          type="button"
+                          onClick={() => setUnbindConfirmOpen(true)}
+                          disabled={actionLoading}
+                          className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        >
+                          <Unlock className="w-3.5 h-3.5" /> Unbind MAC
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualMacInput(sub.mac_address || '');
+                          setManualMacError(null);
+                          setBindMacModalOpen(true);
+                        }}
+                        disabled={actionLoading}
+                        className="px-3 py-1.5 rounded-lg bg-card border border-border hover:bg-accent text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-primary" /> {sub.mac_address ? 'Change MAC' : 'Manually Bind MAC'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Grace Period Management */}
+                  <div className="p-5 rounded-xl border border-border bg-card/60 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-primary" /> Grace Period Management
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        {sub.is_in_grace || sub.grace_status === 'active' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            Active Grace
+                          </span>
+                        ) : sub.grace_status === 'expired' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                            <AlertTriangle className="w-3.5 h-3.5" /> Grace Expired
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-border">
+                            No Active Grace
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-background border border-border/80 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground font-medium">Effective Grace Duration:</span>
+                        <span className="font-bold text-foreground">
+                          {profile?.graceInfo?.effective_grace_days ?? 3} Day(s)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground font-medium">Inheritance Source:</span>
+                        <span className="px-2 py-0.5 rounded bg-muted text-[11px] font-medium text-foreground">
+                          {profile?.graceInfo?.customer_override_days !== null && profile?.graceInfo?.customer_override_days !== undefined
+                            ? `Customer Override (${profile.graceInfo.customer_override_days}d)`
+                            : profile?.graceInfo?.ownership_type === 'reseller' && profile?.graceInfo?.reseller_grace_days !== null && profile?.graceInfo?.reseller_grace_days !== undefined
+                            ? `Reseller Default (${profile.graceInfo.reseller_grace_days}d)`
+                            : profile?.graceInfo?.branch_grace_days !== null && profile?.graceInfo?.branch_grace_days !== undefined
+                            ? `Branch Default (${profile.graceInfo.branch_grace_days}d)`
+                            : `Organization Default (${profile?.graceInfo?.org_grace_days ?? 3}d)`}
+                        </span>
+                      </div>
+
+                      {sub.grace_status === 'active' && sub.grace_end_date && (
+                        <div className="pt-2 border-t border-border/40 space-y-1">
+                          <div className="flex items-center justify-between text-emerald-500 font-semibold">
+                            <span>Grace Valid Until:</span>
+                            <span>{new Date(sub.grace_end_date).toLocaleString()}</span>
+                          </div>
+                          {sub.grace_granted_by && (
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                              <span>Granted By: {sub.grace_granted_by}</span>
+                              {sub.grace_notes && <span>Note: {sub.grace_notes}</span>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGraceDaysInput(profile?.graceInfo?.effective_grace_days || 3);
+                          setGraceNotesInput('');
+                          setAddGraceModalOpen(true);
+                        }}
+                        disabled={actionLoading}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+                      >
+                        <Clock className="w-3.5 h-3.5" /> {sub.is_in_grace ? 'Extend Grace' : 'Add Grace'}
+                      </button>
+
+                      {sub.is_in_grace && (
+                        <button
+                          type="button"
+                          onClick={() => setRevokeGraceConfirmOpen(true)}
+                          disabled={actionLoading}
+                          className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" /> Revoke Grace
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOverrideDaysInput(
+                            sub.grace_period_override_days !== null && sub.grace_period_override_days !== undefined
+                              ? String(sub.grace_period_override_days)
+                              : ''
+                          );
+                          setOverrideModalOpen(true);
+                        }}
+                        disabled={actionLoading}
+                        className="px-3 py-1.5 rounded-lg bg-card border border-border hover:bg-accent text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        Configure Override
+                      </button>
                     </div>
                   </div>
 
@@ -969,33 +1336,106 @@ export function SubscriberProfileModal({
 
               {/* TAB 6: AUTHENTICATION LOGS */}
               {activeTab === 'auth' && (
-                <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-foreground">Recent Authentication Attempts</h3>
-                  <div className="border border-border rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-muted/50 border-b border-border text-muted-foreground uppercase text-[10px] tracking-wider font-semibold">
-                        <tr>
-                          <th className="py-2.5 px-4">Timestamp</th>
-                          <th className="py-2.5 px-4">Result</th>
-                          <th className="py-2.5 px-4">User</th>
-                          <th className="py-2.5 px-4">Service</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border font-mono text-xs">
-                        <tr className="hover:bg-accent/40">
-                          <td className="py-2.5 px-4 text-muted-foreground">
-                            {new Date().toLocaleString()}
-                          </td>
-                          <td className="py-2.5 px-4">
-                            <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> Access-Accept
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-4 text-foreground">{sub.username}</td>
-                          <td className="py-2.5 px-4 text-muted-foreground">FreeRADIUS PostgreSQL</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                <div className="space-y-6">
+                  {/* MAC Authentication & Rejection Attempts */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-primary" />
+                          Hardware MAC Authentication & Security Log
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          Real-time multi-vendor MAC address validation and mismatch rejections enforced by FreeRADIUS.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="border border-border rounded-xl overflow-hidden bg-card/40">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-muted/50 border-b border-border text-muted-foreground uppercase text-[10px] tracking-wider font-semibold">
+                          <tr>
+                            <th className="py-2.5 px-3">Timestamp</th>
+                            <th className="py-2.5 px-3">Status</th>
+                            <th className="py-2.5 px-3">Presented MAC</th>
+                            <th className="py-2.5 px-3">Expected / Bound MAC</th>
+                            <th className="py-2.5 px-3">NAS IP / Identifier</th>
+                            <th className="py-2.5 px-3">Audit / Rejection Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border font-mono text-[11px]">
+                          {profile?.macAuthLogs && profile.macAuthLogs.length > 0 ? (
+                            profile.macAuthLogs.map((log) => (
+                              <tr key={log.id} className="hover:bg-accent/40">
+                                <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
+                                  {new Date(log.auth_date).toLocaleString()}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  {log.status === 'accepted' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                      <CheckCircle2 className="w-3 h-3" /> Accepted
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                                      <XCircle className="w-3 h-3" /> Rejected
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 font-bold text-foreground">
+                                  {log.presented_mac || '—'}
+                                </td>
+                                <td className="py-2.5 px-3 text-muted-foreground">
+                                  {log.expected_mac || '—'}
+                                </td>
+                                <td className="py-2.5 px-3 text-muted-foreground">
+                                  {log.nas_ip || log.nas_identifier || '—'}
+                                </td>
+                                <td className="py-2.5 px-3 font-sans text-xs text-foreground">
+                                  {log.rejection_reason || (log.status === 'accepted' ? 'Valid credentials & matching MAC' : 'Authentication rejected')}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="py-6 text-center text-muted-foreground font-sans text-xs">
+                                No MAC validation anomalies or first-login auto-bind events recorded yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* General RADIUS Auth Attempts */}
+                  <div className="space-y-3 pt-2">
+                    <h3 className="text-sm font-bold text-foreground">Standard RADIUS Authentication Log (radpostauth)</h3>
+                    <div className="border border-border rounded-xl overflow-hidden bg-card/40">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-muted/50 border-b border-border text-muted-foreground uppercase text-[10px] tracking-wider font-semibold">
+                          <tr>
+                            <th className="py-2.5 px-4">Timestamp</th>
+                            <th className="py-2.5 px-4">Result</th>
+                            <th className="py-2.5 px-4">User</th>
+                            <th className="py-2.5 px-4">Service</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border font-mono text-xs">
+                          <tr className="hover:bg-accent/40">
+                            <td className="py-2.5 px-4 text-muted-foreground whitespace-nowrap">
+                              {new Date().toLocaleString()}
+                            </td>
+                            <td className="py-2.5 px-4">
+                              <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Access-Accept
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 text-foreground">{sub.username}</td>
+                            <td className="py-2.5 px-4 text-muted-foreground">FreeRADIUS PostgreSQL</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1535,6 +1975,307 @@ export function SubscriberProfileModal({
                     className="px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-95"
                   >
                     Apply Package Change
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 1. Manual Bind MAC Modal */}
+        {bindMacModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Lock className="w-5 h-5 text-primary" /> Manually Bind MAC Address
+                </h3>
+                <button
+                  onClick={() => setBindMacModalOpen(false)}
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleManualBindMac} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-medium text-muted-foreground block mb-1">
+                    Device MAC Address:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={manualMacInput}
+                    onChange={(e) => {
+                      setManualMacInput(e.target.value);
+                      setManualMacError(null);
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-mono text-sm uppercase"
+                    placeholder="AA:BB:CC:DD:EE:FF"
+                  />
+                  {manualMacError && (
+                    <p className="text-rose-500 font-semibold text-xs mt-1.5 flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5" /> {manualMacError}
+                    </p>
+                  )}
+                  <p className="text-muted-foreground text-[11px] mt-1.5 leading-relaxed">
+                    Accepts standard formats (AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF, Cisco aabb.ccdd.eeff, or raw hex). Will be canonicalized automatically.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 space-y-1">
+                  <span className="font-bold text-primary">Enforcement Policy</span>
+                  <p className="text-muted-foreground text-[11px]">
+                    Binding a MAC address automatically enables MAC enforcement in FreeRADIUS and inserts a strict Calling-Station-Id check into the RADIUS database.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setBindMacModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading || !manualMacInput.trim()}
+                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-95"
+                  >
+                    Save & Bind MAC
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 2. Unbind MAC Confirmation Modal */}
+        {unbindConfirmOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center flex-shrink-0">
+                  <Unlock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Confirm Unbind MAC</h3>
+                  <p className="text-xs text-muted-foreground">Release device lock for subscriber {sub.username}</p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-muted/40 border border-border text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Currently Bound MAC:</span>
+                  <span className="font-mono font-bold text-foreground">{sub.mac_address}</span>
+                </div>
+                <p className="text-muted-foreground leading-relaxed pt-1 border-t border-border/40 text-[11px]">
+                  After unbinding, the next successful authentication will automatically bind the customer&apos;s new valid MAC address.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setUnbindConfirmOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80 text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUnbindMac}
+                  disabled={actionLoading}
+                  className="px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold hover:bg-rose-700 text-xs shadow-sm transition-colors"
+                >
+                  Confirm Unbind
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3. Add Grace Period Modal */}
+        {addGraceModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-primary" /> {sub.is_in_grace ? 'Extend Grace Period' : 'Grant Grace Period'}
+                </h3>
+                <button
+                  onClick={() => setAddGraceModalOpen(false)}
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddGrace} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-medium text-muted-foreground block mb-1">
+                    Duration in Days (1 - 30):
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    required
+                    value={graceDaysInput}
+                    onChange={(e) => setGraceDaysInput(Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 1)))}
+                    className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-semibold text-sm"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    {[1, 3, 5, 7, 14, 30].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setGraceDaysInput(d)}
+                        className={`px-2.5 py-1 rounded-lg font-medium text-[11px] transition-colors ${
+                          graceDaysInput === d
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {d} {d === 1 ? 'day' : 'days'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-medium text-muted-foreground block mb-1">
+                    Notes / Reason (Optional):
+                  </label>
+                  <input
+                    type="text"
+                    value={graceNotesInput}
+                    onChange={(e) => setGraceNotesInput(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none"
+                    placeholder="e.g. Courtesy grace granted pending bank transfer"
+                  />
+                </div>
+
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1 text-emerald-500">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" /> Seamless Connectivity Guaranteed
+                  </span>
+                  <p className="text-[11px] opacity-90">
+                    FreeRADIUS authorization will permit the subscriber to connect until the grace period lapses.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setAddGraceModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 shadow-sm transition-colors"
+                  >
+                    Grant Grace
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 4. Revoke Grace Confirmation Modal */}
+        {revokeGraceConfirmOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Confirm Revoke Grace Period</h3>
+                  <p className="text-xs text-muted-foreground">Terminate grace extension for {sub.username}</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Are you sure you want to revoke the active grace period? If the subscriber&apos;s standard subscription has already expired, their account status will immediately revert to expired and RADIUS authorization will be revoked.
+              </p>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setRevokeGraceConfirmOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80 text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRevokeGrace}
+                  disabled={actionLoading}
+                  className="px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold hover:bg-rose-700 text-xs shadow-sm transition-colors"
+                >
+                  Revoke Grace Immediately
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 5. Customer Grace Override Modal */}
+        {overrideModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-primary" /> Customer Grace Override
+                </h3>
+                <button
+                  onClick={() => setOverrideModalOpen(false)}
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveGraceOverride} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-medium text-muted-foreground block mb-1">
+                    Override Duration (Days):
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="30"
+                    value={overrideDaysInput}
+                    onChange={(e) => setOverrideDaysInput(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-semibold text-sm"
+                    placeholder="Leave blank to inherit default"
+                  />
+                  <p className="text-muted-foreground text-[11px] mt-1.5 leading-relaxed">
+                    Leave blank to inherit the default ({profile?.graceInfo?.reseller_grace_days ?? profile?.graceInfo?.branch_grace_days ?? profile?.graceInfo?.org_grace_days ?? 3} days). Setting 0 days explicitly disables grace period for this customer.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setOverrideModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading}
+                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-95"
+                  >
+                    Save Override
                   </button>
                 </div>
               </form>

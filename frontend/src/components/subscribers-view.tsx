@@ -114,6 +114,8 @@ export function SubscribersView({
   const [formStaticIp, setFormStaticIp] = React.useState('');
   const [formIpv6Prefix, setFormIpv6Prefix] = React.useState('');
   const [formMac, setFormMac] = React.useState('');
+  const [formMacBindingEnabled, setFormMacBindingEnabled] = React.useState(false);
+  const [formGraceOverrideDays, setFormGraceOverrideDays] = React.useState('');
   const [formVlan, setFormVlan] = React.useState<number | ''>('');
   const [formNasRestrictionId, setFormNasRestrictionId] = React.useState<number | ''>('');
   const [formOltPon, setFormOltPon] = React.useState('');
@@ -287,6 +289,8 @@ export function SubscribersView({
     setFormStaticIp('');
     setFormIpv6Prefix('');
     setFormMac('');
+    setFormMacBindingEnabled(false);
+    setFormGraceOverrideDays('');
     setFormVlan('');
     setFormNasRestrictionId('');
     setFormOltPon('');
@@ -318,6 +322,12 @@ export function SubscribersView({
     setFormStaticIp(sub.static_ip || '');
     setFormIpv6Prefix(sub.ipv6_prefix || '');
     setFormMac(sub.mac_address || '');
+    setFormMacBindingEnabled(sub.mac_binding_enabled ?? false);
+    setFormGraceOverrideDays(
+      sub.grace_period_override_days !== null && sub.grace_period_override_days !== undefined
+        ? String(sub.grace_period_override_days)
+        : ''
+    );
     setFormVlan(sub.vlan_id || '');
     setFormNasRestrictionId(sub.nas_restriction_id || '');
     setFormOltPon(sub.olt_pon_port || '');
@@ -364,6 +374,9 @@ export function SubscribersView({
         static_ip: formStaticIp.trim() || undefined,
         ipv6_prefix: formIpv6Prefix.trim() || undefined,
         mac_address: formMac.trim() || undefined,
+        mac_binding_enabled: formMacBindingEnabled,
+        grace_period_override_days:
+          formGraceOverrideDays !== '' ? parseInt(formGraceOverrideDays, 10) : null,
         vlan_id: formVlan ? Number(formVlan) : undefined,
         nas_restriction_id: formNasRestrictionId ? Number(formNasRestrictionId) : undefined,
         olt_pon_port: formOltPon.trim() || undefined,
@@ -795,6 +808,16 @@ export function SubscribersView({
                             ? new Date(sub.expiry_date).toLocaleDateString()
                             : 'Unlimited'}
                         </span>
+                        {sub.grace_status === 'ACTIVE' && (
+                          <span className="block mt-0.5 text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded w-fit">
+                            Grace Active
+                          </span>
+                        )}
+                        {sub.mac_binding_enabled && (
+                          <span className="block mt-0.5 text-[9px] font-mono text-cyan-400" title={sub.mac_address || 'Auto-bind on first login'}>
+                            🔒 {sub.mac_address ? sub.mac_address.slice(0, 8) + '…' : 'MAC Auto'}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -1200,6 +1223,39 @@ export function SubscribersView({
                       placeholder="AA:BB:CC:DD:EE:FF"
                       className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-mono"
                     />
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <label className="flex items-center gap-2 cursor-pointer select-none pt-2">
+                      <input
+                        type="checkbox"
+                        checked={formMacBindingEnabled}
+                        onChange={(e) => setFormMacBindingEnabled(e.target.checked)}
+                        className="w-4 h-4 rounded text-primary focus:ring-primary border-border bg-background"
+                      />
+                      <span className="font-medium text-foreground text-xs">
+                        Enable MAC Binding Enforcement
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-muted-foreground mt-0.5 ml-6">
+                      Auto-binds customer MAC upon first successful login if blank
+                    </span>
+                  </div>
+                  <div>
+                    <label className="font-medium text-muted-foreground block mb-1">
+                      Grace Period Override (Days)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      value={formGraceOverrideDays}
+                      onChange={(e) => setFormGraceOverrideDays(e.target.value)}
+                      placeholder="Inherit from Branch/Org (blank)"
+                      className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
+                    <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                      Leave blank to inherit. Set to 0 to disable grace for this customer.
+                    </span>
                   </div>
                   <div>
                     <label className="font-medium text-muted-foreground block mb-1">OLT PON Port</label>
