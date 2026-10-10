@@ -1020,7 +1020,7 @@ export interface UserManagementItem {
   phone: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   is_active: boolean;
-  data_scope: 'GLOBAL' | 'ORGANIZATION' | 'BRANCH' | 'RESELLER' | 'OWN';
+  data_scope: 'PLATFORM' | 'ORGANIZATION' | 'HEAD_OFFICE' | 'BRANCH' | 'RESELLER' | 'OWN_RECORDS' | 'GLOBAL' | 'OWN';
   user_type: string;
   organization_id: number | null;
   branch_id: number | null;
@@ -1036,6 +1036,7 @@ export interface UserManagementItem {
   last_login_ip: string | null;
   force_password_reset: boolean;
   token_version: number;
+  notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1046,9 +1047,13 @@ export interface RoleItem {
   display_name: string;
   description: string | null;
   is_system: boolean;
+  is_active?: boolean;
+  can_edit?: boolean;
+  is_developer_only?: boolean;
   user_count?: number;
   permission_count?: number;
   permissions?: string[];
+  users?: Array<{ id: string; username: string; full_name: string | null; email: string | null; status: string }>;
   created_at: string;
   updated_at: string;
 }
@@ -1074,6 +1079,8 @@ export interface LoginHistoryItem {
 export interface UserSessionItem {
   id: string;
   user_id: string;
+  username?: string;
+  full_name?: string | null;
   ip_address: string | null;
   user_agent: string | null;
   last_activity: string;

@@ -35,9 +35,44 @@ export function requirePermission(permissionKey: string) {
     if (!req.user) {
       return next(HttpError.unauthorized());
     }
-    if (req.user.role === 'super_admin' || req.user.permissions.includes(permissionKey)) {
+    // Developer Super Admin has all permissions
+    if (req.user.role === 'super_admin' || (req.user.roles && req.user.roles.includes('super_admin'))) {
+      return next();
+    }
+    if (req.user.permissions && req.user.permissions.includes(permissionKey)) {
       return next();
     }
     return next(HttpError.forbidden(`Missing required permission: ${permissionKey}`));
   };
 }
+
+export function requireDeveloperSuperAdmin() {
+  return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(HttpError.unauthorized());
+    }
+    if (req.user.role === 'super_admin' || (req.user.roles && req.user.roles.includes('super_admin'))) {
+      return next();
+    }
+    return next(HttpError.forbidden('Access restricted to Developer Super Admin'));
+  };
+}
+
+export function requireIspAdmin() {
+  return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(HttpError.unauthorized());
+    }
+    const isSuper = req.user.role === 'super_admin' || (req.user.roles && req.user.roles.includes('super_admin'));
+    const isIsp =
+      req.user.role === 'isp_admin' ||
+      req.user.role === 'organization_admin' ||
+      req.user.role === 'admin' ||
+      (req.user.roles && (req.user.roles.includes('isp_admin') || req.user.roles.includes('organization_admin')));
+    if (isSuper || isIsp) {
+      return next();
+    }
+    return next(HttpError.forbidden('Access restricted to ISP Administrator'));
+  };
+}
+

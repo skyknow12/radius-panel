@@ -46,6 +46,7 @@ import { TicketsView } from '@/components/tickets-view';
 import { CrmView } from '@/components/crm-view';
 import { SlaRulesView } from '@/components/sla-rules-view';
 import { SettingsAppearanceView } from '@/components/settings-appearance-view';
+import { DeveloperToolsView } from '@/components/developer-tools-view';
 import { GlobalSearchDialog } from '@/components/global-search-dialog';
 import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
@@ -506,6 +507,10 @@ export default function DashboardPage() {
             <UserManagementView currentUser={currentUser} />
           ) : activeTab === 'roles' ? (
             <RolesPermissionsView currentUser={currentUser} />
+          ) : activeTab === 'developer_diagnostics' || activeTab === 'system_diagnostics' ? (
+            <DeveloperToolsView currentUser={currentUser} initialTab="diagnostics" />
+          ) : activeTab === 'developer_config' || activeTab === 'system_developer_config' ? (
+            <DeveloperToolsView currentUser={currentUser} initialTab="config" />
           ) : activeTab === 'packages' ? (
             <PackagesView />
           ) : activeTab === 'radius_profiles' ? (

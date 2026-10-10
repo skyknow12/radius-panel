@@ -35,6 +35,8 @@ import {
   Zap,
   Palette,
   Sparkles,
+  Terminal,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppTheme } from '@/context/app-theme-context';
@@ -89,21 +91,32 @@ export function Sidebar({
     });
   };
 
+  const DEV_ONLY_PERMS = [
+    'system.developer_config',
+    'system.diagnostics',
+    'system.database_tools',
+    'platform.organizations.manage',
+  ];
+
   // RBAC Permission Check Helper
   const hasPermission = (required?: string | string[]) => {
     if (!required) return true;
-    if (!currentUser) return true;
-    if (currentUser.role === 'super_admin' || currentUser.role === 'admin') return true;
-    if (
-      Array.isArray(currentUser.roles) &&
-      (currentUser.roles.includes('super_admin') || currentUser.roles.includes('admin'))
-    ) {
+    if (!currentUser) return false;
+    const isSuper =
+      currentUser.role === 'super_admin' ||
+      (Array.isArray(currentUser.roles) && currentUser.roles.includes('super_admin'));
+
+    const reqList = Array.isArray(required) ? required : [required];
+    if (reqList.some((p) => DEV_ONLY_PERMS.includes(p))) {
+      return isSuper;
+    }
+
+    if (isSuper || currentUser.role === 'admin' || (Array.isArray(currentUser.roles) && currentUser.roles.includes('admin'))) {
       return true;
     }
     const userPerms = Array.isArray(currentUser.permissions) ? currentUser.permissions : [];
     if (userPerms.length === 0 || userPerms.includes('*')) return true;
 
-    const reqList = Array.isArray(required) ? required : [required];
     return reqList.some((p) => {
       const prefix = p.split('.')[0];
       return (
@@ -385,6 +398,19 @@ export function Sidebar({
           </>,
           ['settings.view', 'audit_logs.view']
         )}
+
+        {/* 10. DEVELOPER PLATFORM (SUPER ADMIN ONLY) */}
+        {(currentUser?.role === 'super_admin' || (Array.isArray(currentUser?.roles) && currentUser.roles.includes('super_admin'))) &&
+          renderSection(
+            'developer',
+            'DEVELOPER PLATFORM',
+            Terminal,
+            <>
+              {renderNavItem('developer_diagnostics', 'System Diagnostics', Activity, 'DEV', 'system.diagnostics')}
+              {renderNavItem('developer_config', 'Developer Config', Wrench, 'DEV', 'system.developer_config')}
+            </>,
+            'system.developer_config'
+          )}
       </div>
 
       {/* Footer User Info */}

@@ -3,14 +3,25 @@
  * Thrown from services / middleware and rendered by the error handler.
  */
 export class HttpError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: unknown;
+
   constructor(
-    public readonly status: number,
-    public readonly code: string,
+    status: number,
+    code: string,
     message: string,
-    public readonly details?: unknown,
+    details?: unknown,
   ) {
     super(message);
     this.name = 'HttpError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+
+  get statusCode(): number {
+    return this.status;
   }
 
   static badRequest(message = 'Bad request', details?: unknown) {

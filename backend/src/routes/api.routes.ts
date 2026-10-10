@@ -32,7 +32,7 @@ import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
 import { envelope } from '../lib/response';
 import { HttpError } from '../lib/http-error';
-import { authMiddleware, requirePermission, type AuthenticatedRequest } from '../middleware/auth.middleware';
+import { authMiddleware, requirePermission, requireDeveloperSuperAdmin, requireIspAdmin, type AuthenticatedRequest } from '../middleware/auth.middleware';
 import type { TimeRange } from '../types/api';
 
 export const apiRouter = Router();
@@ -3001,7 +3001,7 @@ apiRouter.get(
   requirePermission('users.view'),
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    const { search, role, status, data_scope, page, limit } = req.query;
+    const { search, role, status, data_scope, sortBy, sortOrder, page, limit } = req.query;
 
     let branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
     let resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
@@ -3013,16 +3013,21 @@ apiRouter.get(
       branchId = authReq.user.branchId || -1;
     }
 
-    const result = await userManagementRepository.listUsers({
-      search: search ? String(search) : undefined,
-      role: role ? String(role) : undefined,
-      status: status ? String(status) : undefined,
-      data_scope: data_scope ? String(data_scope) : undefined,
-      branch_id: branchId,
-      reseller_id: resellerId,
-      page: page ? Number(page) : 1,
-      limit: limit ? Number(limit) : 20,
-    });
+    const result = await userManagementRepository.listUsers(
+      {
+        search: search ? String(search) : undefined,
+        role: role ? String(role) : undefined,
+        status: status ? String(status) : undefined,
+        data_scope: data_scope ? String(data_scope) : undefined,
+        branch_id: branchId,
+        reseller_id: resellerId,
+        sortBy: sortBy ? String(sortBy) : undefined,
+        sortOrder: sortOrder === 'ASC' ? 'ASC' : 'DESC',
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 20,
+      },
+      authReq.user
+    );
     res.json(envelope(result.users, 'live', { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
   })
 );
@@ -3035,38 +3040,41 @@ apiRouter.post(
     const authReq = req as AuthenticatedRequest;
     const schema = z.object({
       username: z.string().min(3),
-      email: z.string().email().optional(),
+      email: z.string().email().optional().or(z.literal('')).nullable(),
       fullName: z.string().min(1),
-      phone: z.string().optional(),
+      phone: z.string().optional().nullable(),
       password: z.string().min(6),
       roleIds: z.array(z.number()).min(1),
-      dataScope: z.enum(['GLOBAL', 'ORGANIZATION', 'BRANCH', 'RESELLER', 'OWN']).optional(),
+      dataScope: z.enum(['PLATFORM', 'ORGANIZATION', 'HEAD_OFFICE', 'BRANCH', 'RESELLER', 'OWN_RECORDS', 'GLOBAL', 'OWN']).optional(),
       userType: z.enum(['isp', 'branch', 'reseller']).optional(),
       organizationId: z.number().optional(),
-      branchId: z.number().optional(),
-      resellerId: z.number().optional(),
+      branchId: z.number().optional().nullable(),
+      resellerId: z.number().optional().nullable(),
       forcePasswordReset: z.boolean().optional(),
+      notes: z.string().optional().nullable(),
     });
 
     const parsed = schema.parse(req.body);
 
-    // Enforce scope: non-super_admin cannot create users with broader scope than themselves
-    if (authReq.user?.role !== 'super_admin') {
-      if (authReq.user?.userType === 'branch') {
-        parsed.branchId = authReq.user.branchId || undefined;
-        parsed.userType = 'branch';
-        parsed.dataScope = 'BRANCH';
-      } else if (authReq.user?.userType === 'reseller') {
-        parsed.resellerId = authReq.user.resellerId || undefined;
-        parsed.userType = 'reseller';
-        parsed.dataScope = 'RESELLER';
-      }
-    }
-
-    const userId = await userManagementRepository.createUser({
-      ...parsed,
-      createdBy: authReq.user?.userId,
-    });
+    const userId = await userManagementRepository.createUser(
+      {
+        username: parsed.username,
+        email: parsed.email || undefined,
+        fullName: parsed.fullName,
+        phone: parsed.phone || undefined,
+        password: parsed.password,
+        roleIds: parsed.roleIds,
+        dataScope: parsed.dataScope,
+        userType: parsed.userType,
+        organizationId: parsed.organizationId,
+        branchId: parsed.branchId || undefined,
+        resellerId: parsed.resellerId || undefined,
+        forcePasswordReset: parsed.forcePasswordReset,
+        notes: parsed.notes || undefined,
+        createdBy: authReq.user?.userId,
+      },
+      authReq.user
+    );
 
     res.status(201).json(envelope({ id: userId, message: 'User created successfully' }, 'live'));
   })
@@ -3077,7 +3085,8 @@ apiRouter.get(
   authMiddleware,
   requirePermission('users.view'),
   asyncHandler(async (req, res) => {
-    const user = await userManagementRepository.getUserById(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const user = await userManagementRepository.getUserById(req.params.id, authReq.user);
     res.json(envelope(user, 'live'));
   })
 );
@@ -3090,23 +3099,39 @@ apiRouter.put(
     const authReq = req as AuthenticatedRequest;
     const schema = z.object({
       fullName: z.string().optional(),
-      email: z.string().email().optional(),
-      phone: z.string().optional(),
+      email: z.string().email().optional().or(z.literal('')).nullable(),
+      phone: z.string().optional().nullable(),
       status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
       roleIds: z.array(z.number()).optional(),
-      dataScope: z.enum(['GLOBAL', 'ORGANIZATION', 'BRANCH', 'RESELLER', 'OWN']).optional(),
+      dataScope: z.enum(['PLATFORM', 'ORGANIZATION', 'HEAD_OFFICE', 'BRANCH', 'RESELLER', 'OWN_RECORDS', 'GLOBAL', 'OWN']).optional(),
       organizationId: z.number().nullable().optional(),
       branchId: z.number().nullable().optional(),
       resellerId: z.number().nullable().optional(),
       userType: z.enum(['isp', 'branch', 'reseller']).optional(),
       forcePasswordReset: z.boolean().optional(),
+      notes: z.string().optional().nullable(),
     });
 
     const parsed = schema.parse(req.body);
-    await userManagementRepository.updateUser(req.params.id, {
-      ...parsed,
-      updatedBy: authReq.user?.userId,
-    });
+    await userManagementRepository.updateUser(
+      req.params.id,
+      {
+        fullName: parsed.fullName,
+        email: parsed.email || undefined,
+        phone: parsed.phone || undefined,
+        status: parsed.status,
+        roleIds: parsed.roleIds,
+        dataScope: parsed.dataScope,
+        organizationId: parsed.organizationId,
+        branchId: parsed.branchId,
+        resellerId: parsed.resellerId,
+        userType: parsed.userType,
+        forcePasswordReset: parsed.forcePasswordReset,
+        notes: parsed.notes,
+        updatedBy: authReq.user?.userId,
+      },
+      authReq.user
+    );
 
     res.json(envelope({ success: true, message: 'User updated successfully' }, 'live'));
   })
@@ -3120,7 +3145,7 @@ apiRouter.patch(
     const authReq = req as AuthenticatedRequest;
     const { status } = z.object({ status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']) }).parse(req.body);
 
-    await userManagementRepository.setStatus(req.params.id, status, authReq.user?.userId);
+    await userManagementRepository.setStatus(req.params.id, status, authReq.user?.userId, authReq.user);
     res.json(envelope({ success: true, message: `User status changed to ${status}` }, 'live'));
   })
 );
@@ -3136,7 +3161,7 @@ apiRouter.post(
       forceNextReset: z.boolean().optional(),
     }).parse(req.body);
 
-    await userManagementRepository.resetPassword(req.params.id, password, !!forceNextReset, authReq.user?.userId);
+    await userManagementRepository.resetPassword(req.params.id, password, !!forceNextReset, authReq.user?.userId, authReq.user);
     res.json(envelope({ success: true, message: 'User password reset successfully' }, 'live'));
   })
 );
@@ -3147,7 +3172,7 @@ apiRouter.post(
   requirePermission('users.force_logout'),
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    await userManagementRepository.forceLogout(req.params.id, authReq.user?.userId);
+    await userManagementRepository.forceLogout(req.params.id, authReq.user?.userId, authReq.user);
     res.json(envelope({ success: true, message: 'User forced logged out. Active sessions terminated.' }, 'live'));
   })
 );
@@ -3157,8 +3182,9 @@ apiRouter.get(
   authMiddleware,
   requirePermission('users.view'),
   asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     const limit = req.query.limit ? Number(req.query.limit) : 50;
-    const history = await userManagementRepository.getLoginHistory(req.params.id, limit);
+    const history = await userManagementRepository.getLoginHistory(req.params.id, limit, authReq.user);
     res.json(envelope(history, 'live'));
   })
 );
@@ -3168,8 +3194,62 @@ apiRouter.get(
   authMiddleware,
   requirePermission('users.view'),
   asyncHandler(async (req, res) => {
-    const sessions = await userManagementRepository.getSessions(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const sessions = await userManagementRepository.getSessions(req.params.id, authReq.user);
     res.json(envelope(sessions, 'live'));
+  })
+);
+
+// Global Login History
+apiRouter.get(
+  '/login-history',
+  authMiddleware,
+  requirePermission('users.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { search, status, page, limit } = req.query;
+    const result = await userManagementRepository.listAllLoginHistory(
+      {
+        search: search ? String(search) : undefined,
+        status: status ? String(status) : undefined,
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 25,
+      },
+      authReq.user
+    );
+    res.json(envelope(result.history, 'live', { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
+  })
+);
+
+// Global Sessions
+apiRouter.get(
+  '/user-sessions',
+  authMiddleware,
+  requirePermission('users.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { search, is_revoked, page, limit } = req.query;
+    const result = await userManagementRepository.listAllSessions(
+      {
+        search: search ? String(search) : undefined,
+        isRevoked: is_revoked !== undefined ? is_revoked === 'true' : undefined,
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 25,
+      },
+      authReq.user
+    );
+    res.json(envelope(result.sessions, 'live', { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
+  })
+);
+
+apiRouter.post(
+  '/user-sessions/:id/revoke',
+  authMiddleware,
+  requirePermission('users.force_logout'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    await userManagementRepository.revokeSession(req.params.id, authReq.user);
+    res.json(envelope({ success: true, message: 'Session revoked successfully' }, 'live'));
   })
 );
 
@@ -3178,8 +3258,9 @@ apiRouter.get(
   '/roles',
   authMiddleware,
   requirePermission('roles.view'),
-  asyncHandler(async (_req, res) => {
-    const roles = await userManagementRepository.listRoles();
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const roles = await userManagementRepository.listRoles(authReq.user);
     res.json(envelope(roles, 'live'));
   })
 );
@@ -3189,7 +3270,8 @@ apiRouter.get(
   authMiddleware,
   requirePermission('roles.view'),
   asyncHandler(async (req, res) => {
-    const role = await userManagementRepository.getRoleById(Number(req.params.id));
+    const authReq = req as AuthenticatedRequest;
+    const role = await userManagementRepository.getRoleById(Number(req.params.id), authReq.user);
     res.json(envelope(role, 'live'));
   })
 );
@@ -3202,17 +3284,72 @@ apiRouter.post(
     const authReq = req as AuthenticatedRequest;
     const schema = z.object({
       name: z.string().min(2),
-      displayName: z.string().min(2),
-      description: z.string().optional(),
-      permissionKeys: z.array(z.string()).default([]),
+      displayName: z.string().optional(),
+      display_name: z.string().optional(),
+      description: z.string().optional().nullable(),
+      permissionKeys: z.array(z.string()).optional(),
+      permissions: z.array(z.string()).optional(),
     });
 
     const parsed = schema.parse(req.body);
-    const roleId = await userManagementRepository.createRole({
-      ...parsed,
-      actorId: authReq.user?.userId,
-    });
+    const displayName = parsed.displayName || parsed.display_name || parsed.name;
+    const permissionKeys = parsed.permissionKeys || parsed.permissions || [];
+
+    const roleId = await userManagementRepository.createRole(
+      {
+        name: parsed.name,
+        displayName,
+        description: parsed.description || undefined,
+        permissionKeys,
+        actorId: authReq.user?.userId,
+      },
+      authReq.user
+    );
     res.status(201).json(envelope({ id: roleId, message: 'Custom role created successfully' }, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/roles/:id/duplicate',
+  authMiddleware,
+  requirePermission('roles.create'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      name: z.string().optional(),
+      displayName: z.string().optional(),
+      display_name: z.string().optional(),
+      description: z.string().optional().nullable(),
+    });
+
+    const parsed = schema.parse(req.body);
+    const displayName = parsed.displayName || parsed.display_name || 'Role Copy';
+    const roleId = await userManagementRepository.duplicateRole(
+      Number(req.params.id),
+      {
+        name: parsed.name,
+        displayName,
+        description: parsed.description || undefined,
+      },
+      authReq.user
+    );
+    res.status(201).json(envelope({ id: roleId, message: 'Role duplicated successfully' }, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/roles/:id/status',
+  authMiddleware,
+  requirePermission('roles.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const { isActive, is_active } = z.object({
+      isActive: z.boolean().optional(),
+      is_active: z.boolean().optional(),
+    }).parse(req.body);
+    const active = isActive !== undefined ? isActive : (is_active !== undefined ? is_active : true);
+    await userManagementRepository.toggleRoleStatus(Number(req.params.id), active, authReq.user);
+    res.json(envelope({ success: true, message: `Role ${active ? 'enabled' : 'disabled'} successfully` }, 'live'));
   })
 );
 
@@ -3224,15 +3361,26 @@ apiRouter.put(
     const authReq = req as AuthenticatedRequest;
     const schema = z.object({
       displayName: z.string().optional(),
-      description: z.string().optional(),
+      display_name: z.string().optional(),
+      description: z.string().optional().nullable(),
       permissionKeys: z.array(z.string()).optional(),
+      permissions: z.array(z.string()).optional(),
     });
 
     const parsed = schema.parse(req.body);
-    await userManagementRepository.updateRole(Number(req.params.id), {
-      ...parsed,
-      actorId: authReq.user?.userId,
-    });
+    const displayName = parsed.displayName || parsed.display_name;
+    const permissionKeys = parsed.permissionKeys || parsed.permissions;
+
+    await userManagementRepository.updateRole(
+      Number(req.params.id),
+      {
+        displayName,
+        description: parsed.description || undefined,
+        permissionKeys,
+        actorId: authReq.user?.userId,
+      },
+      authReq.user
+    );
     res.json(envelope({ success: true, message: 'Role updated successfully' }, 'live'));
   })
 );
@@ -3243,7 +3391,7 @@ apiRouter.delete(
   requirePermission('roles.delete'),
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    await userManagementRepository.deleteRole(Number(req.params.id), authReq.user?.userId);
+    await userManagementRepository.deleteRole(Number(req.params.id), authReq.user?.userId, authReq.user);
     res.json(envelope({ success: true, message: 'Custom role deleted' }, 'live'));
   })
 );
@@ -3251,9 +3399,71 @@ apiRouter.delete(
 apiRouter.get(
   '/permissions',
   authMiddleware,
-  asyncHandler(async (_req, res) => {
-    const grouped = await userManagementRepository.listPermissions();
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const grouped = await userManagementRepository.listPermissions(authReq.user);
     res.json(envelope(grouped, 'live'));
+  })
+);
+
+// ---- Developer Super Admin Only Endpoints ----
+apiRouter.get(
+  '/system/developer-config',
+  authMiddleware,
+  requireDeveloperSuperAdmin(),
+  asyncHandler(async (_req, res) => {
+    res.json(
+      envelope(
+        {
+          nodeEnv: config.NODE_ENV,
+          apiPort: config.PORT,
+          jwtExpiresIn: config.JWT_EXPIRES_IN,
+          radiusHost: config.RADIUS_HOST,
+          radiusAuthPort: config.RADIUS_AUTH_PORT,
+          radiusAcctPort: config.RADIUS_ACCT_PORT,
+          radiusCoaPort: config.RADIUS_COA_PORT,
+          dbHost: config.DB_HOST,
+          dbName: config.DB_NAME,
+          dbPort: config.DB_PORT,
+          features: {
+            juniperBngEnabled: true,
+            mikrotikEnabled: true,
+            multiVendorDictionary: true,
+            rbacV2Enabled: true,
+          },
+        },
+        'live'
+      )
+    );
+  })
+);
+
+apiRouter.get(
+  '/system/diagnostics',
+  authMiddleware,
+  requireDeveloperSuperAdmin(),
+  asyncHandler(async (_req, res) => {
+    const memory = process.memoryUsage();
+    const uptimeSeconds = process.uptime();
+    res.json(
+      envelope(
+        {
+          status: 'healthy',
+          uptime: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
+          processUptimeSeconds: Math.floor(uptimeSeconds),
+          memory: {
+            heapUsedMb: Math.round((memory.heapUsed / 1024 / 1024) * 100) / 100,
+            heapTotalMb: Math.round((memory.heapTotal / 1024 / 1024) * 100) / 100,
+            rssMb: Math.round((memory.rss / 1024 / 1024) * 100) / 100,
+          },
+          nodeVersion: process.version,
+          platform: process.platform,
+          arch: process.arch,
+          timestamp: new Date().toISOString(),
+        },
+        'live'
+      )
+    );
   })
 );
 
