@@ -32,7 +32,7 @@ import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
 import { envelope } from '../lib/response';
 import { HttpError } from '../lib/http-error';
-import { authMiddleware, requirePermission, requireDeveloperSuperAdmin, requireIspAdmin, type AuthenticatedRequest } from '../middleware/auth.middleware';
+import { authMiddleware, requirePermission, requireDeveloperSuperAdmin, type AuthenticatedRequest } from '../middleware/auth.middleware';
 import type { TimeRange } from '../types/api';
 
 export const apiRouter = Router();
@@ -3421,10 +3421,10 @@ apiRouter.get(
           radiusHost: config.RADIUS_HOST,
           radiusAuthPort: config.RADIUS_AUTH_PORT,
           radiusAcctPort: config.RADIUS_ACCT_PORT,
-          radiusCoaPort: config.RADIUS_COA_PORT,
-          dbHost: config.DB_HOST,
-          dbName: config.DB_NAME,
-          dbPort: config.DB_PORT,
+          radiusCoaPort: 3799,
+          dbHost: config.DATABASE_HOST,
+          dbName: config.DATABASE_NAME,
+          dbPort: config.DATABASE_PORT,
           features: {
             juniperBngEnabled: true,
             mikrotikEnabled: true,

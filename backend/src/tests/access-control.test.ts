@@ -6,8 +6,6 @@ import {
   assertCanAssignRole,
   assertCanGrantPermissions,
   assertCanManageUser,
-  DEVELOPER_ONLY_PERMISSIONS,
-  DEVELOPER_ONLY_ROLES,
 } from '../lib/access-control';
 import type { AuthSession } from '../services/auth.service';
 

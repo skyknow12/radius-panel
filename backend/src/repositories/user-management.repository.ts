@@ -4,14 +4,12 @@ import { HttpError } from '../lib/http-error';
 import { auditRepository } from './audit.repository';
 import {
   isSuperAdmin,
-  isIspAdmin,
   isBranchUser,
   isResellerUser,
   assertCanAssignRole,
   assertCanGrantPermissions,
   assertCanManageUser,
   DEVELOPER_ONLY_PERMISSIONS,
-  DEVELOPER_ONLY_ROLES,
 } from '../lib/access-control';
 import type { AuthSession } from '../services/auth.service';
 
@@ -1290,7 +1288,7 @@ export const userManagementRepository = {
   },
 
   /** Delete custom role */
-  async deleteRole(roleId: number, actorId?: string, actor?: AuthSession): Promise<void> {
+  async deleteRole(roleId: number, actorId?: string, _actor?: AuthSession): Promise<void> {
     const roleRes = await query<{ is_system: boolean; name: string }>('SELECT is_system, name FROM roles WHERE id = $1', [roleId]);
     if (!roleRes.rows[0]) throw HttpError.notFound('Role not found');
     if (roleRes.rows[0].is_system) {
