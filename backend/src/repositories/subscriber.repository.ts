@@ -2,8 +2,7 @@ import { query } from '../db/pool';
 import { ipPoolRepository } from './ip-pool.repository';
 import { packageRepository } from './package.repository';
 import { RadiusClient } from '../radius/radius-client';
-import { normalizeMacAddress, isValidMacAddress } from '../lib/mac-utils';
-import { HttpError } from '../lib/http-error';
+import { normalizeMacAddress } from '../lib/mac-utils';
 
 export interface SubscriberRow {
   id: number;
