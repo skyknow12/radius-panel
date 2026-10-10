@@ -107,3 +107,25 @@ export function assertCanManageUser(
     }
   }
 }
+
+/** Validate whether actor is permitted to access/manage target subscriber */
+export function assertCanAccessSubscriber(
+  actor: AuthSession | undefined,
+  subscriber: { branch_id?: number | null; reseller_id?: number | null }
+): void {
+  if (!actor || isSuperAdmin(actor) || isIspAdmin(actor)) {
+    return;
+  }
+
+  if (isBranchUser(actor) && actor.branchId) {
+    if (subscriber.branch_id !== actor.branchId) {
+      throw HttpError.forbidden('Cannot access subscriber belonging to another branch');
+    }
+  }
+
+  if (isResellerUser(actor) && actor.resellerId) {
+    if (subscriber.reseller_id !== actor.resellerId) {
+      throw HttpError.forbidden('Cannot access subscriber belonging to another reseller');
+    }
+  }
+}

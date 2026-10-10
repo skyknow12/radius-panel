@@ -428,19 +428,38 @@ export const userManagementRepository = {
     }
 
     // Dynamic role hierarchy checks
+    const hasBranchManagerRole = roleRows.rows.some((r) => r.name === 'branch_manager');
     const isBranchRole = roleRows.rows.some((r) => r.name === 'branch_admin' || r.name === 'branch_operator');
     const isResellerRole = roleRows.rows.some((r) => r.name === 'reseller_admin' || r.name === 'reseller_operator');
-
-    if (isBranchRole && isResellerRole) {
-      throw HttpError.badRequest('A user cannot simultaneously hold both Branch and Reseller roles');
-    }
 
     let branchId = input.branchId;
     let resellerId = input.resellerId;
     let userType = input.userType;
     let dataScope = input.dataScope;
 
-    if (isBranchRole) {
+    if (hasBranchManagerRole) {
+      if (branchId && resellerId) {
+        throw HttpError.badRequest('Branch Manager cannot be assigned to both a Branch and a Reseller');
+      }
+      if (!branchId && !resellerId) {
+        throw HttpError.badRequest('Branch Manager must be explicitly assigned to either a Branch or a Reseller');
+      }
+      if (branchId) {
+        userType = 'branch';
+        resellerId = undefined;
+        if (!dataScope || dataScope === 'GLOBAL' || dataScope === 'PLATFORM' || dataScope === 'ORGANIZATION') {
+          dataScope = 'BRANCH';
+        }
+      } else {
+        userType = 'reseller';
+        branchId = undefined;
+        if (!dataScope || dataScope === 'GLOBAL' || dataScope === 'PLATFORM' || dataScope === 'ORGANIZATION') {
+          dataScope = 'RESELLER';
+        }
+      }
+    } else if (isBranchRole && isResellerRole) {
+      throw HttpError.badRequest('A user cannot simultaneously hold both Branch and Reseller roles');
+    } else if (isBranchRole) {
       if (!branchId) {
         throw HttpError.badRequest('Branch assignment is required for branch roles');
       }
@@ -608,14 +627,48 @@ export const userManagementRepository = {
         assertCanAssignRole(actor, r.name);
       }
 
+      const hasBranchManagerRole = roleRows.rows.some((r) => r.name === 'branch_manager');
       const isBranchRole = roleRows.rows.some((r) => r.name === 'branch_admin' || r.name === 'branch_operator');
       const isResellerRole = roleRows.rows.some((r) => r.name === 'reseller_admin' || r.name === 'reseller_operator');
 
-      if (isBranchRole && isResellerRole) {
-        throw HttpError.badRequest('A user cannot simultaneously hold both Branch and Reseller roles');
-      }
+      if (hasBranchManagerRole) {
+        let effectiveBranchId = input.branchId !== undefined ? input.branchId : target.branch_id;
+        let effectiveResellerId = input.resellerId !== undefined ? input.resellerId : target.reseller_id;
 
-      if (isBranchRole) {
+        // If user changed type explicitly
+        if (input.userType === 'branch') {
+          effectiveResellerId = null;
+          input.resellerId = null;
+        } else if (input.userType === 'reseller') {
+          effectiveBranchId = null;
+          input.branchId = null;
+        }
+
+        if (effectiveBranchId && effectiveResellerId) {
+          throw HttpError.badRequest('Branch Manager cannot be assigned to both a Branch and a Reseller');
+        }
+        if (!effectiveBranchId && !effectiveResellerId) {
+          throw HttpError.badRequest('Branch Manager must be explicitly assigned to either a Branch or a Reseller');
+        }
+
+        if (effectiveBranchId) {
+          input.branchId = effectiveBranchId;
+          input.resellerId = null;
+          input.userType = 'branch';
+          if (!input.dataScope || input.dataScope === 'GLOBAL' || input.dataScope === 'PLATFORM') {
+            input.dataScope = 'BRANCH';
+          }
+        } else {
+          input.resellerId = effectiveResellerId;
+          input.branchId = null;
+          input.userType = 'reseller';
+          if (!input.dataScope || input.dataScope === 'GLOBAL' || input.dataScope === 'PLATFORM') {
+            input.dataScope = 'RESELLER';
+          }
+        }
+      } else if (isBranchRole && isResellerRole) {
+        throw HttpError.badRequest('A user cannot simultaneously hold both Branch and Reseller roles');
+      } else if (isBranchRole) {
         const effectiveBranchId = input.branchId !== undefined ? input.branchId : target.branch_id;
         if (!effectiveBranchId) {
           throw HttpError.badRequest('Branch assignment is required for branch roles');
@@ -1015,6 +1068,75 @@ export const userManagementRepository = {
   //  ROLES & PERMISSIONS
   // ---------------------------------------------------------------------------
 
+  /**
+   * Idempotent initialization of default roles & granular operational permissions.
+   * Guaranteed to run without creating duplicate roles or breaking customizations.
+   */
+  async ensureDefaultRoles(): Promise<void> {
+    // 1. Ensure the 3 default roles exist with stable internal identifiers
+    await query(`
+      INSERT INTO roles (name, display_name, description, is_system, is_active)
+      VALUES
+        ('super_admin',    'Super Admin — Developer', 'Software developer & platform owner with full technical diagnostics and platform configuration', TRUE, TRUE),
+        ('isp_admin',      'ISP Admin',               'ISP owner and senior operational administrator with full control over ISP organization and operations', TRUE, TRUE),
+        ('branch_manager', 'Branch Manager',          'Manages daily operations for one assigned branch or one assigned reseller', TRUE, TRUE)
+      ON CONFLICT (name) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        description = EXCLUDED.description,
+        is_system = TRUE,
+        is_active = TRUE
+    `);
+
+    // 2. Grant all permissions to super_admin
+    await query(`
+      INSERT INTO role_permissions (role_id, permission_id)
+      SELECT r.id, p.id
+        FROM roles r, permissions p
+       WHERE r.name = 'super_admin'
+      ON CONFLICT DO NOTHING
+    `);
+
+    // 3. Grant operational permissions to isp_admin (excluding developer-only)
+    await query(`
+      INSERT INTO role_permissions (role_id, permission_id)
+      SELECT r.id, p.id
+        FROM roles r, permissions p
+       WHERE r.name = 'isp_admin'
+         AND p.key NOT IN (
+           'system.developer_config',
+           'system.diagnostics',
+           'system.database_tools',
+           'platform.organizations.manage'
+         )
+      ON CONFLICT DO NOTHING
+    `);
+
+    // 4. Grant branch & reseller operational permissions to branch_manager
+    await query(`
+      INSERT INTO role_permissions (role_id, permission_id)
+      SELECT r.id, p.id
+        FROM roles r, permissions p
+       WHERE r.name = 'branch_manager'
+         AND p.key IN (
+           'dashboard.view',
+           'subscriber.view', 'subscriber.create', 'subscriber.edit',
+           'subscriber.activate', 'subscriber.suspend', 'subscriber.resume',
+           'subscriber.recharge', 'subscriber.change_package',
+           'package.view',
+           'billing.view', 'billing.recharge', 'billing.invoice', 'billing.receipt',
+           'branch.view', 'branch.report',
+           'reseller.view', 'reseller.report', 'reseller.wallet.view', 'reseller.credit.view',
+           'wallet.view', 'wallet.report',
+           'tickets.view', 'tickets.create', 'tickets.edit', 'tickets.assign', 'tickets.comment', 'tickets.close',
+           'crm.view', 'crm.create', 'crm.edit',
+           'sessions.view',
+           'accounting.view',
+           'notifications.view'
+         )
+      ON CONFLICT DO NOTHING
+    `);
+  },
+
   /** List all roles with member counts, permission count, and developer flags */
   async listRoles(actor?: AuthSession): Promise<RoleItem[]> {
     const { rows } = await query<any>(`
@@ -1027,21 +1149,22 @@ export const userManagementRepository = {
    LEFT JOIN user_roles ur ON ur.role_id = r.id
    LEFT JOIN role_permissions rp ON rp.role_id = r.id
     GROUP BY r.id
-    ORDER BY r.is_system DESC, r.name ASC
+    ORDER BY
+      CASE
+        WHEN r.name = 'super_admin' THEN 1
+        WHEN r.name = 'isp_admin' THEN 2
+        WHEN r.name = 'branch_manager' THEN 3
+        ELSE 4
+      END,
+      r.is_system DESC, r.name ASC
     `);
 
-    // Hide Developer Super Admin role from non-super_admins
-    let filtered = rows;
-    if (!isSuperAdmin(actor)) {
-      filtered = rows.filter((r) => r.name !== 'super_admin');
-    }
-
-    return filtered.map((r) => {
+    return rows.map((r) => {
       const isDevOnly = r.name === 'super_admin';
       return {
         ...r,
         is_developer_only: isDevOnly,
-        can_edit: !isDevOnly || isSuperAdmin(actor),
+        can_edit: !isDevOnly && (r.is_system ? isSuperAdmin(actor) : true),
         created_at: new Date(r.created_at).toISOString(),
         updated_at: new Date(r.updated_at).toISOString(),
       };
@@ -1053,10 +1176,6 @@ export const userManagementRepository = {
     const { rows } = await query<any>('SELECT *, COALESCE(is_active, TRUE) as is_active FROM roles WHERE id = $1', [roleId]);
     if (!rows[0]) throw HttpError.notFound('Role not found');
     const r = rows[0];
-
-    if (r.name === 'super_admin' && !isSuperAdmin(actor)) {
-      throw HttpError.forbidden('Access restricted to Developer Super Admin');
-    }
 
     const permRes = await query<{ key: string }>(
       `SELECT p.key FROM role_permissions rp

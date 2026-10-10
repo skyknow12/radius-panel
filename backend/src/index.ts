@@ -9,6 +9,7 @@ import { logger } from './lib/logger';
 import { waitForDatabase } from './db/pool';
 import { runMigrations } from './db/migrate';
 import { authService } from './services/auth.service';
+import { userManagementRepository } from './repositories/user-management.repository';
 import { autoExpiryService } from './services/auto-expiry.service';
 import { apiRouter } from './routes/api.routes';
 import { errorHandler } from './middleware/error.middleware';
@@ -20,7 +21,8 @@ async function bootstrap() {
   await waitForDatabase();
   await runMigrations();
 
-  // 2. Ensure initial administrator account
+  // 2. Ensure default roles & initial administrator account
+  await userManagementRepository.ensureDefaultRoles();
   await authService.ensureInitialAdmin();
 
   const app = express();

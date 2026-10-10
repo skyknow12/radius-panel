@@ -16,6 +16,7 @@ export function envelope<T>(
   }
 
   return {
+    success: true,
     data,
     meta: {
       source,

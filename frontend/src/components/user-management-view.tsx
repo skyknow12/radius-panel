@@ -117,10 +117,15 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
   // Determine dynamic role type from selected roles
   const selectedRoleEntities = React.useMemo(() => {
     const selected = roles.filter((r) => formRoleIds.includes(r.id));
-    const isBranchRole = selected.some((r) => r.name === 'branch_admin' || r.name === 'branch_operator');
-    const isResellerRole = selected.some((r) => r.name === 'reseller_admin' || r.name === 'reseller_operator');
-    return { selected, isBranchRole, isResellerRole };
-  }, [roles, formRoleIds]);
+    const isBranchManager = selected.some((r) => r.name === 'branch_manager');
+    const isBranchRole = isBranchManager
+      ? formUserType === 'branch'
+      : selected.some((r) => r.name === 'branch_admin' || r.name === 'branch_operator');
+    const isResellerRole = isBranchManager
+      ? formUserType === 'reseller'
+      : selected.some((r) => r.name === 'reseller_admin' || r.name === 'reseller_operator');
+    return { selected, isBranchRole, isResellerRole, isBranchManager };
+  }, [roles, formRoleIds, formUserType]);
 
   // Auto-adapt branch or reseller scope when role selection changes
   const handleRoleToggle = (roleId: number, checked: boolean) => {
@@ -133,10 +138,17 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     setFormRoleIds(nextRoleIds);
 
     const activeRoles = roles.filter((r) => nextRoleIds.includes(r.id));
+    const hasBranchManagerRole = activeRoles.some((r) => r.name === 'branch_manager');
     const hasBranchRole = activeRoles.some((r) => r.name === 'branch_admin' || r.name === 'branch_operator');
     const hasResellerRole = activeRoles.some((r) => r.name === 'reseller_admin' || r.name === 'reseller_operator');
 
-    if (hasBranchRole) {
+    if (hasBranchManagerRole) {
+      if (formUserType !== 'branch' && formUserType !== 'reseller') {
+        setFormUserType('branch');
+        setFormDataScope('BRANCH');
+        setFormResellerId('');
+      }
+    } else if (hasBranchRole) {
       setFormUserType('branch');
       setFormDataScope('BRANCH');
       setFormResellerId('');
@@ -330,14 +342,29 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       return;
     }
 
-    if (selectedRoleEntities.isBranchRole && !formBranchId) {
-      showNotice('Branch role requires an assigned branch', true);
-      return;
-    }
+    if (selectedRoleEntities.isBranchManager) {
+      if (formUserType === 'branch' && !formBranchId) {
+        showNotice('Branch Manager assigned to a branch requires an assigned branch', true);
+        return;
+      }
+      if (formUserType === 'reseller' && !formResellerId) {
+        showNotice('Branch Manager assigned to a reseller requires an assigned reseller', true);
+        return;
+      }
+      if (formUserType !== 'branch' && formUserType !== 'reseller') {
+        showNotice('Branch Manager must be assigned to either a branch or a reseller', true);
+        return;
+      }
+    } else {
+      if (selectedRoleEntities.isBranchRole && !formBranchId) {
+        showNotice('Branch role requires an assigned branch', true);
+        return;
+      }
 
-    if (selectedRoleEntities.isResellerRole && !formResellerId) {
-      showNotice('Reseller role requires an assigned reseller', true);
-      return;
+      if (selectedRoleEntities.isResellerRole && !formResellerId) {
+        showNotice('Reseller role requires an assigned reseller', true);
+        return;
+      }
     }
 
     try {
@@ -385,14 +412,29 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     e.preventDefault();
     if (!editUser) return;
 
-    if (selectedRoleEntities.isBranchRole && !formBranchId) {
-      showNotice('Branch role requires an assigned branch', true);
-      return;
-    }
+    if (selectedRoleEntities.isBranchManager) {
+      if (formUserType === 'branch' && !formBranchId) {
+        showNotice('Branch Manager assigned to a branch requires an assigned branch', true);
+        return;
+      }
+      if (formUserType === 'reseller' && !formResellerId) {
+        showNotice('Branch Manager assigned to a reseller requires an assigned reseller', true);
+        return;
+      }
+      if (formUserType !== 'branch' && formUserType !== 'reseller') {
+        showNotice('Branch Manager must be assigned to either a branch or a reseller', true);
+        return;
+      }
+    } else {
+      if (selectedRoleEntities.isBranchRole && !formBranchId) {
+        showNotice('Branch role requires an assigned branch', true);
+        return;
+      }
 
-    if (selectedRoleEntities.isResellerRole && !formResellerId) {
-      showNotice('Reseller role requires an assigned reseller', true);
-      return;
+      if (selectedRoleEntities.isResellerRole && !formResellerId) {
+        showNotice('Reseller role requires an assigned reseller', true);
+        return;
+      }
     }
 
     try {
@@ -1092,6 +1134,51 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
               </div>
             </div>
 
+            {/* Branch Manager Assignment Type Choice */}
+            {selectedRoleEntities.isBranchManager && (
+              <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                  <Shield className="w-4 h-4" />
+                  <span>Branch Manager Assignment Type *</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The Branch Manager role can be assigned to either one Branch Office OR one Reseller Partner.
+                </p>
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                    <input
+                      type="radio"
+                      name="bm_create_assignment_type"
+                      value="branch"
+                      checked={formUserType === 'branch'}
+                      onChange={() => {
+                        setFormUserType('branch');
+                        setFormDataScope('BRANCH');
+                        setFormResellerId('');
+                      }}
+                      className="text-primary focus:ring-primary"
+                    />
+                    <span>Assign to Branch Office</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                    <input
+                      type="radio"
+                      name="bm_create_assignment_type"
+                      value="reseller"
+                      checked={formUserType === 'reseller'}
+                      onChange={() => {
+                        setFormUserType('reseller');
+                        setFormDataScope('RESELLER');
+                        setFormBranchId('');
+                      }}
+                      className="text-primary focus:ring-primary"
+                    />
+                    <span>Assign to Reseller Partner</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
             {/* Dynamic Branch selector (Shown and REQUIRED when Branch role or BRANCH scope is chosen) */}
             {(selectedRoleEntities.isBranchRole || formDataScope === 'BRANCH') && (
               <div className="p-3.5 bg-cyan-500/5 border border-cyan-500/20 rounded-xl space-y-1">
@@ -1504,6 +1591,48 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
                   </select>
                 </div>
               </div>
+
+              {/* Branch Manager Assignment Type Choice */}
+              {selectedRoleEntities.isBranchManager && (
+                <div className="p-3.5 rounded-xl border border-primary/30 bg-primary/5 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>Branch Manager Assignment Scope *</span>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bm_edit_assignment_type"
+                        value="branch"
+                        checked={formUserType === 'branch'}
+                        onChange={() => {
+                          setFormUserType('branch');
+                          setFormDataScope('BRANCH');
+                          setFormResellerId('');
+                        }}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span>Branch Office</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bm_edit_assignment_type"
+                        value="reseller"
+                        checked={formUserType === 'reseller'}
+                        onChange={() => {
+                          setFormUserType('reseller');
+                          setFormDataScope('RESELLER');
+                          setFormBranchId('');
+                        }}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span>Reseller Partner</span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* Dynamic Branch or Reseller */}
               {(selectedRoleEntities.isBranchRole || formDataScope === 'BRANCH') && (

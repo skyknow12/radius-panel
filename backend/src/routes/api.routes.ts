@@ -33,6 +33,7 @@ import { asyncHandler } from '../lib/async-handler';
 import { envelope } from '../lib/response';
 import { HttpError } from '../lib/http-error';
 import { authMiddleware, requirePermission, requireDeveloperSuperAdmin, type AuthenticatedRequest } from '../middleware/auth.middleware';
+import { isBranchUser, isResellerUser, assertCanAccessSubscriber } from '../lib/access-control';
 import type { TimeRange } from '../types/api';
 
 export const apiRouter = Router();
@@ -153,6 +154,7 @@ apiRouter.get(
 apiRouter.post(
   '/nas',
   authMiddleware,
+  requirePermission('nas.create'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const body = createNasSchema.parse(req.body);
     const created = await nasRepository.create(body);
@@ -189,6 +191,7 @@ apiRouter.get(
 apiRouter.put(
   '/nas/:id',
   authMiddleware,
+  requirePermission('nas.edit'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
     const body = updateNasSchema.parse(req.body);
@@ -215,6 +218,7 @@ apiRouter.put(
 apiRouter.delete(
   '/nas/:id',
   authMiddleware,
+  requirePermission('nas.delete'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
     const success = await nasRepository.delete(id);
@@ -338,6 +342,7 @@ apiRouter.get(
 apiRouter.post(
   '/packages',
   authMiddleware,
+  requirePermission('package.create'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const body = createPackageSchema.parse(req.body);
     const created = await packageRepository.create(body);
@@ -386,6 +391,7 @@ apiRouter.get(
 apiRouter.put(
   '/packages/:id',
   authMiddleware,
+  requirePermission('package.edit'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
     const body = updatePackageSchema.parse(req.body);
@@ -412,6 +418,7 @@ apiRouter.put(
 apiRouter.delete(
   '/packages/:id',
   authMiddleware,
+  requirePermission('package.delete'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
     const success = await packageRepository.delete(id);
@@ -618,8 +625,19 @@ apiRouter.post(
 apiRouter.post(
   '/subscribers',
   authMiddleware,
+  requirePermission('subscriber.create'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const body = createSubscriberSchema.parse(req.body);
+    // Scoped operator auto-assignment
+    if (isBranchUser(req.user) && req.user?.branchId) {
+      body.branch_id = req.user.branchId;
+      body.ownership_type = 'branch';
+      body.reseller_id = undefined;
+    } else if (isResellerUser(req.user) && req.user?.resellerId) {
+      body.reseller_id = req.user.resellerId;
+      body.ownership_type = 'reseller';
+      body.branch_id = undefined;
+    }
     const created = await subscriberRepository.create(body, req.user?.username || 'admin');
 
     await auditRepository.insert({
@@ -678,8 +696,15 @@ apiRouter.get(
 apiRouter.put(
   '/subscribers/:id',
   authMiddleware,
+  requirePermission('subscriber.edit'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
+    const existing = await subscriberRepository.findById(id);
+    if (!existing) {
+      throw HttpError.notFound('Subscriber not found');
+    }
+    assertCanAccessSubscriber(req.user, existing);
+
     const body = updateSubscriberSchema.parse(req.body);
     const updated = await subscriberRepository.update(id, body, req.user?.username || 'admin');
     if (!updated) {
@@ -704,8 +729,15 @@ apiRouter.put(
 apiRouter.post(
   '/subscribers/:id/suspend',
   authMiddleware,
+  requirePermission('subscriber.suspend'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) {
+      throw HttpError.notFound('Subscriber not found');
+    }
+    assertCanAccessSubscriber(req.user, sub);
+
     await subscriberRepository.suspend(id, req.user?.username || 'admin');
     const updated = await subscriberRepository.findById(id);
 
@@ -726,8 +758,15 @@ apiRouter.post(
 apiRouter.post(
   '/subscribers/:id/resume',
   authMiddleware,
+  requirePermission('subscriber.resume'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) {
+      throw HttpError.notFound('Subscriber not found');
+    }
+    assertCanAccessSubscriber(req.user, sub);
+
     await subscriberRepository.resume(id, req.user?.username || 'admin');
     const updated = await subscriberRepository.findById(id);
 
@@ -748,8 +787,15 @@ apiRouter.post(
 apiRouter.post(
   '/subscribers/:id/password',
   authMiddleware,
+  requirePermission('subscriber.edit'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) {
+      throw HttpError.notFound('Subscriber not found');
+    }
+    assertCanAccessSubscriber(req.user, sub);
+
     const passwordSchema = z.object({
       new_password: z.string().min(4),
       disconnect_session: z.boolean().default(false),
@@ -773,8 +819,15 @@ apiRouter.post(
 apiRouter.post(
   '/subscribers/:id/change-package',
   authMiddleware,
+  requirePermission('subscriber.change_package'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) {
+      throw HttpError.notFound('Subscriber not found');
+    }
+    assertCanAccessSubscriber(req.user, sub);
+
     const pkgChangeSchema = z.object({
       new_package_id: z.number().int().positive(),
       apply_coa: z.boolean().default(true),
@@ -1418,6 +1471,7 @@ const setPriceSchema = z.object({
 apiRouter.post(
   '/packages/:id/prices',
   authMiddleware,
+  requirePermission('package.price'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const packageId = parseInt(req.params.id, 10);
     const body = setPriceSchema.parse(req.body);
@@ -1456,8 +1510,15 @@ const rechargeSchema = z.object({
 apiRouter.post(
   '/recharge',
   authMiddleware,
+  requirePermission('subscriber.recharge'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const body = rechargeSchema.parse(req.body);
+    const sub = await subscriberRepository.findById(body.subscriber_id);
+    if (!sub) {
+      throw HttpError.notFound('Subscriber not found');
+    }
+    assertCanAccessSubscriber(req.user, sub);
+
     const result = await rechargeRepository.processRecharge({
       ...body,
       created_by: req.user?.username || 'admin',
@@ -1733,8 +1794,15 @@ const billingRechargeSchema = z.object({
 apiRouter.post(
   '/billing/recharge',
   authMiddleware,
+  requirePermission('billing.recharge'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const body = billingRechargeSchema.parse(req.body);
+    const sub = await subscriberRepository.findById(body.subscriber_id);
+    if (!sub) {
+      throw HttpError.notFound('Subscriber not found');
+    }
+    assertCanAccessSubscriber(req.user, sub);
+
     const result = await billingRepository.processRecharge({
       ...body,
       created_by: req.user?.username || 'admin',
