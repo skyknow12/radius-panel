@@ -866,6 +866,13 @@ apiRouter.post(
     const { new_password, disconnect_session } = passwordSchema.parse(req.body);
     await subscriberRepository.changePassword(id, new_password, disconnect_session, req.user?.username || 'admin');
 
+    // Verify credential stored in radcheck
+    const { rows: verifyRows } = await query<{ count: string }>(
+      `SELECT COUNT(*) FROM radcheck WHERE lower(username) = lower($1) AND attribute = 'Cleartext-Password' AND value = $2`,
+      [sub.username, new_password]
+    );
+    const verified = Number(verifyRows[0]?.count || 0) > 0;
+
     await auditRepository.insert({
       userId: req.user?.userId,
       username: req.user?.username,
@@ -873,9 +880,15 @@ apiRouter.post(
       entityType: 'subscriber',
       entityId: String(id),
       status: 'success',
+      metadata: { username: sub.username, disconnect_session, verified, credential_type: 'Cleartext-Password' },
     });
 
-    res.json(envelope({ success: true, message: 'Password changed successfully' }, 'live'));
+    res.json(envelope({
+      success: true,
+      message: 'Password changed and verified against FreeRADIUS credentials successfully',
+      verified,
+      credential_type: 'Cleartext-Password',
+    }, 'live'));
   })
 );
 
@@ -1028,6 +1041,7 @@ apiRouter.post(
 apiRouter.post(
   '/subscribers/:id/unbind-mac',
   authMiddleware,
+  requirePermission('subscriber.mac_bind'),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
     const sub = await subscriberRepository.findById(id);
@@ -1268,8 +1282,25 @@ apiRouter.get(
     const search = req.query.search as string;
     const reply = req.query.reply as string;
     const username = req.query.username as string;
+    const mac = req.query.mac as string;
+    const nas = req.query.nas as string;
+    const reason = req.query.reason as string;
 
-    const result = await radPostAuthRepository.listLogs({ page, limit, search, reply, username });
+    const result = await radPostAuthRepository.listLogs({ page, limit, search, reply, username, mac, nas, reason });
+    res.json(envelope(result.data, 'live', result.meta));
+  })
+);
+
+apiRouter.get(
+  '/subscribers/:id/auth-logs',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const sub = await subscriberRepository.findById(id);
+    if (!sub) throw HttpError.notFound('Subscriber not found');
+    assertCanAccessSubscriber(req.user, sub);
+
+    const result = await radPostAuthRepository.listLogs({ username: sub.username, limit: 50 });
     res.json(envelope(result.data, 'live', result.meta));
   })
 );

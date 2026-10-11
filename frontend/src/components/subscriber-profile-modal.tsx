@@ -1138,6 +1138,12 @@ export function SubscriberProfileModal({
                           {sub.onu_mac_sn || sub.onu_model ? `${sub.onu_mac_sn || ''} ${sub.onu_model || ''}` : '—'}
                         </p>
                       </div>
+                      <div>
+                        <span className="text-muted-foreground">Credential Status:</span>
+                        <p className="font-semibold text-emerald-500 mt-0.5 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Stored in FreeRADIUS (Cleartext-Password)
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -1148,19 +1154,13 @@ export function SubscriberProfileModal({
                         <Lock className="w-4 h-4 text-primary" /> Customer MAC Binding
                       </h3>
                       <div className="flex items-center gap-2">
-                        {sub.mac_binding_enabled ? (
-                          sub.mac_address ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                              <Lock className="w-3.5 h-3.5" /> Bound & Locked
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                              <Sparkles className="w-3.5 h-3.5" /> Auto-Bind on 1st Login
-                            </span>
-                          )
+                        {sub.mac_address ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            <Lock className="w-3.5 h-3.5" /> Bound & Locked
+                          </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-border">
-                            <Unlock className="w-3.5 h-3.5" /> Binding Disabled
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                            <Sparkles className="w-3.5 h-3.5" /> Auto-Bind Active (First Login)
                           </span>
                         )}
                       </div>
@@ -1169,29 +1169,15 @@ export function SubscriberProfileModal({
                     <div className="p-3.5 rounded-xl bg-background border border-border/80 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-muted-foreground font-medium">Bound MAC Address:</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleMacBinding(!sub.mac_binding_enabled)}
-                            disabled={actionLoading}
-                            className={`text-[11px] px-2 py-0.5 rounded font-semibold transition-colors ${
-                              sub.mac_binding_enabled
-                                ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'
-                                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                            }`}
-                            title="Toggle whether MAC binding is enforced on RADIUS login"
-                          >
-                            {sub.mac_binding_enabled ? 'Enforcement: ON' : 'Enforcement: OFF'}
-                          </button>
-                        </div>
+                        <span className="text-[11px] font-semibold text-primary">
+                          {sub.mac_address ? 'Locked to Device' : 'Automatic Binding Enabled'}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-base font-bold text-foreground tracking-wider">
                           {sub.mac_address || (
                             <span className="text-xs font-normal text-muted-foreground italic">
-                              {sub.mac_binding_enabled
-                                ? 'Unbound — First valid authentication will automatically lock to device'
-                                : 'No MAC binding configured'}
+                              Unbound — First valid authentication will automatically lock to customer device
                             </span>
                           )}
                         </span>
@@ -1199,7 +1185,7 @@ export function SubscriberProfileModal({
                       {sub.mac_bound_at && (
                         <div className="pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
                           <span>Bound At: {new Date(sub.mac_bound_at).toLocaleString()}</span>
-                          <span>By: {sub.mac_bound_by || 'system'}</span>
+                          <span>By: {sub.mac_bound_by || 'auto_first_login'}</span>
                         </div>
                       )}
                     </div>
@@ -2095,25 +2081,79 @@ export function SubscriberProfileModal({
                       <table className="w-full text-left text-xs">
                         <thead className="bg-muted/50 border-b border-border text-muted-foreground uppercase text-[10px] tracking-wider font-semibold">
                           <tr>
-                            <th className="py-2.5 px-4">Timestamp</th>
-                            <th className="py-2.5 px-4">Result</th>
-                            <th className="py-2.5 px-4">User</th>
-                            <th className="py-2.5 px-4">Service</th>
+                            <th className="py-2.5 px-3">Timestamp</th>
+                            <th className="py-2.5 px-3">Result</th>
+                            <th className="py-2.5 px-3">Reason</th>
+                            <th className="py-2.5 px-3">Attempted MAC</th>
+                            <th className="py-2.5 px-3">Bound MAC</th>
+                            <th className="py-2.5 px-3">NAS Gateway</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-border font-mono text-xs">
-                          <tr className="hover:bg-accent/40">
-                            <td className="py-2.5 px-4 text-muted-foreground whitespace-nowrap">
-                              {new Date().toLocaleString()}
-                            </td>
-                            <td className="py-2.5 px-4">
-                              <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Access-Accept
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-4 text-foreground">{sub.username}</td>
-                            <td className="py-2.5 px-4 text-muted-foreground">FreeRADIUS PostgreSQL</td>
-                          </tr>
+                        <tbody className="divide-y divide-border font-mono text-[11px]">
+                          {profile?.authLogs && profile.authLogs.length > 0 ? (
+                            profile.authLogs.map((log) => {
+                              const isMacMismatch =
+                                log.reply === 'Access-Reject' &&
+                                (log.reason?.includes('MAC') ||
+                                  (log.bound_mac && log.attempted_mac && log.bound_mac !== log.attempted_mac));
+                              return (
+                                <tr key={log.id} className="hover:bg-accent/40">
+                                  <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
+                                    {new Date(log.authdate).toLocaleString()}
+                                  </td>
+                                  <td className="py-2.5 px-3">
+                                    {log.reply === 'Access-Accept' ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                        <CheckCircle2 className="w-3 h-3" /> Access-Accept
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                                        <XCircle className="w-3 h-3" /> Access-Reject
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-sans text-xs">
+                                    <span
+                                      className={
+                                        isMacMismatch
+                                          ? 'text-rose-500 font-semibold flex items-center gap-1'
+                                          : log.reply === 'Access-Accept'
+                                          ? 'text-emerald-500 font-medium'
+                                          : 'text-foreground'
+                                      }
+                                    >
+                                      {isMacMismatch && <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />}
+                                      {log.reason || log.reply}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3">
+                                    <span
+                                      className={
+                                        isMacMismatch
+                                          ? 'text-rose-500 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20'
+                                          : 'text-foreground font-semibold'
+                                      }
+                                    >
+                                      {log.attempted_mac || log.callingstationid || '—'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-muted-foreground">
+                                    {log.bound_mac || sub.mac_address || '—'}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-muted-foreground">
+                                    {log.nas_name || log.nas_ip || log.calledstationid || '—'}
+                                    {log.nas_port ? ` (Port: ${log.nas_port})` : ''}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="py-6 text-center text-muted-foreground font-sans text-xs">
+                                No RADIUS authentication logs recorded yet.
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>

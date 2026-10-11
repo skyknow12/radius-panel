@@ -59,4 +59,11 @@ sql {
 	group_attribute = "SQL-Group"
 
 	$INCLUDE ${modconfdir}/${.:name}/main/${dialect}/queries.conf
+
+	# Single-session simultaneous-use check: only count active sessions that have had updates in the last 15m
+	simul_count_query = "SELECT COUNT(*) FROM radacct \
+		WHERE lower(UserName) = lower('%{SQL-User-Name}') \
+		AND AcctStopTime IS NULL \
+		AND (AcctUpdateTime > NOW() - INTERVAL '15 minutes' \
+		     OR (AcctUpdateTime IS NULL AND AcctStartTime > NOW() - INTERVAL '15 minutes'))"
 }

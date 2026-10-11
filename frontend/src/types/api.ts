@@ -318,6 +318,7 @@ export interface SubscriberProfileData {
   notes: SubscriberNoteItem[];
   activity: SubscriberActivityItem[];
   macAuthLogs?: MacAuthLogItem[];
+  authLogs?: AuthLogItem[];
   graceInfo?: GraceInfo;
   radiusAttributes: {
     check: { id: number; attribute: string; op: string; value: string }[];
@@ -429,8 +430,12 @@ export interface AuthLogItem {
   authdate: string;
   calledstationid: string | null;
   callingstationid: string | null;
+  attempted_mac?: string | null;
+  bound_mac?: string | null;
   nas_name: string | null;
   nas_ip: string | null;
+  nas_port?: string | null;
+  session_id?: string | null;
   reason: string;
 }
 

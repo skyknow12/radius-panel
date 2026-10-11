@@ -655,12 +655,37 @@ export const subscriberRepository = {
       [id],
     );
 
+    // 6. Real RADIUS authentication logs for this subscriber
+    const { rows: authLogs } = await query<any>(
+      `SELECT p.id::text, p.username, p.reply, p.authdate, p.calledstationid, p.callingstationid,
+              COALESCE(p.attempted_mac, p.callingstationid) AS attempted_mac,
+              COALESCE(p.bound_mac, $2) AS bound_mac,
+              p.nas_port, p.session_id,
+              COALESCE(nd.name, p.calledstationid) AS nas_name,
+              COALESCE(host(p.nas_ip), host(nd.ip_address)) AS nas_ip,
+              COALESCE(
+                p.reason,
+                CASE
+                  WHEN p.reply = 'Access-Accept' THEN 'Successful authentication'
+                  WHEN p.reply = 'Access-Reject' AND $2 IS NOT NULL AND p.callingstationid IS NOT NULL AND UPPER(p.callingstationid) != UPPER($2) THEN 'Incorrect MAC Address'
+                  ELSE 'Authentication rejected'
+                END
+              ) AS reason
+         FROM radpostauth p
+         LEFT JOIN nas_devices nd ON (nd.name = p.calledstationid OR host(nd.ip_address) = p.calledstationid)
+        WHERE lower(p.username) = lower($1)
+        ORDER BY p.authdate DESC
+        LIMIT 25`,
+      [subscriber.username, subscriber.mac_address],
+    );
+
     return {
       subscriber,
       services,
       notes,
       activity,
       macAuthLogs,
+      authLogs,
       graceInfo: graceCalc[0] || {
         effective_grace_days: 3,
         customer_override_days: null,
@@ -690,7 +715,7 @@ export const subscriberRepository = {
     }
 
     const normalizedMac = input.mac_address ? normalizeMacAddress(input.mac_address) : null;
-    const macBindingEnabled = input.mac_binding_enabled !== undefined ? Boolean(input.mac_binding_enabled) : Boolean(normalizedMac);
+    const macBindingEnabled = true; // Automatic for all applicable subscribers
     const macBoundAt = normalizedMac ? new Date() : null;
     const macBoundBy = normalizedMac ? adminUsername : null;
     const graceOverrideDays = input.grace_period_override_days !== undefined ? input.grace_period_override_days : null;
@@ -824,9 +849,7 @@ export const subscriberRepository = {
       }
     }
 
-    const newMacBindingEnabled = input.mac_binding_enabled !== undefined
-      ? input.mac_binding_enabled
-      : existing.mac_binding_enabled;
+    const newMacBindingEnabled = true;
 
     const newGraceOverride = input.grace_period_override_days !== undefined
       ? input.grace_period_override_days
@@ -1393,10 +1416,9 @@ export const subscriberRepository = {
     }
 
     // 5. Calling-Station-Id (MAC Binding)
-    // If MAC binding is enabled and subscriber has a bound MAC address:
-    // Insert Calling-Station-Id == <MAC> into radcheck.
+    // Enforced if subscriber has a bound MAC address.
     // If unbound, no check is inserted yet so first valid login auto-binds via DB trigger!
-    if (sub.mac_binding_enabled && sub.mac_address) {
+    if (sub.mac_address) {
       const normMac = normalizeMacAddress(sub.mac_address);
       if (normMac) {
         await query(
@@ -1406,6 +1428,13 @@ export const subscriberRepository = {
         );
       }
     }
+
+    // 6. Simultaneous-Use := 1 (Enforce maximum of one active session per subscriber)
+    await query(
+      `INSERT INTO radcheck (username, attribute, op, value)
+       VALUES ($1, 'Simultaneous-Use', ':=', '1')`,
+      [username],
+    );
 
     // 6. Framed-IP-Address (Static IP)
     if (sub.static_ip) {

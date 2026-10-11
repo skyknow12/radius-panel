@@ -7,8 +7,12 @@ export interface PostAuthRow {
   authdate: Date;
   calledstationid: string | null;
   callingstationid: string | null;
+  attempted_mac?: string | null;
+  bound_mac?: string | null;
   nas_name?: string | null;
   nas_ip?: string | null;
+  nas_port?: string | null;
+  session_id?: string | null;
   reason?: string;
 }
 
@@ -18,6 +22,9 @@ export interface PostAuthListQuery {
   search?: string;
   reply?: string;
   username?: string;
+  mac?: string;
+  nas?: string;
+  reason?: string;
 }
 
 export interface PostAuthSeriesRow {
@@ -40,7 +47,10 @@ export const radPostAuthRepository = {
       conditions.push(`(
         p.username ILIKE $${idx} OR
         p.calledstationid ILIKE $${idx} OR
-        p.callingstationid ILIKE $${idx}
+        p.callingstationid ILIKE $${idx} OR
+        COALESCE(p.attempted_mac, '') ILIKE $${idx} OR
+        COALESCE(p.bound_mac, '') ILIKE $${idx} OR
+        COALESCE(p.reason, '') ILIKE $${idx}
       )`);
       values.push(`%${params.search}%`);
       idx++;
@@ -58,9 +68,40 @@ export const radPostAuthRepository = {
       idx++;
     }
 
+    if (params.mac) {
+      conditions.push(`(
+        lower(p.callingstationid) ILIKE lower($${idx}) OR
+        lower(COALESCE(p.attempted_mac, '')) ILIKE lower($${idx}) OR
+        lower(COALESCE(p.bound_mac, '')) ILIKE lower($${idx})
+      )`);
+      values.push(`%${params.mac}%`);
+      idx++;
+    }
+
+    if (params.nas) {
+      conditions.push(`(
+        nd.name ILIKE $${idx} OR
+        host(nd.ip_address) ILIKE $${idx} OR
+        p.calledstationid ILIKE $${idx}
+      )`);
+      values.push(`%${params.nas}%`);
+      idx++;
+    }
+
+    if (params.reason && params.reason !== 'all') {
+      conditions.push(`p.reason ILIKE $${idx}`);
+      values.push(`%${params.reason}%`);
+      idx++;
+    }
+
     const whereClause = conditions.join(' AND ');
 
-    const countSql = `SELECT COUNT(*) AS total FROM radpostauth p WHERE ${whereClause}`;
+    const countSql = `
+      SELECT COUNT(*) AS total
+        FROM radpostauth p
+        LEFT JOIN nas_devices nd ON (nd.name = p.calledstationid OR host(nd.ip_address) = p.calledstationid)
+       WHERE ${whereClause}
+    `;
     const countRes = await query<{ total: string }>(countSql, values);
     const total = Number(countRes.rows[0]?.total || 0);
 
@@ -71,14 +112,27 @@ export const radPostAuthRepository = {
              p.authdate,
              p.calledstationid,
              p.callingstationid,
+             COALESCE(p.attempted_mac, p.callingstationid) AS attempted_mac,
+             COALESCE(p.bound_mac, s.mac_address) AS bound_mac,
+             p.nas_port,
+             p.session_id,
              COALESCE(nd.name, p.calledstationid) AS nas_name,
-             host(nd.ip_address) AS nas_ip,
-             CASE
-               WHEN p.reply = 'Access-Accept' THEN 'Successful authentication'
-               WHEN p.reply = 'Access-Reject' THEN 'Invalid password or user suspended/expired'
-               ELSE p.reply
-             END AS reason
+             COALESCE(host(p.nas_ip), host(nd.ip_address)) AS nas_ip,
+             COALESCE(
+               p.reason,
+               CASE
+                 WHEN p.reply = 'Access-Accept' THEN 'Successful authentication'
+                 WHEN p.reply = 'Access-Reject' AND s.mac_address IS NOT NULL AND p.callingstationid IS NOT NULL AND UPPER(p.callingstationid) != UPPER(s.mac_address) THEN 'Incorrect MAC Address'
+                 WHEN p.reply = 'Access-Reject' AND s.id IS NULL THEN 'User Not Found'
+                 WHEN p.reply = 'Access-Reject' AND s.status = 'disabled' THEN 'Account Disabled'
+                 WHEN p.reply = 'Access-Reject' AND s.status = 'suspended' THEN 'Account Suspended'
+                 WHEN p.reply = 'Access-Reject' AND s.expiry_date IS NOT NULL AND s.expiry_date < NOW() THEN 'Package or Account Expired'
+                 WHEN p.reply = 'Access-Reject' THEN 'Incorrect Password'
+                 ELSE p.reply
+               END
+             ) AS reason
         FROM radpostauth p
+        LEFT JOIN subscribers s ON lower(s.username) = lower(p.username)
         LEFT JOIN nas_devices nd ON (nd.name = p.calledstationid OR host(nd.ip_address) = p.calledstationid)
        WHERE ${whereClause}
        ORDER BY p.authdate DESC
@@ -104,7 +158,7 @@ export const radPostAuthRepository = {
     return res.data;
   },
 
-  async userAuthHistory(username: string, limit = 10): Promise<PostAuthRow[]> {
+  async userAuthHistory(username: string, limit = 20): Promise<PostAuthRow[]> {
     const res = await this.listLogs({ username, limit, page: 1 });
     return res.data;
   },

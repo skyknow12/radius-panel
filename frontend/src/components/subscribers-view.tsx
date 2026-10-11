@@ -377,7 +377,7 @@ export function SubscribersView({
         static_ip: formStaticIp.trim() || undefined,
         ipv6_prefix: formIpv6Prefix.trim() || undefined,
         mac_address: formMac.trim() || undefined,
-        mac_binding_enabled: formMacBindingEnabled,
+        mac_binding_enabled: true,
         grace_period_override_days:
           formGraceOverrideDays !== '' ? parseInt(formGraceOverrideDays, 10) : null,
         vlan_id: formVlan ? Number(formVlan) : undefined,
@@ -823,11 +823,16 @@ export function SubscribersView({
                             Grace Active
                           </span>
                         )}
-                        {sub.mac_binding_enabled && (
-                          <span className="block mt-0.5 text-[9px] font-mono text-cyan-400" title={sub.mac_address || 'Auto-bind on first login'}>
-                            🔒 {sub.mac_address ? sub.mac_address.slice(0, 8) + '…' : 'MAC Auto'}
-                          </span>
-                        )}
+                        <span
+                          className="block mt-0.5 text-[9px] font-mono"
+                          title={sub.mac_address ? `Bound MAC: ${sub.mac_address}` : 'Automatic binding active: will bind on first login'}
+                        >
+                          {sub.mac_address ? (
+                            <span className="text-emerald-400 font-semibold">🔒 {sub.mac_address}</span>
+                          ) : (
+                            <span className="text-amber-400">✨ Auto-Bind</span>
+                          )}
+                        </span>
                       </td>
                       <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -1232,22 +1237,8 @@ export function SubscribersView({
                       onChange={(e) => setFormMac(e.target.value)}
                       placeholder="AA:BB:CC:DD:EE:FF"
                       className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-mono"
-                    />
-                  </div>
-                  <div className="flex flex-col justify-center">
-                    <label className="flex items-center gap-2 cursor-pointer select-none pt-2">
-                      <input
-                        type="checkbox"
-                        checked={formMacBindingEnabled}
-                        onChange={(e) => setFormMacBindingEnabled(e.target.checked)}
-                        className="w-4 h-4 rounded text-primary focus:ring-primary border-border bg-background"
-                      />
-                      <span className="font-medium text-foreground text-xs">
-                        Enable MAC Binding Enforcement
-                      </span>
-                    </label>
-                    <span className="text-[10px] text-muted-foreground mt-0.5 ml-6">
-                      Auto-binds customer MAC upon first successful login if blank
+                    <span className="text-[10px] text-muted-foreground block mt-1">
+                      Automatic binding active: If left blank, customer device MAC binds automatically on first successful login.
                     </span>
                   </div>
                   <div>
