@@ -4820,12 +4820,27 @@ apiRouter.post(
     const authReq = req as AuthenticatedRequest;
     const customerId = parseInt(req.params.id, 10);
     const schema = z.object({
-      onuId: z.number().int().positive(),
+      onuId: z.number().int().positive().optional(),
+      oltId: z.number().int().positive().optional(),
+      serialNumber: z.string().optional(),
+      slot: z.number().int().nonnegative().optional(),
+      port: z.number().int().nonnegative().optional(),
+      ontId: z.number().int().nonnegative().optional(),
       source: z.enum(['manual', 'sn_match', 'description_match', 'mac_match']).optional(),
     });
     const parsed = schema.parse(req.body);
 
-    await oltRepository.associateCustomer(customerId, parsed.onuId, authReq.user, parsed.source || 'manual');
+    await oltRepository.associateOrCreateCustomerOnu({
+      customerId,
+      onuId: parsed.onuId,
+      oltId: parsed.oltId,
+      serialNumber: parsed.serialNumber,
+      slot: parsed.slot,
+      port: parsed.port,
+      ontId: parsed.ontId,
+      source: parsed.source || 'manual',
+      actor: authReq.user,
+    });
     res.json(envelope({ success: true }, 'live'));
   })
 );

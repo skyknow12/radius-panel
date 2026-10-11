@@ -36,6 +36,9 @@ import {
   Signal,
   Link,
   Unlink,
+  Copy,
+  Check,
+  Zap,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -88,6 +91,20 @@ export function SubscriberProfileModal({
   const [selectedOnuToAssociate, setSelectedOnuToAssociate] = React.useState<number | ''>('');
   const [associatingOnu, setAssociatingOnu] = React.useState(false);
 
+  // In-Card OLT & ONU Selection states
+  const [oltsList, setOltsList] = React.useState<any[]>([]);
+  const [cardSelectedOltId, setCardSelectedOltId] = React.useState<number | ''>('');
+  const [cardAssignMode, setCardAssignMode] = React.useState<'discovered' | 'manual' | 'registered'>('discovered');
+  const [cardDiscoveredOnus, setCardDiscoveredOnus] = React.useState<any[]>([]);
+  const [loadingCardDiscovered, setLoadingCardDiscovered] = React.useState(false);
+  const [cardRegisteredOnus, setCardRegisteredOnus] = React.useState<any[]>([]);
+  const [loadingCardRegistered, setLoadingCardRegistered] = React.useState(false);
+  const [cardManualSn, setCardManualSn] = React.useState('');
+  const [cardManualSlot, setCardManualSlot] = React.useState(0);
+  const [cardManualPort, setCardManualPort] = React.useState(0);
+  const [cardManualOntId, setCardManualOntId] = React.useState(1);
+  const [isReassigningOnu, setIsReassigningOnu] = React.useState(false);
+
   // Modals inside profile
   const [rechargeModalOpen, setRechargeModalOpen] = React.useState(false);
   const [recharges, setRecharges] = React.useState<RechargeTransactionItem[]>([]);
@@ -132,7 +149,7 @@ export function SubscriberProfileModal({
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const [profRes, usageRes, pkgRes, recRes, tktRes, crmNotesRes, crmActRes, onuRes] = await Promise.all([
+      const [profRes, usageRes, pkgRes, recRes, tktRes, crmNotesRes, crmActRes, onuRes, oltsRes] = await Promise.all([
         fetch(`/api/subscribers/${subscriberId}/profile`),
         fetch(`/api/subscribers/${subscriberId}/usage?range=${usageRange}`),
         fetch('/api/packages'),
@@ -141,6 +158,7 @@ export function SubscriberProfileModal({
         fetch(`/api/crm/subscribers/${subscriberId}/notes`),
         fetch(`/api/crm/subscribers/${subscriberId}/activities`),
         fetch(`/api/subscribers/${subscriberId}/onu`),
+        fetch('/api/olts'),
       ]);
 
       if (profRes.ok) {
@@ -184,6 +202,9 @@ export function SubscriberProfileModal({
       if (onuRes.ok) {
         const json = await onuRes.json();
         setCustomerOnu(json.data);
+        if (json.data?.olt_id) {
+          setCardSelectedOltId(json.data.olt_id);
+        }
         if (json.data?.onu_id) {
           fetch(`/api/onus/${json.data.onu_id}/optical-history`)
             .then((r) => r.json())
@@ -192,6 +213,10 @@ export function SubscriberProfileModal({
         } else {
           setOnuOpticalHistory([]);
         }
+      }
+      if (oltsRes.ok) {
+        const json = await oltsRes.json();
+        setOltsList(json.data || []);
       }
     } catch {} finally {
       setLoading(false);
@@ -298,6 +323,140 @@ export function SubscriberProfileModal({
       }
     } catch {
       showNotice('Error saving ONU association');
+    } finally {
+      setAssociatingOnu(false);
+    }
+  };
+
+  const handleSelectCardOlt = async (oltId: number | '') => {
+    setCardSelectedOltId(oltId);
+    if (!oltId) {
+      setCardDiscoveredOnus([]);
+      setCardRegisteredOnus([]);
+      return;
+    }
+    // Fetch registered unassigned ONUs on this OLT
+    setLoadingCardRegistered(true);
+    try {
+      const res = await fetch(`/api/olts/${oltId}/onus?limit=50`);
+      if (res.ok) {
+        const json = await res.json();
+        setCardRegisteredOnus(json.data || []);
+      }
+    } catch {} finally {
+      setLoadingCardRegistered(false);
+    }
+  };
+
+  const handleScanDiscoveredOnus = async (oltId: number) => {
+    try {
+      setLoadingCardDiscovered(true);
+      const res = await fetch(`/api/olts/${oltId}/discover`);
+      if (res.ok) {
+        const json = await res.json();
+        setCardDiscoveredOnus(json.data || []);
+        if ((json.data || []).length === 0) {
+          showNotice('No unregistered ONUs currently detected on this OLT PON ports');
+        } else {
+          showNotice(`Found ${json.data.length} discovered ONU(s) via Huawei autofind!`);
+        }
+      } else {
+        showNotice('Failed to scan autofind from OLT');
+      }
+    } catch {
+      showNotice('Communication error while running autofind');
+    } finally {
+      setLoadingCardDiscovered(false);
+    }
+  };
+
+  const handleLinkDiscoveredOnu = async (d: any) => {
+    if (!cardSelectedOltId) return;
+    try {
+      setAssociatingOnu(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oltId: Number(cardSelectedOltId),
+          serialNumber: d.serialNumber,
+          slot: d.slot,
+          port: d.ponPort,
+          source: 'manual',
+        }),
+      });
+      if (res.ok) {
+        showNotice(`ONU ${d.serialNumber} successfully linked to subscriber!`);
+        setIsReassigningOnu(false);
+        fetchProfile();
+      } else {
+        const json = await res.json();
+        showNotice(json.error || 'Failed to link discovered ONU');
+      }
+    } catch {
+      showNotice('Error linking discovered ONU');
+    } finally {
+      setAssociatingOnu(false);
+    }
+  };
+
+  const handleLinkManualSn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cardSelectedOltId || !cardManualSn.trim()) {
+      showNotice('Please select an OLT and enter a valid serial number');
+      return;
+    }
+    try {
+      setAssociatingOnu(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oltId: Number(cardSelectedOltId),
+          serialNumber: cardManualSn.trim(),
+          slot: Number(cardManualSlot),
+          port: Number(cardManualPort),
+          ontId: Number(cardManualOntId),
+          source: 'manual',
+        }),
+      });
+      if (res.ok) {
+        showNotice(`ONU ${cardManualSn.trim()} successfully associated!`);
+        setIsReassigningOnu(false);
+        setCardManualSn('');
+        fetchProfile();
+      } else {
+        const json = await res.json();
+        showNotice(json.error || 'Failed to associate manual ONU');
+      }
+    } catch {
+      showNotice('Error linking manual ONU');
+    } finally {
+      setAssociatingOnu(false);
+    }
+  };
+
+  const handleLinkRegisteredOnu = async (onuId: number) => {
+    try {
+      setAssociatingOnu(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          onuId,
+          source: 'manual',
+        }),
+      });
+      if (res.ok) {
+        showNotice('ONU successfully linked to subscriber!');
+        setIsReassigningOnu(false);
+        fetchProfile();
+      } else {
+        const json = await res.json();
+        showNotice(json.error || 'Failed to link registered ONU');
+      }
+    } catch {
+      showNotice('Error linking ONU');
     } finally {
       setAssociatingOnu(false);
     }
@@ -718,6 +877,24 @@ export function SubscriberProfileModal({
 
             <button
               onClick={() => {
+                setGraceDaysInput(profile?.graceInfo?.effective_grace_days || 3);
+                setGraceNotesInput('');
+                setAddGraceModalOpen(true);
+              }}
+              disabled={actionLoading}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 shadow-sm transition-colors ${
+                sub?.is_in_grace || sub?.grace_status === 'active'
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white ring-1 ring-amber-400'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              }`}
+              title={sub?.is_in_grace ? 'Manage or extend active grace period' : 'Grant grace period to subscriber'}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              {sub?.is_in_grace || sub?.grace_status === 'active' ? 'Grace Active' : 'Grace Period'}
+            </button>
+
+            <button
+              onClick={() => {
                 setSelectedPackageId(sub?.current_package_id || null);
                 setPackageModalOpen(true);
               }}
@@ -1003,107 +1180,437 @@ export function SubscriberProfileModal({
                     </div>
                   </div>
 
-                  {/* Card 4: Grace Period Management */}
+                  {/* Card 4: ONU / Optical Access */}
                   <div className="p-5 rounded-xl border border-border bg-card/60 space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                        <Clock className="w-4 h-4 text-primary" /> Grace Period Management
+                        <Cpu className="w-4 h-4 text-primary" /> ONU / Optical Access
                       </h3>
                       <div className="flex items-center gap-2">
-                        {sub.is_in_grace || sub.grace_status === 'active' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                            Active Grace
-                          </span>
-                        ) : sub.grace_status === 'expired' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/20">
-                            <AlertTriangle className="w-3.5 h-3.5" /> Grace Expired
+                        {customerOnu ? (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              customerOnu.run_state === 'online'
+                                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                            }`}
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                customerOnu.run_state === 'online'
+                                  ? 'bg-emerald-500 animate-pulse'
+                                  : 'bg-rose-500'
+                              }`}
+                            />
+                            {customerOnu.run_state === 'online' ? 'ONT Online' : 'ONT Offline'}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-border">
-                            No Active Grace
+                            No ONU Linked
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-xl bg-background border border-border/80 space-y-2 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground font-medium">Effective Grace Duration:</span>
-                        <span className="font-bold text-foreground">
-                          {profile?.graceInfo?.effective_grace_days ?? 3} Day(s)
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground font-medium">Inheritance Source:</span>
-                        <span className="px-2 py-0.5 rounded bg-muted text-[11px] font-medium text-foreground">
-                          {profile?.graceInfo?.customer_override_days !== null && profile?.graceInfo?.customer_override_days !== undefined
-                            ? `Customer Override (${profile.graceInfo.customer_override_days}d)`
-                            : profile?.graceInfo?.ownership_type === 'reseller' && profile?.graceInfo?.reseller_grace_days !== null && profile?.graceInfo?.reseller_grace_days !== undefined
-                            ? `Reseller Default (${profile.graceInfo.reseller_grace_days}d)`
-                            : profile?.graceInfo?.branch_grace_days !== null && profile?.graceInfo?.branch_grace_days !== undefined
-                            ? `Branch Default (${profile.graceInfo.branch_grace_days}d)`
-                            : `Organization Default (${profile?.graceInfo?.org_grace_days ?? 3}d)`}
-                        </span>
-                      </div>
-
-                      {sub.grace_status === 'active' && sub.grace_end_date && (
-                        <div className="pt-2 border-t border-border/40 space-y-1">
-                          <div className="flex items-center justify-between text-emerald-500 font-semibold">
-                            <span>Grace Valid Until:</span>
-                            <span>{new Date(sub.grace_end_date).toLocaleString()}</span>
+                    {customerOnu && !isReassigningOnu ? (
+                      /* Active ONU Details & Telemetry View */
+                      <div className="space-y-3">
+                        <div className="p-3.5 rounded-xl bg-background border border-border/80 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground font-medium">OLT Chassis:</span>
+                            <span className="font-bold text-foreground">
+                              {customerOnu.olt_name || 'Huawei OLT'}
+                            </span>
                           </div>
-                          {sub.grace_granted_by && (
-                            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                              <span>Granted By: {sub.grace_granted_by}</span>
-                              {sub.grace_notes && <span>Note: {sub.grace_notes}</span>}
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground font-medium">Port & ONT ID:</span>
+                            <span className="font-mono font-semibold text-foreground">
+                              GPON 0/{customerOnu.slot ?? 0}/{customerOnu.pon_port ?? 0} &bull; ONT #{customerOnu.ont_id ?? 1}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground font-medium">Serial Number:</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-primary select-all">
+                                {customerOnu.serial_number}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  try {
+                                    navigator.clipboard?.writeText(customerOnu.serial_number);
+                                    showNotice('Serial number copied to clipboard');
+                                  } catch {}
+                                }}
+                                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                                title="Copy Serial Number"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
                             </div>
-                          )}
+                          </div>
+
+                          {/* Optical Power Readings */}
+                          <div className="pt-2 border-t border-border/50">
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                              <div className="p-2 rounded-lg bg-muted/40 border border-border/40">
+                                <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                                  Rx Power
+                                </div>
+                                <div
+                                  className={`text-xs font-bold font-mono mt-0.5 ${
+                                    customerOnu.last_rx_power === null || customerOnu.last_rx_power === undefined
+                                      ? 'text-muted-foreground'
+                                      : customerOnu.last_rx_power < (customerOnu.optical_critical_threshold ?? -28.0)
+                                      ? 'text-rose-500'
+                                      : customerOnu.last_rx_power < (customerOnu.optical_warning_threshold ?? -25.0)
+                                      ? 'text-amber-500'
+                                      : 'text-emerald-500'
+                                  }`}
+                                >
+                                  {customerOnu.last_rx_power !== null && customerOnu.last_rx_power !== undefined
+                                    ? `${customerOnu.last_rx_power} dBm`
+                                    : 'N/A'}
+                                </div>
+                              </div>
+
+                              <div className="p-2 rounded-lg bg-muted/40 border border-border/40">
+                                <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                                  Tx Power
+                                </div>
+                                <div className="text-xs font-bold font-mono text-foreground mt-0.5">
+                                  {customerOnu.last_tx_power !== null && customerOnu.last_tx_power !== undefined
+                                    ? `${customerOnu.last_tx_power} dBm`
+                                    : 'N/A'}
+                                </div>
+                              </div>
+
+                              <div className="p-2 rounded-lg bg-muted/40 border border-border/40">
+                                <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                                  OLT Rx
+                                </div>
+                                <div className="text-xs font-bold font-mono text-foreground mt-0.5">
+                                  {customerOnu.last_olt_rx_power !== null && customerOnu.last_olt_rx_power !== undefined
+                                    ? `${customerOnu.last_olt_rx_power} dBm`
+                                    : 'N/A'}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground text-right mt-1.5">
+                              Last sampled:{' '}
+                              {customerOnu.last_optical_reading_at
+                                ? new Date(customerOnu.last_optical_reading_at).toLocaleTimeString()
+                                : 'Never'}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                    </div>
 
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGraceDaysInput(profile?.graceInfo?.effective_grace_days || 3);
-                          setGraceNotesInput('');
-                          setAddGraceModalOpen(true);
-                        }}
-                        disabled={actionLoading}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
-                      >
-                        <Clock className="w-3.5 h-3.5" /> {sub.is_in_grace ? 'Extend Grace' : 'Add Grace'}
-                      </button>
+                        {/* Action buttons for assigned ONU */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleSampleOptical}
+                            disabled={samplingOptical}
+                            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
+                          >
+                            <Signal className={`w-3.5 h-3.5 ${samplingOptical ? 'animate-pulse' : ''}`} />
+                            {samplingOptical ? 'Sampling...' : 'Sample Live Optical'}
+                          </button>
 
-                      {sub.is_in_grace && (
-                        <button
-                          type="button"
-                          onClick={() => setRevokeGraceConfirmOpen(true)}
-                          disabled={actionLoading}
-                          className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                        >
-                          <AlertTriangle className="w-3.5 h-3.5" /> Revoke Grace
-                        </button>
-                      )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsReassigningOnu(true);
+                              if (customerOnu.olt_id) {
+                                handleSelectCardOlt(customerOnu.olt_id);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-card border border-border hover:bg-accent text-xs font-medium flex items-center gap-1.5 transition-colors"
+                          >
+                            <Link className="w-3.5 h-3.5 text-primary" /> Change ONU
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOverrideDaysInput(
-                            sub.grace_period_override_days !== null && sub.grace_period_override_days !== undefined
-                              ? String(sub.grace_period_override_days)
-                              : ''
-                          );
-                          setOverrideModalOpen(true);
-                        }}
-                        disabled={actionLoading}
-                        className="px-3 py-1.5 rounded-lg bg-card border border-border hover:bg-accent text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                      >
-                        Configure Override
-                      </button>
-                    </div>
+                          <button
+                            type="button"
+                            onClick={handleDissociateOnu}
+                            disabled={dissociatingOnu}
+                            className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                          >
+                            <Unlink className="w-3.5 h-3.5" /> Dissociate
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('onu')}
+                            className="px-3 py-1.5 rounded-lg bg-muted text-foreground hover:bg-accent text-xs font-medium flex items-center gap-1.5 transition-colors ml-auto"
+                          >
+                            Full Optical Tab &rarr;
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Select OLT 1st -> Discovered ONUs / Manual SN / Registered ONUs */
+                      <div className="space-y-3.5 text-xs">
+                        {/* Step 1: Select OLT Chassis */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                              <Radio className="w-3.5 h-3.5 text-primary" /> 1. Select OLT Chassis:
+                            </label>
+                            {isReassigningOnu && (
+                              <button
+                                type="button"
+                                onClick={() => setIsReassigningOnu(false)}
+                                className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                              >
+                                Cancel Reassignment
+                              </button>
+                            )}
+                          </div>
+                          <select
+                            value={cardSelectedOltId}
+                            onChange={(e) => {
+                              const val = Number(e.target.value) || '';
+                              handleSelectCardOlt(val);
+                            }}
+                            className="w-full px-3 py-2 rounded-xl bg-background border border-border font-medium text-xs focus:ring-2 focus:ring-primary outline-none"
+                          >
+                            <option value="">-- Choose OLT Chassis First --</option>
+                            {oltsList.map((olt) => (
+                              <option key={olt.id} value={olt.id}>
+                                {olt.name} ({olt.ip_address} &bull; {olt.model || 'Huawei OLT'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {!cardSelectedOltId ? (
+                          <div className="p-4 rounded-xl bg-background border border-dashed border-border/80 text-center space-y-1">
+                            <p className="text-muted-foreground font-medium text-xs">
+                              Please select an OLT chassis above to discover unconfigured ONUs or register a serial number.
+                            </p>
+                          </div>
+                        ) : (
+                          /* Step 2: Register / Link Options */
+                          <div className="space-y-3 pt-1 border-t border-border/60">
+                            {/* Mode Segment Switcher */}
+                            <div className="flex rounded-lg bg-muted/60 p-1 gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setCardAssignMode('discovered')}
+                                className={`flex-1 py-1 px-2 rounded-md font-semibold text-[11px] transition-all flex items-center justify-center gap-1 ${
+                                  cardAssignMode === 'discovered'
+                                    ? 'bg-card text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                <Zap className="w-3 h-3 text-amber-500" /> Discovered (Autofind)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCardAssignMode('manual')}
+                                className={`flex-1 py-1 px-2 rounded-md font-semibold text-[11px] transition-all flex items-center justify-center gap-1 ${
+                                  cardAssignMode === 'manual'
+                                    ? 'bg-card text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                <Key className="w-3 h-3 text-primary" /> Manual SN
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCardAssignMode('registered')}
+                                className={`flex-1 py-1 px-2 rounded-md font-semibold text-[11px] transition-all flex items-center justify-center gap-1 ${
+                                  cardAssignMode === 'registered'
+                                    ? 'bg-card text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                <Layers className="w-3 h-3 text-emerald-500" /> Registered ({cardRegisteredOnus.length})
+                              </button>
+                            </div>
+
+                            {/* View A: Discovered ONUs (Autofind) */}
+                            {cardAssignMode === 'discovered' && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] text-muted-foreground font-medium">
+                                    Huawei OLT Autofind Detection:
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleScanDiscoveredOnus(Number(cardSelectedOltId))}
+                                    disabled={loadingCardDiscovered}
+                                    className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 flex items-center gap-1 shadow-sm transition-colors disabled:opacity-50"
+                                  >
+                                    <RefreshCw className={`w-3 h-3 ${loadingCardDiscovered ? 'animate-spin' : ''}`} />
+                                    {loadingCardDiscovered ? 'Scanning...' : 'Scan Discovered ONUs'}
+                                  </button>
+                                </div>
+
+                                {loadingCardDiscovered ? (
+                                  <div className="p-4 rounded-xl bg-background border border-border text-center space-y-1.5">
+                                    <RefreshCw className="w-4 h-4 animate-spin text-primary mx-auto" />
+                                    <p className="text-xs text-muted-foreground">
+                                      Querying Huawei OLT `display ont autofind all`...
+                                    </p>
+                                  </div>
+                                ) : cardDiscoveredOnus.length === 0 ? (
+                                  <div className="p-4 rounded-xl bg-background border border-border/80 text-center space-y-1">
+                                    <p className="text-xs text-muted-foreground font-medium">
+                                      No discovered ONUs waiting on PON ports.
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground/80">
+                                      Click <strong>Scan Discovered ONUs</strong> or switch to <strong>Manual SN</strong> to associate by serial number.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                                    {cardDiscoveredOnus.map((disc, idx) => (
+                                      <div
+                                        key={disc.serialNumber || idx}
+                                        className="p-2.5 rounded-lg bg-background border border-border flex items-center justify-between gap-2"
+                                      >
+                                        <div>
+                                          <div className="font-mono font-bold text-foreground flex items-center gap-1.5">
+                                            <span>{disc.serialNumber}</span>
+                                            <span className="px-1.5 py-0.2 rounded bg-primary/10 text-primary text-[10px] font-semibold">
+                                              {disc.vendorId || 'Huawei'}
+                                            </span>
+                                          </div>
+                                          <div className="text-[11px] text-muted-foreground">
+                                            Port: GPON 0/{disc.slot ?? 0}/{disc.ponPort ?? 0}
+                                          </div>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleLinkDiscoveredOnu(disc)}
+                                          disabled={associatingOnu}
+                                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1 shadow-sm transition-colors disabled:opacity-50"
+                                        >
+                                          <Link className="w-3 h-3" />
+                                          Link ONU
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* View B: Manual Serial Number */}
+                            {cardAssignMode === 'manual' && (
+                              <form onSubmit={handleLinkManualSn} className="space-y-2.5">
+                                <div>
+                                  <label className="text-[11px] font-medium text-muted-foreground block mb-1">
+                                    Serial Number (12 or 16 hex chars):
+                                  </label>
+                                  <input
+                                    type="text"
+                                    required
+                                    value={cardManualSn}
+                                    onChange={(e) => setCardManualSn(e.target.value.toUpperCase().trim())}
+                                    placeholder="48575443XXXXXXXX"
+                                    className="w-full px-3 py-1.5 rounded-lg bg-background border border-border font-mono text-xs focus:ring-2 focus:ring-primary outline-none"
+                                  />
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div>
+                                    <label className="text-[10px] text-muted-foreground block mb-0.5">Slot:</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="32"
+                                      value={cardManualSlot}
+                                      onChange={(e) => setCardManualSlot(Number(e.target.value) || 0)}
+                                      className="w-full px-2 py-1 rounded-lg bg-background border border-border text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-muted-foreground block mb-0.5">PON Port:</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="31"
+                                      value={cardManualPort}
+                                      onChange={(e) => setCardManualPort(Number(e.target.value) || 0)}
+                                      className="w-full px-2 py-1 rounded-lg bg-background border border-border text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-muted-foreground block mb-0.5">ONT ID:</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="127"
+                                      value={cardManualOntId}
+                                      onChange={(e) => setCardManualOntId(Number(e.target.value) || 1)}
+                                      className="w-full px-2 py-1 rounded-lg bg-background border border-border text-xs"
+                                    />
+                                  </div>
+                                </div>
+                                <button
+                                  type="submit"
+                                  disabled={associatingOnu || !cardManualSn.trim()}
+                                  className="w-full py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 flex items-center justify-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
+                                >
+                                  <Link className="w-3.5 h-3.5" />
+                                  {associatingOnu ? 'Registering...' : 'Save & Link ONU'}
+                                </button>
+                              </form>
+                            )}
+
+                            {/* View C: Registered Inventory */}
+                            {cardAssignMode === 'registered' && (
+                              <div className="space-y-2">
+                                {loadingCardRegistered ? (
+                                  <div className="p-3 text-center text-xs text-muted-foreground">
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto mb-1" />
+                                    Loading registered inventory...
+                                  </div>
+                                ) : cardRegisteredOnus.length === 0 ? (
+                                  <div className="p-4 rounded-xl bg-background border border-border/80 text-center space-y-1">
+                                    <p className="text-xs text-muted-foreground font-medium">
+                                      No unassigned ONUs registered on this OLT chassis.
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground/80">
+                                      Switch to <strong>Discovered (Autofind)</strong> or <strong>Manual SN</strong> to link one.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                                    {cardRegisteredOnus.map((onu) => (
+                                      <div
+                                        key={onu.id}
+                                        className="p-2.5 rounded-lg bg-background border border-border flex items-center justify-between gap-2"
+                                      >
+                                        <div>
+                                          <div className="font-mono font-bold text-foreground">
+                                            {onu.serial_number}
+                                          </div>
+                                          <div className="text-[11px] text-muted-foreground">
+                                            Port: GPON 0/{onu.slot ?? 0}/{onu.pon_port ?? 0} &bull; ONT #{onu.ont_id ?? 1}
+                                          </div>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleLinkRegisteredOnu(onu.id)}
+                                          disabled={associatingOnu}
+                                          className="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs flex items-center gap-1 shadow-sm transition-colors disabled:opacity-50"
+                                        >
+                                          <Link className="w-3 h-3" />
+                                          Link
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Active Telemetry Card */}
@@ -2549,6 +3056,23 @@ export function SubscriberProfileModal({
                   />
                 </div>
 
+                {/* Active Grace Details if in grace */}
+                {(sub.is_in_grace || sub.grace_status === 'active') && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-1.5 text-xs text-foreground">
+                    <div className="flex items-center justify-between font-semibold text-amber-600 dark:text-amber-400">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-4 h-4" /> Currently Active Grace
+                      </span>
+                      <span>Valid: {sub.grace_end_date ? new Date(sub.grace_end_date).toLocaleString() : 'Active'}</span>
+                    </div>
+                    {sub.grace_granted_by && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Granted by: {sub.grace_granted_by} {sub.grace_notes ? `— "${sub.grace_notes}"` : ''}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1 text-emerald-500">
                   <span className="font-bold flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4" /> Seamless Connectivity Guaranteed
@@ -2558,21 +3082,52 @@ export function SubscriberProfileModal({
                   </p>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setAddGraceModalOpen(false)}
-                    className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={actionLoading}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 shadow-sm transition-colors"
-                  >
-                    Grant Grace
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border">
+                  <div className="flex items-center gap-2">
+                    {sub.is_in_grace && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddGraceModalOpen(false);
+                          setRevokeGraceConfirmOpen(true);
+                        }}
+                        className="px-3 py-2 rounded-xl border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 font-semibold"
+                      >
+                        Revoke Grace
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddGraceModalOpen(false);
+                        setOverrideDaysInput(
+                          sub.grace_period_override_days !== null && sub.grace_period_override_days !== undefined
+                            ? String(sub.grace_period_override_days)
+                            : ''
+                        );
+                        setOverrideModalOpen(true);
+                      }}
+                      className="px-3 py-2 rounded-xl bg-card border border-border hover:bg-accent font-medium text-muted-foreground"
+                    >
+                      Override Config
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAddGraceModalOpen(false)}
+                      className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 shadow-sm transition-colors"
+                    >
+                      {sub.is_in_grace ? 'Extend Grace' : 'Grant Grace'}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>

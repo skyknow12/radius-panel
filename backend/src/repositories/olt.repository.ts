@@ -757,6 +757,18 @@ export const oltRepository = {
       [customerId, onuId, oltId, source, actor?.userId || null]
     );
 
+    // Update subscriber record
+    const onuData = await query<{ serial_number: string }>(
+      'SELECT serial_number FROM onus WHERE id = $1',
+      [onuId]
+    );
+    if (onuData.rows[0]) {
+      await query(
+        'UPDATE subscribers SET onu_mac_sn = $1, updated_at = NOW() WHERE id = $2',
+        [onuData.rows[0].serial_number, customerId]
+      );
+    }
+
     // Audit log
     await this.logOperation(
       oltId,
@@ -766,6 +778,47 @@ export const oltRepository = {
       undefined,
       actor
     );
+  },
+
+  /**
+   * Helper to associate existing ONU or register by serial number on selected OLT
+   */
+  async associateOrCreateCustomerOnu(params: {
+    customerId: number;
+    onuId?: number;
+    oltId?: number;
+    serialNumber?: string;
+    slot?: number;
+    port?: number;
+    ontId?: number;
+    source?: 'manual' | 'sn_match' | 'description_match' | 'mac_match';
+    actor?: AuthSession;
+  }): Promise<void> {
+    let targetOnuId = params.onuId;
+    if (!targetOnuId) {
+      if (!params.oltId || !params.serialNumber) {
+        throw HttpError.badRequest('Either onuId or both oltId and serialNumber are required');
+      }
+      const existing = await query<{ id: number }>(
+        'SELECT id FROM onus WHERE olt_id = $1 AND lower(serial_number) = lower($2)',
+        [params.oltId, params.serialNumber.trim()]
+      );
+      if (existing.rows[0]) {
+        targetOnuId = existing.rows[0].id;
+      } else {
+        targetOnuId = await this.upsertOnu({
+          olt_id: params.oltId,
+          serial_number: params.serialNumber.trim(),
+          frame: 0,
+          slot: params.slot ?? 0,
+          pon_port: params.port ?? 0,
+          ont_id: params.ontId ?? 0,
+          run_state: 'online',
+          registration_state: 'registered',
+        });
+      }
+    }
+    await this.associateCustomer(params.customerId, targetOnuId, params.actor, params.source || 'manual');
   },
 
   /**
@@ -779,6 +832,7 @@ export const oltRepository = {
     if (existing.rows[0]) {
       const { olt_id, onu_id } = existing.rows[0];
       await query('DELETE FROM customer_onu_associations WHERE customer_id = $1', [customerId]);
+      await query('UPDATE subscribers SET onu_mac_sn = NULL, updated_at = NOW() WHERE id = $1', [customerId]);
       await this.logOperation(
         olt_id,
         'dissociate_customer',
