@@ -193,10 +193,10 @@ export function NocDashboardView({
         {/* Online Users */}
         <div
           onClick={() => onNavigate('sessions')}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+          className="rounded-2xl border card-pastel-1 p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-1">
-            <span className="text-xs font-medium group-hover:text-primary transition-colors">Online Users</span>
+            <span className="text-xs font-semibold group-hover:text-primary transition-colors">Online Users</span>
             <Users className="w-4 h-4 text-primary" />
           </div>
           <div className="text-2xl font-black text-foreground">
@@ -211,10 +211,10 @@ export function NocDashboardView({
         {/* Active Sessions */}
         <div
           onClick={() => onNavigate('sessions')}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+          className="rounded-2xl border card-pastel-2 p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-1">
-            <span className="text-xs font-medium group-hover:text-primary transition-colors">Active Sessions</span>
+            <span className="text-xs font-semibold group-hover:text-primary transition-colors">Active Sessions</span>
             <Layers className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="text-2xl font-black text-foreground">
@@ -228,10 +228,10 @@ export function NocDashboardView({
         {/* Auth Requests (Today) */}
         <div
           onClick={() => onNavigate('auth_logs')}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+          className="rounded-2xl border card-pastel-6 p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-1">
-            <span className="text-xs font-medium group-hover:text-primary transition-colors">Auth Requests</span>
+            <span className="text-xs font-semibold group-hover:text-primary transition-colors">Auth Requests</span>
             <Radio className="w-4 h-4 text-blue-500" />
           </div>
           <div className="text-2xl font-black text-foreground">
@@ -245,10 +245,10 @@ export function NocDashboardView({
         {/* Auth Failures */}
         <div
           onClick={() => onNavigate('auth_logs')}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
+          className="rounded-2xl border card-pastel-8 p-4 shadow-sm hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-1">
-            <span className="text-xs font-medium group-hover:text-rose-500 transition-colors">Auth Failures</span>
+            <span className="text-xs font-semibold group-hover:text-rose-500 transition-colors">Auth Failures</span>
             <XCircle className="w-4 h-4 text-rose-500" />
           </div>
           <div className="text-2xl font-black text-rose-500">
@@ -262,10 +262,10 @@ export function NocDashboardView({
         {/* NAS Devices (Active / Total) */}
         <div
           onClick={() => onNavigate('nas_devices')}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+          className="rounded-2xl border card-pastel-3 p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-1">
-            <span className="text-xs font-medium group-hover:text-primary transition-colors">BNG / NAS</span>
+            <span className="text-xs font-semibold group-hover:text-primary transition-colors">BNG / NAS</span>
             <Server className="w-4 h-4 text-cyan-500" />
           </div>
           <div className="text-2xl font-black text-foreground">
@@ -279,10 +279,10 @@ export function NocDashboardView({
         {/* Today's Traffic */}
         <div
           onClick={() => onNavigate('reports')}
-          className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+          className="rounded-2xl border card-pastel-5 p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-1">
-            <span className="text-xs font-medium group-hover:text-primary transition-colors">Today's Traffic</span>
+            <span className="text-xs font-semibold group-hover:text-primary transition-colors">Today's Traffic</span>
             <Zap className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-black text-foreground">

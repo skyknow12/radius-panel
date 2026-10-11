@@ -183,10 +183,10 @@ export function CustomerDashboardView({
           {/* Card 1: Total Customers */}
           <div
             onClick={() => onNavigate('subscribers')}
-            className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+            className="p-4 rounded-2xl border card-pastel-1 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-center justify-between text-muted-foreground mb-1">
-              <span className="text-xs font-medium group-hover:text-primary transition-colors">Total Customers</span>
+              <span className="text-xs font-semibold group-hover:text-primary transition-colors">Total Customers</span>
               <Users className="w-4 h-4 text-primary" />
             </div>
             <div className="text-2xl font-black text-foreground mt-1">
@@ -201,10 +201,10 @@ export function CustomerDashboardView({
           {/* Card 2: Online Customers */}
           <div
             onClick={() => onNavigate('online_customers')}
-            className="p-4 rounded-2xl bg-card border border-border hover:border-emerald-500/50 hover:shadow-md transition-all cursor-pointer group"
+            className="p-4 rounded-2xl border card-pastel-2 hover:border-emerald-500/50 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-center justify-between text-muted-foreground mb-1">
-              <span className="text-xs font-medium group-hover:text-emerald-500 transition-colors">Online Users</span>
+              <span className="text-xs font-semibold group-hover:text-emerald-500 transition-colors">Online Users</span>
               <Wifi className="w-4 h-4 text-emerald-500" />
             </div>
             <div className="text-2xl font-black text-emerald-500 mt-1 flex items-center gap-2">
@@ -220,10 +220,10 @@ export function CustomerDashboardView({
           {/* Card 3: Active Customers */}
           <div
             onClick={() => onNavigate('subscribers', { status: 'active' })}
-            className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+            className="p-4 rounded-2xl border card-pastel-3 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-center justify-between text-muted-foreground mb-1">
-              <span className="text-xs font-medium group-hover:text-primary transition-colors">Active Status</span>
+              <span className="text-xs font-semibold group-hover:text-primary transition-colors">Active Status</span>
               <UserCheck className="w-4 h-4 text-blue-500" />
             </div>
             <div className="text-2xl font-black text-foreground mt-1">
@@ -238,10 +238,10 @@ export function CustomerDashboardView({
           {/* Card 4: Suspended */}
           <div
             onClick={() => onNavigate('subscribers', { status: 'suspended' })}
-            className="p-4 rounded-2xl bg-card border border-border hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer group"
+            className="p-4 rounded-2xl border card-pastel-5 hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-center justify-between text-muted-foreground mb-1">
-              <span className="text-xs font-medium group-hover:text-amber-500 transition-colors">Suspended</span>
+              <span className="text-xs font-semibold group-hover:text-amber-500 transition-colors">Suspended</span>
               <PauseCircle className="w-4 h-4 text-amber-500" />
             </div>
             <div className="text-2xl font-black text-amber-500 mt-1">
@@ -256,10 +256,10 @@ export function CustomerDashboardView({
           {/* Card 5: Expired */}
           <div
             onClick={() => onNavigate('subscribers', { status: 'expired' })}
-            className="p-4 rounded-2xl bg-card border border-border hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
+            className="p-4 rounded-2xl border card-pastel-4 hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-center justify-between text-muted-foreground mb-1">
-              <span className="text-xs font-medium group-hover:text-rose-500 transition-colors">Expired</span>
+              <span className="text-xs font-semibold group-hover:text-rose-500 transition-colors">Expired</span>
               <AlertTriangle className="w-4 h-4 text-rose-500" />
             </div>
             <div className="text-2xl font-black text-rose-500 mt-1">
@@ -274,10 +274,10 @@ export function CustomerDashboardView({
           {/* Card 6: Expiring Soon */}
           <div
             onClick={() => onNavigate('subscribers', { expiry_status: '7days' })}
-            className="p-4 rounded-2xl bg-card border border-border hover:border-purple-500/50 hover:shadow-md transition-all cursor-pointer group"
+            className="p-4 rounded-2xl border card-pastel-6 hover:border-purple-500/50 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-center justify-between text-muted-foreground mb-1">
-              <span className="text-xs font-medium group-hover:text-purple-400 transition-colors">Expiring (7d)</span>
+              <span className="text-xs font-semibold group-hover:text-purple-400 transition-colors">Expiring (7d)</span>
               <Clock className="w-4 h-4 text-purple-400" />
             </div>
             <div className="text-2xl font-black text-foreground mt-1">

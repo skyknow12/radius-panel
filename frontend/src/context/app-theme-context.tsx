@@ -21,56 +21,56 @@ export interface ThemeOption {
 
 export const THEME_OPTIONS: ThemeOption[] = [
   {
-    id: 'light-pro',
-    name: 'Light Pro (Default)',
-    tagline: 'Crisp White & Royal Purple',
+    id: 'default',
+    name: 'Default (Purple Professional)',
+    tagline: 'Pale Lavender & Royal Violet',
     category: 'light',
-    description: 'Bright white canvas, pure white cards, soft slate borders, and royal purple accents for high-clarity ISP management and billing.',
+    description: 'Professional ISP management with pale lavender sidebar, very light lavender-grey canvas, and alternating soft purple, blue, and white cards.',
     primaryColor: '#7c3aed',
-    bgColor: '#f8fafc',
-    cardColor: '#ffffff',
-    borderColor: '#cbd5e1',
-    textColor: '#0f172a',
-    badgeColor: '#6d28d9',
+    bgColor: '#f6f4fa',
+    cardColor: '#faf8fd',
+    borderColor: '#dfd7eb',
+    textColor: '#1f1430',
+    badgeColor: '#7c3aed',
   },
   {
-    id: 'default',
-    name: 'Ocean Blue',
-    tagline: 'Crisp White & Electric Sky Blue',
+    id: 'light-pro',
+    name: 'Light Pro (Blue & Teal)',
+    tagline: 'Pale Blue & Nordic Teal',
     category: 'light',
-    description: 'Fresh sky-white canvas with soft blue borders and vibrant electric ocean blue accents for modern telecom operations.',
-    primaryColor: '#2563eb',
-    bgColor: '#f0f7ff',
-    cardColor: '#ffffff',
-    borderColor: '#bfdbfe',
-    textColor: '#1e293b',
-    badgeColor: '#0284c7',
+    description: 'Crisp telecom control with pale blue sidebar, light blue-grey canvas, and soft blue and teal card variations with soft green success indicators.',
+    primaryColor: '#0ea5e9',
+    bgColor: '#f2f6fa',
+    cardColor: '#f8fbfe',
+    borderColor: '#d2dfeb',
+    textColor: '#141f2e',
+    badgeColor: '#0ea5e9',
   },
   {
     id: 'colorful',
-    name: 'Emerald Mint',
-    tagline: 'Crisp White & Cyber Mint Green',
+    name: 'Colorful (Mixed Pastel)',
+    tagline: 'Multi-Tone Pastel Palette',
     category: 'light',
-    description: 'Bright pearl white canvas with soft mint borders and vibrant emerald green accents for network operations and eco dashboards.',
-    primaryColor: '#059669',
-    bgColor: '#f0fdf4',
-    cardColor: '#ffffff',
-    borderColor: '#bbf7d0',
-    textColor: '#132a22',
-    badgeColor: '#10b981',
+    description: 'Vibrant operational console with soft blue/lavender sidebar and mixed pastel cards: lavender, sky blue, mint green, peach, and pale yellow.',
+    primaryColor: '#5e60ce',
+    bgColor: '#f2f4f8',
+    cardColor: '#f9fafd',
+    borderColor: '#d5d9e8',
+    textColor: '#191c29',
+    badgeColor: '#5e60ce',
   },
   {
     id: 'noc',
-    name: 'Sunset Amber',
-    tagline: 'Crisp White & Radiant Sunset Coral',
+    name: 'NOC High Contrast (Light)',
+    tagline: 'Light Blue-Grey & High Visibility',
     category: 'light',
-    description: 'Warm pearl white canvas with soft peach borders and radiant sunset amber accents for energetic modern billing workflows.',
-    primaryColor: '#ea580c',
-    bgColor: '#fffbeb',
-    cardColor: '#ffffff',
-    borderColor: '#fde68a',
-    textColor: '#291e14',
-    badgeColor: '#f97316',
+    description: 'High-contrast light operational dashboard with light blue-grey sidebar, distinct operational panel colors, and high-clarity status indicators.',
+    primaryColor: '#1761e8',
+    bgColor: '#ecf0f5',
+    cardColor: '#f6f8fb',
+    borderColor: '#c5d1e0',
+    textColor: '#111827',
+    badgeColor: '#1761e8',
   },
   {
     id: 'dark-pro',
@@ -121,12 +121,12 @@ function getAuthHeaders(): HeadersInit {
 }
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<AppThemeKey>('light-pro');
+  const [theme, setThemeState] = useState<AppThemeKey>('default');
   const [appearanceMode, setAppearanceModeState] = useState<AppearanceMode>('light');
   const [logoUrl, setLogoUrlState] = useState<string | null>(null);
   const [brandName, setBrandNameState] = useState<string>('SKY RADIUS');
   const [brandSubtitle, setBrandSubtitleState] = useState<string>('ISP Operations');
-  const [orgDefaultTheme, setOrgDefaultThemeState] = useState<AppThemeKey>('light-pro');
+  const [orgDefaultTheme, setOrgDefaultThemeState] = useState<AppThemeKey>('default');
 
   // Apply theme to document element
   const applyThemeToDOM = useCallback((newTheme: AppThemeKey) => {
@@ -157,11 +157,11 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       const savedName = localStorage.getItem('radius_brand_name');
       const savedSub = localStorage.getItem('radius_brand_subtitle');
 
-      if (savedTheme && ['light-pro', 'default', 'dark-pro', 'colorful', 'noc'].includes(savedTheme)) {
+      if (savedTheme && ['default', 'light-pro', 'dark-pro', 'colorful', 'noc'].includes(savedTheme)) {
         setThemeState(savedTheme);
         applyThemeToDOM(savedTheme);
       } else {
-        applyThemeToDOM('light-pro');
+        applyThemeToDOM('default');
       }
 
       if (savedMode) setAppearanceModeState(savedMode);
@@ -241,8 +241,8 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     } else if (newMode === 'light') {
       setThemeState((current) => {
         if (current === 'dark-pro') {
-          applyThemeToDOM('light-pro');
-          return 'light-pro';
+          applyThemeToDOM('default');
+          return 'default';
         }
         return current;
       });
@@ -318,7 +318,7 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Reset theme to default
   const resetToDefault = useCallback(() => {
-    const target = orgDefaultTheme || 'light-pro';
+    const target = orgDefaultTheme || 'default';
     setTheme(target);
   }, [orgDefaultTheme, setTheme]);
 

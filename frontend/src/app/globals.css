@@ -4,113 +4,256 @@
 
 @layer base {
   /* ========================================================================= */
-  /* BASE / THEME 1: LIGHT PRO (Crisp White & Royal Purple — Default)          */
+  /* THEME 1: DEFAULT — PURPLE PROFESSIONAL (Pale Lavender & Royal Violet)      */
   /* ========================================================================= */
   :root,
-  html[data-theme="light-pro"] {
-    --background: 210 40% 98%;          /* #f8fafc Bright Crisp Canvas */
-    --foreground: 222 47% 11%;          /* #0f172a Deep Slate Text */
-    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
-    --card-foreground: 222 47% 11%;
-    --muted: 210 40% 93%;              /* #e2e8f0 Muted Background */
-    --muted-foreground: 215 16% 47%;    /* #64748b */
-    --border: 214 32% 88%;             /* #cbd5e1 Crisp Slate Border */
-    --input: 214 32% 88%;
-    --primary: 262 83% 58%;            /* #7c3aed Royal Violet / Purple Primary */
-    --primary-foreground: 210 40% 98%;
-    --accent: 262 83% 96%;             /* Soft Violet Tint */
-    --accent-foreground: 262 83% 40%;
-    --ring: 262 83% 58%;
+  html[data-theme="default"] {
+    --background: 265 30% 96.5%;        /* #f6f4fa Very light lavender-grey canvas */
+    --foreground: 265 45% 15%;          /* #1f1430 High contrast deep plum slate text */
+    --card: 265 45% 98.8%;              /* #faf8fd Tinted soft lavender-white card */
+    --card-foreground: 265 45% 15%;
+    --muted: 265 35% 93%;               /* #ece7f5 Muted background */
+    --muted-foreground: 265 18% 46%;    /* #6e647c */
+    --border: 265 30% 88%;              /* #dfd7eb Soft violet border */
+    --input: 265 30% 88%;
+    --primary: 265 83% 58%;             /* #7c3aed Royal Violet / Purple Primary */
+    --primary-foreground: 0 0% 100%;
+    --accent: 265 70% 94%;              /* Soft Lavender Tint */
+    --accent-foreground: 265 83% 40%;
+    --ring: 265 83% 58%;
     --radius: 0.75rem;
 
-    --status-healthy: 142 71% 45%;     /* Green */
-    --status-warning: 38 92% 50%;      /* Amber */
-    --status-offline: 0 84% 60%;       /* Red */
-    --status-info: 217 91% 60%;        /* Blue */
+    /* Sidebar Tokens: Pale Lavender */
+    --sidebar-bg: 265 60% 95%;          /* #efe9fb Visible Pale Lavender */
+    --sidebar-foreground: 265 45% 18%;  /* #221634 Crisp readable text */
+    --sidebar-border: 265 45% 88%;      /* #dfd5f3 */
+    --sidebar-muted: 265 50% 91%;       /* #e4d9f6 Hover item background */
+    --sidebar-active-bg: 265 83% 58%;   /* #7c3aed Stronger purple active menu accent */
+    --sidebar-active-foreground: 0 0% 100%;
+
+    /* Top Navigation / Header */
+    --header-bg: 265 40% 96.5%;         /* #f7f4fb */
+    --header-border: 265 35% 88%;
+
+    /* Alternating Pastel Card Backgrounds & Borders */
+    --card-pastel-1: 265 75% 96.5%;     /* #f4effd Soft purple */
+    --card-pastel-1-border: 265 55% 88%;
+    --card-pastel-2: 215 75% 96.5%;     /* #edf3fe Soft blue */
+    --card-pastel-2-border: 215 55% 88%;
+    --card-pastel-3: 0 0% 100%;         /* #ffffff Clean white */
+    --card-pastel-3-border: 265 30% 89%;
+    --card-pastel-4: 265 75% 96.5%;     /* #f4effd Soft purple */
+    --card-pastel-4-border: 265 55% 88%;
+    --card-pastel-5: 215 75% 96.5%;     /* #edf3fe Soft blue */
+    --card-pastel-5-border: 215 55% 88%;
+    --card-pastel-6: 0 0% 100%;         /* #ffffff Clean white */
+    --card-pastel-6-border: 265 30% 89%;
+    --card-pastel-7: 150 55% 96.5%;     /* #ebfaf1 Soft mint */
+    --card-pastel-7-border: 150 45% 88%;
+    --card-pastel-8: 265 80% 94.5%;     /* #eee5fc Subtle purple highlight */
+    --card-pastel-8-border: 265 60% 84%;
+
+    /* Table Tokens */
+    --table-header: 265 40% 94%;        /* #ece7f6 */
+    --table-hover: 265 45% 96%;         /* #f3eff9 */
+
+    /* Status Indicators */
+    --status-healthy: 142 71% 45%;      /* Green */
+    --status-warning: 38 92% 50%;       /* Amber */
+    --status-offline: 0 84% 60%;        /* Red */
+    --status-info: 217 91% 60%;         /* Blue */
   }
 
   /* ========================================================================= */
-  /* THEME 2: DEFAULT / LIGHT OCEAN BLUE (Crisp White & Electric Sky Blue)     */
+  /* THEME 2: LIGHT PRO — BLUE AND TEAL (Pale Blue & Nordic Teal)              */
   /* ========================================================================= */
-  html[data-theme="default"] {
-    --background: 210 50% 98%;          /* #f0f7ff Soft Sky-White Canvas */
-    --foreground: 215 28% 17%;          /* #1e293b Deep Navy Slate Text */
-    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
-    --card-foreground: 215 28% 17%;
-    --muted: 210 45% 94%;              /* #e0f2fe */
-    --muted-foreground: 215 18% 46%;    /* #64748b */
-    --border: 214 45% 88%;             /* #bfdbfe Soft Sky Blue Border */
-    --input: 214 45% 88%;
-    --primary: 217 91% 55%;            /* #2563eb Electric Ocean Blue Primary */
+  html[data-theme="light-pro"] {
+    --background: 210 35% 96.5%;        /* #f2f6fa Very light blue-grey canvas */
+    --foreground: 215 45% 14%;          /* #141f2e Deep navy-slate text */
+    --card: 210 40% 98.8%;              /* #f8fbfe Tinted soft sky-white card */
+    --card-foreground: 215 45% 14%;
+    --muted: 210 35% 92.5%;             /* #e4eef6 Muted background */
+    --muted-foreground: 215 20% 45%;    /* #5b6b7e */
+    --border: 210 30% 87%;              /* #d2dfeb Crisp soft blue-grey border */
+    --input: 210 30% 87%;
+    --primary: 205 90% 48%;             /* #0ea5e9 Electric Ocean / Sky Blue Primary */
     --primary-foreground: 0 0% 100%;
-    --accent: 214 95% 94%;             /* #dbeafe Soft Blue Tint */
-    --accent-foreground: 221 83% 50%;
-    --ring: 217 91% 55%;
+    --accent: 205 75% 94%;              /* Soft Sky Tint */
+    --accent-foreground: 205 90% 35%;
+    --ring: 205 90% 48%;
+    --radius: 0.75rem;
 
-    --status-healthy: 142 71% 45%;
-    --status-warning: 38 92% 50%;
-    --status-offline: 0 84% 60%;
-    --status-info: 217 91% 60%;
+    /* Sidebar Tokens: Pale Blue */
+    --sidebar-bg: 204 70% 94%;          /* #e4f1fb Visible Pale Blue */
+    --sidebar-foreground: 215 45% 16%;  /* #162335 Navy-slate readable text */
+    --sidebar-border: 205 50% 86%;      /* #cde4f7 */
+    --sidebar-muted: 204 60% 89%;       /* #d5ebf9 Hover item background */
+    --sidebar-active-bg: 205 90% 48%;   /* #0ea5e9 Stronger blue active menu accent */
+    --sidebar-active-foreground: 0 0% 100%;
+
+    /* Top Navigation / Header */
+    --header-bg: 210 40% 96%;           /* #f0f6fa */
+    --header-border: 210 35% 86%;
+
+    /* Blue, Teal, and White Card Variations */
+    --card-pastel-1: 210 75% 96%;       /* #ebf4fd Soft blue */
+    --card-pastel-1-border: 210 50% 87%;
+    --card-pastel-2: 185 65% 95.5%;     /* #e6f7f8 Soft teal */
+    --card-pastel-2-border: 185 45% 86%;
+    --card-pastel-3: 0 0% 100%;         /* #ffffff Clean white */
+    --card-pastel-3-border: 210 30% 88%;
+    --card-pastel-4: 210 75% 96%;       /* #ebf4fd Soft blue */
+    --card-pastel-4-border: 210 50% 87%;
+    --card-pastel-5: 185 65% 95.5%;     /* #e6f7f8 Soft teal */
+    --card-pastel-5-border: 185 45% 86%;
+    --card-pastel-6: 0 0% 100%;         /* #ffffff Clean white */
+    --card-pastel-6-border: 210 30% 88%;
+    --card-pastel-7: 152 65% 96%;       /* #ebfaef Soft green success card */
+    --card-pastel-7-border: 152 50% 88%;
+    --card-pastel-8: 195 70% 94%;       /* #def2f7 Soft blue/teal highlight card */
+    --card-pastel-8-border: 195 50% 84%;
+
+    /* Table Tokens */
+    --table-header: 205 40% 93%;        /* #e5f0f9 */
+    --table-hover: 205 45% 95%;         /* #ebf4fa */
+
+    /* Status Indicators */
+    --status-healthy: 152 70% 40%;      /* Soft rich green */
+    --status-warning: 38 92% 50%;       /* Amber */
+    --status-offline: 0 84% 60%;        /* Red */
+    --status-info: 205 90% 48%;         /* Blue */
   }
 
   /* ========================================================================= */
-  /* THEME 3: COLORFUL / LIGHT EMERALD MINT (Crisp White & Cyber Mint Green)   */
+  /* THEME 3: COLORFUL — MIXED PASTEL (Multi-Tone Pastel Palette)               */
   /* ========================================================================= */
   html[data-theme="colorful"] {
-    --background: 150 40% 98%;          /* #f0fdf4 Fresh Pearl Mint Canvas */
-    --foreground: 160 30% 15%;          /* #132a22 Deep Forest Slate Text */
-    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
-    --card-foreground: 160 30% 15%;
-    --muted: 150 35% 94%;              /* #dcfce7 */
-    --muted-foreground: 155 16% 45%;    /* #52796f */
-    --border: 145 35% 86%;             /* #bbf7d0 Soft Mint Green Border */
-    --input: 145 35% 86%;
-    --primary: 158 64% 42%;            /* #059669 Vibrant Emerald Primary */
+    --background: 225 25% 96%;          /* #f2f4f8 Light neutral pearl canvas */
+    --foreground: 225 35% 15%;          /* #191c29 Deep indigo-slate text */
+    --card: 225 30% 98.8%;              /* #f9fafd Tinted pearl card */
+    --card-foreground: 225 35% 15%;
+    --muted: 225 35% 93%;               /* #e7eaf4 */
+    --muted-foreground: 225 18% 45%;    /* #5d6377 */
+    --border: 225 25% 87%;              /* #d5d9e8 Pastel multi-tone border */
+    --input: 225 25% 87%;
+    --primary: 245 75% 58%;             /* #5e60ce Vibrant Iris / Indigo Primary */
     --primary-foreground: 0 0% 100%;
-    --accent: 145 80% 94%;             /* #d1fae5 Soft Mint Tint */
-    --accent-foreground: 160 84% 30%;
-    --ring: 158 64% 42%;
+    --accent: 245 65% 95%;              /* Soft Iris Tint */
+    --accent-foreground: 245 75% 42%;
+    --ring: 245 75% 58%;
+    --radius: 0.75rem;
 
-    --status-healthy: 158 64% 42%;
-    --status-warning: 38 92% 50%;
-    --status-offline: 0 84% 60%;
-    --status-info: 180 80% 45%;
-  }
+    /* Sidebar Tokens: Soft Blue-to-Lavender */
+    --sidebar-bg: 235 60% 95%;          /* #eaeefb Visible soft blue-to-lavender */
+    --sidebar-foreground: 230 40% 18%;  /* #1c2136 Crisp readable text */
+    --sidebar-border: 230 45% 88%;      /* #d7dcf5 */
+    --sidebar-muted: 235 50% 90%;       /* #dde3f8 Hover item background */
+    --sidebar-active-bg: 245 75% 58%;   /* #5e60ce Vivid iris active menu */
+    --sidebar-active-foreground: 0 0% 100%;
 
-  /* ========================================================================= */
-  /* THEME 4: NOC / LIGHT SUNSET AMBER (Crisp White & Radiant Sunset Amber)    */
-  /* ========================================================================= */
-  html[data-theme="noc"] {
-    --background: 35 50% 98%;           /* #fffbeb Warm Pearl Amber Canvas */
-    --foreground: 25 35% 16%;           /* #291e14 Warm Deep Slate Text */
-    --card: 0 0% 100%;                 /* #ffffff Pure White Card */
-    --card-foreground: 25 35% 16%;
-    --muted: 35 45% 94%;               /* #fef3c7 */
-    --muted-foreground: 30 18% 46%;     /* #786452 */
-    --border: 35 40% 86%;              /* #fde68a Soft Amber Border */
-    --input: 35 40% 86%;
-    --primary: 25 95% 53%;             /* #ea580c Radiant Sunset Amber / Coral */
-    --primary-foreground: 0 0% 100%;
-    --accent: 35 90% 94%;              /* #ffedd5 Soft Peach Amber Tint */
-    --accent-foreground: 25 90% 40%;
-    --ring: 25 95% 53%;
+    /* Top Navigation / Header */
+    --header-bg: 230 35% 96%;           /* #f1f3f9 */
+    --header-border: 230 30% 87%;
 
-    --status-healthy: 142 71% 45%;
+    /* Coordinated Pastel Card Backgrounds: Lavender, Blue, Mint, Peach, Pale Yellow */
+    --card-pastel-1: 265 80% 96.5%;     /* #f4effe Pastel Lavender */
+    --card-pastel-1-border: 265 55% 88%;
+    --card-pastel-2: 210 85% 96%;       /* #eaf3fe Pastel Sky Blue */
+    --card-pastel-2-border: 210 60% 87%;
+    --card-pastel-3: 145 65% 95.5%;     /* #eafaf0 Pastel Mint Green */
+    --card-pastel-3-border: 145 45% 86%;
+    --card-pastel-4: 20 90% 96%;        /* #feece4 Pastel Peach */
+    --card-pastel-4-border: 20 65% 87%;
+    --card-pastel-5: 45 95% 95%;        /* #fef8e2 Pastel Pale Yellow */
+    --card-pastel-5-border: 45 70% 85%;
+    --card-pastel-6: 230 80% 96.5%;     /* #eef0fd Pastel Indigo */
+    --card-pastel-6-border: 230 60% 88%;
+    --card-pastel-7: 145 65% 95.5%;     /* #eafaf0 Pastel Mint Green */
+    --card-pastel-7-border: 145 45% 86%;
+    --card-pastel-8: 20 90% 96%;        /* #feece4 Pastel Peach */
+    --card-pastel-8-border: 20 65% 87%;
+
+    /* Table Tokens */
+    --table-header: 230 35% 93%;        /* #e8ebf5 */
+    --table-hover: 230 40% 95%;         /* #eef1f8 */
+
+    /* Status Indicators */
+    --status-healthy: 150 70% 40%;
     --status-warning: 38 92% 50%;
     --status-offline: 0 84% 60%;
     --status-info: 217 91% 60%;
+  }
+
+  /* ========================================================================= */
+  /* THEME 4: NOC HIGH CONTRAST — LIGHT (Light Blue-Grey & High Visibility)    */
+  /* ========================================================================= */
+  html[data-theme="noc"] {
+    --background: 215 25% 94.5%;        /* #ecf0f5 Distinct light blue-grey canvas */
+    --foreground: 220 45% 12%;          /* #111827 Bold high-contrast text */
+    --card: 215 30% 98%;                /* #f6f8fb High-clarity light card */
+    --card-foreground: 220 45% 12%;
+    --muted: 215 35% 90%;               /* #e0e7f1 High visibility muted */
+    --muted-foreground: 215 28% 38%;    /* #445469 */
+    --border: 215 25% 82%;              /* #c5d1e0 Strong distinct border */
+    --input: 215 25% 82%;
+    --primary: 217 91% 50%;             /* #1761e8 High-Contrast Cobalt Blue */
+    --primary-foreground: 0 0% 100%;
+    --accent: 215 65% 92%;              /* High Contrast Slate Blue Tint */
+    --accent-foreground: 217 91% 35%;
+    --ring: 217 91% 50%;
+    --radius: 0.75rem;
+
+    /* Sidebar Tokens: Light Blue-Grey */
+    --sidebar-bg: 215 35% 92%;          /* #e0e6ef Visible distinct light blue-grey */
+    --sidebar-foreground: 220 45% 12%;  /* #111827 Bold high-contrast text */
+    --sidebar-border: 215 25% 82%;      /* #c5d1e0 */
+    --sidebar-muted: 215 35% 86%;       /* #d0dbe9 Hover item background */
+    --sidebar-active-bg: 217 91% 50%;   /* #1761e8 Cobalt blue active menu */
+    --sidebar-active-foreground: 0 0% 100%;
+
+    /* Top Navigation / Header */
+    --header-bg: 215 30% 94%;           /* #eaf0f6 */
+    --header-border: 215 25% 82%;
+
+    /* Distinct Operational Panel Colors (High Contrast) */
+    --card-pastel-1: 215 45% 94%;       /* #e6ecf6 Distinct light slate-blue */
+    --card-pastel-1-border: 215 35% 82%;
+    --card-pastel-2: 205 60% 93%;       /* #e1eff9 Distinct light cobalt/cyan */
+    --card-pastel-2-border: 205 45% 80%;
+    --card-pastel-3: 215 25% 96.5%;     /* #f1f4f8 High-clarity light panel */
+    --card-pastel-3-border: 215 25% 84%;
+    --card-pastel-4: 145 50% 94%;       /* #e5f6eb Distinct online/healthy panel */
+    --card-pastel-4-border: 145 40% 80%;
+    --card-pastel-5: 38 80% 93.5%;      /* #fef3db Distinct warning panel */
+    --card-pastel-5-border: 38 65% 80%;
+    --card-pastel-6: 215 45% 94%;       /* #e6ecf6 Distinct telemetry panel */
+    --card-pastel-6-border: 215 35% 82%;
+    --card-pastel-7: 145 50% 94%;       /* #e5f6eb Distinct success panel */
+    --card-pastel-7-border: 145 40% 80%;
+    --card-pastel-8: 0 75% 94%;         /* #fee8ea Distinct alert/critical panel */
+    --card-pastel-8-border: 0 60% 82%;
+
+    /* Table Tokens */
+    --table-header: 215 30% 88%;        /* #d7e0ec High-contrast table header */
+    --table-hover: 215 35% 91%;         /* #e2e8f1 High-contrast row hover */
+
+    /* Stronger Status Indicators */
+    --status-healthy: 145 80% 36%;      /* Bold rich green */
+    --status-warning: 35 95% 44%;       /* Bold amber */
+    --status-offline: 0 84% 50%;        /* Bold red */
+    --status-info: 210 95% 48%;         /* Bold blue */
   }
 
   /* ========================================================================= */
   /* THEME 5: DARK PRO (Midnight Charcoal NOC — THE SINGLE DARK THEME)         */
   /* ========================================================================= */
   html[data-theme="dark-pro"],
-  html.dark:not([data-theme="light-pro"]):not([data-theme="default"]):not([data-theme="colorful"]):not([data-theme="noc"]) {
+  html.dark:not([data-theme="default"]):not([data-theme="light-pro"]):not([data-theme="colorful"]):not([data-theme="noc"]) {
     --background: 220 30% 5%;           /* #080b11 Pitch Charcoal Black Canvas */
     --foreground: 210 40% 98%;          /* High-Contrast White */
-    --card: 220 25% 9%;                /* #10141d Technical Dark Slate Card */
+    --card: 220 25% 9%;                 /* #10141d Technical Dark Slate Card */
     --card-foreground: 210 40% 98%;
-    --muted: 220 20% 14%;              /* #181f2c */
+    --muted: 220 20% 14%;               /* #181f2c */
     --muted-foreground: 215 16% 60%;    /* #94a3b8 */
     --border: 220 20% 18%;              /* #202738 Clean Technical Border */
     --input: 220 20% 18%;
@@ -119,7 +262,43 @@
     --accent: 217 60% 16%;
     --accent-foreground: 217 91% 75%;
     --ring: 217 91% 60%;
+    --radius: 0.75rem;
 
+    /* Sidebar Tokens: Midnight Charcoal */
+    --sidebar-bg: 222 28% 8%;           /* #0e131d Dark Technical Slate */
+    --sidebar-foreground: 215 25% 90%;  /* #e2e8f0 Technical white */
+    --sidebar-border: 220 20% 16%;      /* #1c2230 */
+    --sidebar-muted: 220 20% 13%;       /* #171d29 */
+    --sidebar-active-bg: 217 91% 60%;   /* #3b82f6 Electric Tech Blue */
+    --sidebar-active-foreground: 0 0% 100%;
+
+    /* Top Navigation / Header */
+    --header-bg: 220 25% 9%;            /* #10141d */
+    --header-border: 220 20% 16%;
+
+    /* Dark Mode Cards Uniformly Stay Technical Slate */
+    --card-pastel-1: 220 25% 9%;
+    --card-pastel-1-border: 220 20% 18%;
+    --card-pastel-2: 220 25% 9%;
+    --card-pastel-2-border: 220 20% 18%;
+    --card-pastel-3: 220 25% 9%;
+    --card-pastel-3-border: 220 20% 18%;
+    --card-pastel-4: 220 25% 9%;
+    --card-pastel-4-border: 220 20% 18%;
+    --card-pastel-5: 220 25% 9%;
+    --card-pastel-5-border: 220 20% 18%;
+    --card-pastel-6: 220 25% 9%;
+    --card-pastel-6-border: 220 20% 18%;
+    --card-pastel-7: 220 25% 9%;
+    --card-pastel-7-border: 220 20% 18%;
+    --card-pastel-8: 220 25% 9%;
+    --card-pastel-8-border: 220 20% 18%;
+
+    /* Table Tokens */
+    --table-header: 220 20% 14%;
+    --table-hover: 220 20% 13%;
+
+    /* Status Indicators */
     --status-healthy: 158 64% 45%;
     --status-warning: 38 92% 50%;
     --status-offline: 350 89% 60%;
@@ -127,6 +306,51 @@
   }
 }
 
+/* ========================================================================= */
+/* Centralized Helper Classes for Theme Variations                           */
+/* ========================================================================= */
+
+.card-pastel-1 {
+  background-color: hsl(var(--card-pastel-1)) !important;
+  border-color: hsl(var(--card-pastel-1-border)) !important;
+}
+
+.card-pastel-2 {
+  background-color: hsl(var(--card-pastel-2)) !important;
+  border-color: hsl(var(--card-pastel-2-border)) !important;
+}
+
+.card-pastel-3 {
+  background-color: hsl(var(--card-pastel-3)) !important;
+  border-color: hsl(var(--card-pastel-3-border)) !important;
+}
+
+.card-pastel-4 {
+  background-color: hsl(var(--card-pastel-4)) !important;
+  border-color: hsl(var(--card-pastel-4-border)) !important;
+}
+
+.card-pastel-5 {
+  background-color: hsl(var(--card-pastel-5)) !important;
+  border-color: hsl(var(--card-pastel-5-border)) !important;
+}
+
+.card-pastel-6 {
+  background-color: hsl(var(--card-pastel-6)) !important;
+  border-color: hsl(var(--card-pastel-6-border)) !important;
+}
+
+.card-pastel-7 {
+  background-color: hsl(var(--card-pastel-7)) !important;
+  border-color: hsl(var(--card-pastel-7-border)) !important;
+}
+
+.card-pastel-8 {
+  background-color: hsl(var(--card-pastel-8)) !important;
+  border-color: hsl(var(--card-pastel-8-border)) !important;
+}
+
+/* Base Body Styles */
 body {
   @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary min-h-screen transition-colors duration-200;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";

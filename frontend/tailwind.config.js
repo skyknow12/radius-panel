@@ -36,11 +36,23 @@ module.exports = {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
         },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar-bg))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+          muted: 'hsl(var(--sidebar-muted))',
+          active: 'hsl(var(--sidebar-active-bg))',
+          'active-foreground': 'hsl(var(--sidebar-active-foreground))',
+        },
+        header: {
+          DEFAULT: 'hsl(var(--header-bg))',
+          border: 'hsl(var(--header-border))',
+        },
         status: {
-          healthy: '#10b981',
-          warning: '#f59e0b',
-          offline: '#ef4444',
-          info: '#3b82f6',
+          healthy: 'hsl(var(--status-healthy))',
+          warning: 'hsl(var(--status-warning))',
+          offline: 'hsl(var(--status-offline))',
+          info: 'hsl(var(--status-info))',
         },
       },
       borderRadius: {

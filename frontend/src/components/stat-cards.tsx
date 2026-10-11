@@ -41,6 +41,18 @@ const TAB_MAP: Record<string, { tab: string; query?: Record<string, string> }> =
   nas_devices: { tab: 'nas_devices' },
 };
 
+const CARD_TONE_MAP: Record<string, string> = {
+  total_subscribers: 'card-pastel-1',
+  online_users: 'card-pastel-2',
+  active_packages: 'card-pastel-3',
+  todays_revenue: 'card-pastel-4',
+  open_tickets: 'card-pastel-5',
+  radius_requests: 'card-pastel-6',
+  auth_success_rate: 'card-pastel-7',
+  auth_failure_rate: 'card-pastel-8',
+  nas_devices: 'card-pastel-2',
+};
+
 export function StatCardsGrid({
   stats,
   onNavigate,
@@ -50,11 +62,12 @@ export function StatCardsGrid({
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      {stats.map((stat) => {
+      {stats.map((stat, idx) => {
         const IconComponent = ICONS[stat.key] || Radio;
         const isUp = (stat.changePct ?? 0) >= 0;
         const isPositiveTone = stat.positiveIsGood ? isUp : !isUp;
         const target = TAB_MAP[stat.key];
+        const toneClass = CARD_TONE_MAP[stat.key] || `card-pastel-${(idx % 8) + 1}`;
 
         return (
           <div
@@ -68,17 +81,18 @@ export function StatCardsGrid({
               }
             }}
             className={cn(
-              'rounded-xl border border-border bg-card p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden text-left',
+              'rounded-xl border p-4 shadow-sm hover:border-primary/50 hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden text-left',
+              toneClass,
               onNavigate && target && 'cursor-pointer hover:scale-[1.01]'
             )}
             title={target ? `Click to view ${target.tab.replace(/_/g, ' ')}` : undefined}
           >
             {/* Top row: Label & Icon */}
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+              <span className="text-xs font-semibold text-muted-foreground group-hover:text-foreground transition-colors">
                 {stat.label}
               </span>
-              <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+              <div className="w-8 h-8 rounded-lg bg-card/80 border border-border/50 shadow-xs flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
                 <IconComponent className="w-4 h-4" />
               </div>
             </div>

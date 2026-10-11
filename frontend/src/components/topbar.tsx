@@ -86,7 +86,7 @@ export function Topbar({
   const isWarning = systemHealth?.status === 'degraded';
 
   return (
-    <header className="h-16 border-b border-border bg-card/70 backdrop-blur-md px-4 flex items-center justify-between gap-4 sticky top-0 z-30">
+    <header className="h-16 border-b border-header-border bg-header backdrop-blur-md px-4 flex items-center justify-between gap-4 sticky top-0 z-30 shadow-xs">
       {/* Left: Sidebar Collapse & Global Search */}
       <div className="flex items-center gap-3 flex-1 max-w-md">
         <button

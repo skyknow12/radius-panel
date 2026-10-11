@@ -148,22 +148,25 @@ export function Sidebar({
         className={cn(
           'w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all group relative',
           isActive
-            ? 'bg-primary text-primary-foreground font-semibold shadow-md shadow-primary/25'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+            ? 'bg-sidebar-active text-sidebar-active-foreground font-semibold shadow-md shadow-sidebar-active/20 ring-1 ring-white/20'
+            : 'text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-muted'
         )}
         title={collapsed ? label : undefined}
       >
         <Icon
           className={cn(
             'w-4 h-4 flex-shrink-0 transition-colors',
-            isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-primary'
+            isActive ? 'text-sidebar-active-foreground' : 'text-sidebar-foreground/70 group-hover:text-primary'
           )}
         />
         {!collapsed && (
           <span className="flex items-center justify-between w-full truncate">
             <span className="truncate">{label}</span>
             {badge && (
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-semibold uppercase flex-shrink-0 ml-1">
+              <span className={cn(
+                "text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase flex-shrink-0 ml-1",
+                isActive ? "bg-white/20 text-white" : "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold"
+              )}>
                 {badge}
               </span>
             )}
@@ -215,7 +218,7 @@ export function Sidebar({
         {!collapsed ? (
           <button
             onClick={() => toggleSection(key)}
-            className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80 hover:text-foreground rounded-lg transition-colors select-none"
+            className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-muted/50 rounded-lg transition-colors select-none"
           >
             <div className="flex items-center gap-1.5 truncate">
               {React.createElement(icon, { className: 'w-3 h-3 text-primary flex-shrink-0' })}
@@ -223,13 +226,13 @@ export function Sidebar({
             </div>
             <ChevronDown
               className={cn(
-                'w-3 h-3 text-muted-foreground transition-transform duration-200 flex-shrink-0',
+                'w-3 h-3 text-sidebar-foreground/60 transition-transform duration-200 flex-shrink-0',
                 isOpen ? 'rotate-0' : '-rotate-90'
               )}
             />
           </button>
         ) : (
-          <div className="h-px bg-border my-2 mx-1" title={title} />
+          <div className="h-px bg-sidebar-border my-2 mx-1" title={title} />
         )}
 
         {(isOpen || collapsed) && <div className="space-y-0.5">{children}</div>}
@@ -240,12 +243,12 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'border-r border-border bg-card/60 backdrop-blur-xl flex flex-col transition-all duration-300 z-20 select-none flex-shrink-0',
+        'border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col transition-all duration-300 z-20 select-none flex-shrink-0 shadow-sm',
         collapsed ? 'w-20' : 'w-64'
       )}
     >
       {/* Brand Header */}
-      <div className="h-16 flex items-center px-4 border-b border-border/80 gap-3">
+      <div className="h-16 flex items-center px-4 border-b border-sidebar-border gap-3">
         <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold shadow-lg shadow-primary/20 flex-shrink-0 overflow-hidden relative border border-white/10">
           {logoUrl ? (
             <img
@@ -415,12 +418,12 @@ export function Sidebar({
 
       {/* Footer User Info */}
       {!collapsed && currentUser && (
-        <div className="p-3 border-t border-border/80 bg-card/40 flex items-center justify-between text-xs">
+        <div className="p-3 border-t border-sidebar-border bg-sidebar-muted/30 flex items-center justify-between text-xs">
           <div className="truncate">
-            <span className="font-semibold text-foreground truncate block">
+            <span className="font-semibold text-sidebar-foreground truncate block">
               {currentUser.fullName || currentUser.username}
             </span>
-            <span className="text-[10px] text-muted-foreground uppercase font-mono">
+            <span className="text-[10px] text-sidebar-foreground/70 uppercase font-mono">
               {currentUser.role || 'Staff User'}
             </span>
           </div>

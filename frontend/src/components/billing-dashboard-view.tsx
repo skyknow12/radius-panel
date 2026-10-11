@@ -162,7 +162,7 @@ export function BillingDashboardView({
             {/* Card 1: Today's Revenue */}
             <div
               onClick={() => onNavigate('billing_transactions')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-1 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider">Today&apos;s Revenue</span>
@@ -179,7 +179,7 @@ export function BillingDashboardView({
             {/* Card 2: This Month's Revenue */}
             <div
               onClick={() => onNavigate('billing_reports')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-2 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider">Monthly Revenue</span>
@@ -196,7 +196,7 @@ export function BillingDashboardView({
             {/* Card 3: Today's Recharges */}
             <div
               onClick={() => onNavigate('billing_transactions')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-3 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider">Today Recharges</span>
@@ -213,7 +213,7 @@ export function BillingDashboardView({
             {/* Card 4: Monthly Recharges */}
             <div
               onClick={() => onNavigate('billing_transactions')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-4 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider">Month Recharges</span>
@@ -230,7 +230,7 @@ export function BillingDashboardView({
             {/* Card 5: Active Subscribers */}
             <div
               onClick={() => onNavigate('subscribers')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-5 hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider">Active Subs</span>
@@ -247,7 +247,7 @@ export function BillingDashboardView({
             {/* Card 6: Expiring Today */}
             <div
               onClick={() => onNavigate('billing_expiry', 'today')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-8 hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-rose-500">Expiring Today</span>
@@ -264,7 +264,7 @@ export function BillingDashboardView({
             {/* Card 7: Expiring Soon (7 Days) */}
             <div
               onClick={() => onNavigate('billing_expiry', '7days')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-7 hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-500">Expiring in 7 Days</span>
@@ -281,7 +281,7 @@ export function BillingDashboardView({
             {/* Card 8: Expired Subscribers */}
             <div
               onClick={() => onNavigate('billing_expiry', 'expired')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-6 hover:border-rose-500/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-rose-400">Expired Subs</span>
@@ -298,7 +298,7 @@ export function BillingDashboardView({
             {/* Card 9: Pending Transactions */}
             <div
               onClick={() => onNavigate('billing_transactions')}
-              className="p-4 rounded-2xl bg-card border border-border hover:border-blue-500/50 hover:shadow-md transition-all cursor-pointer group"
+              className="p-4 rounded-2xl border card-pastel-2 hover:border-blue-500/50 hover:shadow-md transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between text-muted-foreground">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-400">Pending Txns</span>

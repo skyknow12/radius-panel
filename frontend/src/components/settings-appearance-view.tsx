@@ -249,7 +249,9 @@ export function SettingsAppearanceView({ initialTab = 'theme', currentUser }: Se
                 type="button"
                 onClick={() => {
                   setAppearanceMode('light');
-                  setTheme('light-pro');
+                  if (theme === 'dark-pro') {
+                    setTheme('default');
+                  }
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   appearanceMode === 'light'
@@ -311,88 +313,139 @@ export function SettingsAppearanceView({ initialTab = 'theme', currentUser }: Se
                     >
                       {/* Mini Mockup Window */}
                       <div
-                        className="rounded-xl border shadow-inner overflow-hidden text-[9px] select-none"
+                        className="rounded-xl border shadow-inner overflow-hidden text-[9px] select-none flex h-36"
                         style={{
-                          backgroundColor: t.cardColor,
+                          backgroundColor: t.bgColor,
                           borderColor: t.borderColor,
                           color: t.textColor,
                         }}
                       >
-                        {/* Mini Topbar */}
+                        {/* Mini Sidebar */}
                         <div
-                          className="px-2.5 py-1.5 border-b flex items-center justify-between"
-                          style={{ borderColor: t.borderColor }}
+                          className="w-14 border-r p-1.5 flex flex-col justify-between shrink-0"
+                          style={{
+                            backgroundColor:
+                              t.id === 'default'
+                                ? '#efe9fb'
+                                : t.id === 'light-pro'
+                                ? '#e4f1fb'
+                                : t.id === 'colorful'
+                                ? '#eaeefb'
+                                : t.id === 'noc'
+                                ? '#e0e6ef'
+                                : '#161e2e',
+                            borderColor: t.borderColor,
+                          }}
                         >
-                          <div className="flex items-center gap-1.5">
-                            <div
-                              className="w-3 h-3 rounded-md flex items-center justify-center font-bold text-[7px]"
-                              style={{ backgroundColor: t.primaryColor, color: '#ffffff' }}
-                            >
-                              ⚡
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <div
+                                className="w-2.5 h-2.5 rounded-sm flex items-center justify-center font-bold text-[6px]"
+                                style={{ backgroundColor: t.primaryColor, color: '#ffffff' }}
+                              >
+                                ⚡
+                              </div>
+                              <span className="font-extrabold text-[7px] truncate">SKY</span>
                             </div>
-                            <span className="font-bold tracking-tight">SKY RADIUS</span>
+                            <div className="pt-1 space-y-0.5">
+                              <div
+                                className="h-2 rounded px-1 flex items-center text-[6px] font-bold"
+                                style={{ backgroundColor: t.primaryColor, color: '#ffffff' }}
+                              >
+                                Dash
+                              </div>
+                              <div className="h-2 rounded px-1 flex items-center text-[6px] opacity-60">
+                                Users
+                              </div>
+                              <div className="h-2 rounded px-1 flex items-center text-[6px] opacity-60">
+                                Billing
+                              </div>
+                            </div>
                           </div>
-                          <span
-                            className="px-1 py-0.2 rounded text-[7px] font-bold"
-                            style={{
-                              backgroundColor: `${t.primaryColor}22`,
-                              color: t.primaryColor,
-                            }}
-                          >
-                            LIVE
-                          </span>
+                          <div className="text-[6px] opacity-40">v2.4</div>
                         </div>
 
-                        {/* Mini Dashboard Content */}
-                        <div className="p-2.5 space-y-2">
-                          {/* 2 Mini Stat Cards */}
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <div
-                              className="p-1.5 rounded-lg border"
-                              style={{
-                                backgroundColor: `${t.bgColor}88`,
-                                borderColor: t.borderColor,
-                              }}
-                            >
-                              <div className="text-[7px] opacity-70">Customers</div>
-                              <div className="font-extrabold text-[11px]">1,280</div>
-                            </div>
-                            <div
-                              className="p-1.5 rounded-lg border"
-                              style={{
-                                backgroundColor: `${t.bgColor}88`,
-                                borderColor: t.borderColor,
-                              }}
-                            >
-                              <div className="text-[7px] opacity-70">Online</div>
-                              <div className="font-extrabold text-[11px] text-emerald-400">984</div>
-                            </div>
-                          </div>
-
-                          {/* Mini Table Row */}
+                        {/* Mini Main Content Area */}
+                        <div className="flex-1 flex flex-col min-w-0">
+                          {/* Mini Topbar */}
                           <div
-                            className="p-1.5 rounded-lg border flex items-center justify-between"
+                            className="px-2 py-1 border-b flex items-center justify-between"
                             style={{
-                              backgroundColor: `${t.bgColor}55`,
+                              backgroundColor: t.cardColor,
                               borderColor: t.borderColor,
                             }}
                           >
-                            <span className="truncate">pppoe_user01</span>
-                            <span className="px-1 py-0.2 rounded text-[7px] font-bold bg-emerald-500/20 text-emerald-400">
-                              ACTIVE
+                            <span className="font-bold text-[7px]">Operations</span>
+                            <span
+                              className="px-1 py-0.2 rounded text-[6px] font-bold"
+                              style={{
+                                backgroundColor: `${t.primaryColor}22`,
+                                color: t.primaryColor,
+                              }}
+                            >
+                              ONLINE
                             </span>
                           </div>
 
-                          {/* Mini Action Button */}
-                          <div className="flex justify-end pt-0.5">
+                          {/* Mini Dashboard Content */}
+                          <div className="p-1.5 space-y-1.5 overflow-hidden">
+                            {/* 2 Mini Stat Cards */}
+                            <div className="grid grid-cols-2 gap-1">
+                              <div
+                                className="p-1 rounded border"
+                                style={{
+                                  backgroundColor:
+                                    t.id === 'default'
+                                      ? '#f5f0fd'
+                                      : t.id === 'light-pro'
+                                      ? '#ebf5fc'
+                                      : t.id === 'colorful'
+                                      ? '#f3ebff'
+                                      : t.id === 'noc'
+                                      ? '#e8edf4'
+                                      : '#1e293b',
+                                  borderColor: t.borderColor,
+                                }}
+                              >
+                                <div className="text-[6px] opacity-70">Subs</div>
+                                <div className="font-extrabold text-[9px]">1,280</div>
+                              </div>
+                              <div
+                                className="p-1 rounded border"
+                                style={{
+                                  backgroundColor:
+                                    t.id === 'default'
+                                      ? '#eef4fd'
+                                      : t.id === 'light-pro'
+                                      ? '#e6f7f2'
+                                      : t.id === 'colorful'
+                                      ? '#eef7ed'
+                                      : t.id === 'noc'
+                                      ? '#e5f3eb'
+                                      : '#1e293b',
+                                  borderColor: t.borderColor,
+                                }}
+                              >
+                                <div className="text-[6px] opacity-70">Active</div>
+                                <div className="font-extrabold text-[9px] text-emerald-500">984</div>
+                              </div>
+                            </div>
+
+                            {/* Mini Table Row */}
                             <div
-                              className="px-2 py-0.5 rounded text-[8px] font-bold shadow-sm"
+                              className="p-1 rounded border flex items-center justify-between text-[7px]"
                               style={{
-                                backgroundColor: t.primaryColor,
-                                color: '#ffffff',
+                                backgroundColor: t.cardColor,
+                                borderColor: t.borderColor,
                               }}
                             >
-                              Action
+                              <span className="truncate">pppoe_user01</span>
+                              <span
+                                className="px-1 rounded text-[6px] font-bold"
+                                style={{ backgroundColor: `${t.primaryColor}15`, color: t.primaryColor }}
+                              >
+                                ACTIVE
+                              </span>
                             </div>
                           </div>
                         </div>
