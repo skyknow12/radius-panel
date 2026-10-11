@@ -669,6 +669,54 @@ apiRouter.post(
   })
 );
 
+apiRouter.post(
+  '/subscribers/bulk-import',
+  authMiddleware,
+  requirePermission('subscriber.create'),
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const schema = z.object({
+      rows: z.array(z.record(z.any())).min(1, 'At least one customer row is required'),
+      allowAuthException: z.boolean().optional(),
+      preferredDateFormat: z.enum(['auto', 'DMY', 'MDY', 'YMD']).optional(),
+      commit: z.boolean().optional(),
+    });
+    const parsed = schema.parse(req.body);
+    const result = await subscriberRepository.bulkImportSubscribers(
+      parsed.rows,
+      {
+        allowAuthException: parsed.allowAuthException,
+        preferredDateFormat: parsed.preferredDateFormat,
+        commit: parsed.commit,
+      },
+      req.user
+    );
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/auth-exception/grant',
+  authMiddleware,
+  requirePermission('subscriber.edit'),
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const reason = req.body?.reason ? String(req.body.reason) : undefined;
+    const updated = await subscriberRepository.grantAuthException(id, reason, req.user?.username || 'admin');
+    res.json(envelope(updated, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/auth-exception/revoke',
+  authMiddleware,
+  requirePermission('subscriber.edit'),
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    const updated = await subscriberRepository.revokeAuthException(id, req.user?.username || 'admin');
+    res.json(envelope(updated, 'live'));
+  })
+);
+
 apiRouter.get(
   '/subscribers/:id/profile',
   asyncHandler(async (req, res) => {
@@ -2320,13 +2368,33 @@ apiRouter.get(
 
 apiRouter.put(
   '/organization',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('organization.edit')) {
+    if (authReq.user?.userType === 'branch' || authReq.user?.userType === 'reseller') {
+      throw HttpError.forbidden('Branch Managers and Resellers cannot modify organization-wide settings');
+    }
+    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
+    if (!isSuperOrOrg && !authReq.user?.permissions.includes('organization.edit')) {
       throw HttpError.forbidden('Only Super Admin or Organization Admin can modify organization profile');
     }
+
+    const schema = z.object({
+      name: z.string().min(1, 'Organization name is required').max(255).optional(),
+      logo_url: z.string().nullable().optional(),
+      address: z.string().nullable().optional(),
+      phone: z.string().nullable().optional(),
+      email: z.string().nullable().optional(),
+      website: z.string().nullable().optional(),
+      currency: z.string().nullable().optional(),
+      timezone: z.string().nullable().optional(),
+      status: z.string().nullable().optional(),
+      default_grace_period_days: z.number().nullable().optional(),
+    });
+    const parsed = schema.parse(req.body);
+
     const org = await organizationRepository.getPrimaryOrganization();
-    const updated = await organizationRepository.updateOrganization(org.id, req.body);
+    const updated = await organizationRepository.updateOrganization(org.id, parsed);
     res.json(envelope(updated, 'live'));
   })
 );
@@ -2417,6 +2485,50 @@ apiRouter.get(
     }
     const metrics = await organizationRepository.getBranchDashboardMetrics(id);
     res.json(envelope(metrics, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/branches/:id',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'isp_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      (authReq.user?.roles && (authReq.user.roles.includes('super_admin') || authReq.user.roles.includes('isp_admin') || authReq.user.roles.includes('admin')));
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('branch.delete') && !authReq.user?.permissions?.includes('organization.delete')) {
+      throw HttpError.forbidden('Unauthorized to delete branches');
+    }
+    await organizationRepository.deleteBranch(id, authReq.user);
+    res.json(envelope({ success: true, message: 'Branch deleted successfully' }, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/branches/:id/status',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'isp_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      (authReq.user?.roles && (authReq.user.roles.includes('super_admin') || authReq.user.roles.includes('isp_admin') || authReq.user.roles.includes('admin')));
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('branch.edit') && !authReq.user?.permissions?.includes('organization.edit')) {
+      throw HttpError.forbidden('Unauthorized to update branch status');
+    }
+    const schema = z.object({
+      status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']),
+    });
+    const parsed = schema.parse(req.body);
+    const updated = await organizationRepository.updateBranchStatus(id, parsed.status, authReq.user);
+    res.json(envelope(updated, 'live'));
   })
 );
 
@@ -2523,6 +2635,50 @@ apiRouter.get(
     }
     const metrics = await resellerRepository.getResellerDashboard(id);
     res.json(envelope(metrics, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/resellers/:id',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'isp_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      (authReq.user?.roles && (authReq.user.roles.includes('super_admin') || authReq.user.roles.includes('isp_admin') || authReq.user.roles.includes('admin')));
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('reseller.delete') && !authReq.user?.permissions?.includes('organization.delete')) {
+      throw HttpError.forbidden('Unauthorized to delete resellers');
+    }
+    await organizationRepository.deleteReseller(id, authReq.user);
+    res.json(envelope({ success: true, message: 'Reseller deleted successfully' }, 'live'));
+  })
+);
+
+apiRouter.patch(
+  '/resellers/:id/status',
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const authReq = req as AuthenticatedRequest;
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'isp_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      (authReq.user?.roles && (authReq.user.roles.includes('super_admin') || authReq.user.roles.includes('isp_admin') || authReq.user.roles.includes('admin')));
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('reseller.suspend') && !authReq.user?.permissions?.includes('reseller.edit')) {
+      throw HttpError.forbidden('Unauthorized to update reseller status');
+    }
+    const schema = z.object({
+      status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']),
+    });
+    const parsed = schema.parse(req.body);
+    const updated = await organizationRepository.updateResellerStatus(id, parsed.status, authReq.user);
+    res.json(envelope(updated, 'live'));
   })
 );
 
@@ -3129,80 +3285,6 @@ apiRouter.get(
   })
 );
 
-// ---- 6. Channel Pricing Rules ----
-apiRouter.get(
-  '/pricing-rules',
-  asyncHandler(async (req, res) => {
-    const channelType = req.query.channel_type as 'branch' | 'reseller' | undefined;
-    const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
-    const resellerId = req.query.reseller_id ? Number(req.query.reseller_id) : undefined;
-    const packageId = req.query.package_id ? Number(req.query.package_id) : undefined;
-
-    const rules = await organizationRepository.listPricingRules({
-      channelType,
-      branchId,
-      resellerId,
-      packageId,
-    });
-    res.json(envelope(rules, 'live'));
-  })
-);
-
-apiRouter.post(
-  '/pricing-rules',
-  asyncHandler(async (req, res) => {
-    const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('pricing.edit')) {
-      throw HttpError.forbidden('Unauthorized to create pricing rules');
-    }
-
-    const schema = z.object({
-      rule_name: z.string().min(1),
-      channel_type: z.enum(['branch', 'reseller']),
-      branch_id: z.number().nullable().optional(),
-      reseller_id: z.number().nullable().optional(),
-      package_id: z.number().nullable().optional(),
-      duration_months: z.number().nullable().optional(),
-      rule_type: z.enum(['percentage_discount', 'percentage_commission', 'fixed_discount', 'fixed_override']),
-      value: z.number().min(0),
-      notes: z.string().optional(),
-    });
-    const parsed = schema.parse(req.body);
-
-    const rule = await organizationRepository.createPricingRule({
-      ...parsed,
-      created_by: authReq.user?.username || 'admin',
-    });
-    res.status(201).json(envelope(rule, 'live'));
-  })
-);
-
-apiRouter.delete(
-  '/pricing-rules/:id',
-  asyncHandler(async (req, res) => {
-    const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.role !== 'super_admin' && !authReq.user?.permissions.includes('pricing.edit')) {
-      throw HttpError.forbidden('Unauthorized to delete pricing rules');
-    }
-    await organizationRepository.deletePricingRule(Number(req.params.id));
-    res.json(envelope({ success: true }, 'live'));
-  })
-);
-
-apiRouter.post(
-  '/pricing/calculate',
-  asyncHandler(async (req, res) => {
-    const schema = z.object({
-      packageId: z.number(),
-      durationMonths: z.number(),
-      channelType: z.enum(['branch', 'reseller']),
-      entityId: z.number(),
-    });
-    const parsed = schema.parse(req.body);
-    const result = await organizationRepository.resolveChannelPrice(parsed);
-    res.json(envelope(result, 'live'));
-  })
-);
 
 // ---- 7. Channel Recharge Execution ----
 apiRouter.post(
@@ -3541,6 +3623,17 @@ apiRouter.post(
     const authReq = req as AuthenticatedRequest;
     await userManagementRepository.forceLogout(req.params.id, authReq.user?.userId, authReq.user);
     res.json(envelope({ success: true, message: 'User forced logged out. Active sessions terminated.' }, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/users/:id',
+  authMiddleware,
+  requirePermission('users.delete'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    await userManagementRepository.deleteUser(req.params.id, authReq.user);
+    res.json(envelope({ success: true, message: 'User deleted successfully' }, 'live'));
   })
 );
 

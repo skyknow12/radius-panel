@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { query, getClient } from '../db/pool';
 import { HttpError } from '../lib/http-error';
@@ -151,14 +152,10 @@ export const PERMISSION_CATALOG: Array<{ key: string; module: string; descriptio
   { key: 'reseller.credit.suspend', module: 'credit', description: 'Suspend reseller credit facility' },
   { key: 'reseller.credit.override', module: 'credit', description: 'Override credit limit during top-up' },
 
-  // Commission & Pricing
+  // Commission
   { key: 'commission.view', module: 'commission', description: 'View reseller commission percentages and rates' },
   { key: 'commission.report', module: 'commission', description: 'View reseller commission earnings ledger and reports' },
   { key: 'commission.payout', module: 'commission', description: 'Process commission settlements and payouts' },
-  { key: 'pricing.view', module: 'pricing', description: 'View channel pricing rules and tier overrides' },
-  { key: 'pricing.edit', module: 'pricing', description: 'Configure channel pricing rules and tier overrides' },
-  { key: 'pricing.discount', module: 'pricing', description: 'Configure channel discount rules' },
-  { key: 'pricing.commission', module: 'pricing', description: 'Configure reseller commission percentages' },
 
   // Reports
   { key: 'reports.view', module: 'reports', description: 'View centralized ISP operational and analytical reports' },
@@ -289,7 +286,7 @@ export const userManagementRepository = {
     const limit = Math.min(100, Math.max(1, params.limit || 20));
     const offset = (page - 1) * limit;
 
-    const baseConditions: string[] = ['1=1'];
+    const baseConditions: string[] = ['1=1', 'u.deleted_at IS NULL'];
     const baseValues: any[] = [];
     let baseIdx = 1;
 
@@ -515,7 +512,7 @@ export const userManagementRepository = {
    LEFT JOIN organizations org ON org.id = u.organization_id
    LEFT JOIN branches b ON b.id = u.branch_id
    LEFT JOIN resellers res ON res.id = u.reseller_id
-       WHERE u.id = $1
+       WHERE u.id = $1 AND u.deleted_at IS NULL
     `;
 
     const { rows } = await query<any>(dataQuery, [id]);
@@ -1081,6 +1078,130 @@ export const userManagementRepository = {
       entityId: id,
       status: 'success',
     });
+  },
+
+  /** Delete user with safety guards, scope check, and hard/soft deletion */
+  async deleteUser(id: string, actor?: AuthSession): Promise<void> {
+    const target = await this.getUserById(id, actor);
+    if (!target) throw HttpError.notFound('User not found');
+
+    // 1. Self-deletion guard
+    if (actor?.userId && String(actor.userId) === String(id)) {
+      throw HttpError.badRequest('You cannot delete your own account');
+    }
+
+    // 2. Super Admin deletion guards
+    const targetIsSuperAdmin = target.role_name === 'super_admin' || (target.roles && (target.roles as any[]).some((r: any) => r.name === 'super_admin'));
+    if (targetIsSuperAdmin) {
+      if (!isSuperAdmin(actor)) {
+        throw HttpError.forbidden('Only Super Admin can delete a Super Admin user');
+      }
+      const saCountRes = await query<{ count: string }>(`
+        SELECT COUNT(DISTINCT u.id)::int AS count
+          FROM users u
+          JOIN roles r ON r.id = u.role_id
+         WHERE r.name = 'super_admin'
+           AND u.id != $1
+           AND u.deleted_at IS NULL
+           AND u.is_active = TRUE
+      `, [id]);
+      const remainingSa = parseInt(saCountRes.rows[0]?.count || '0', 10);
+      if (remainingSa <= 0) {
+        throw HttpError.badRequest('Cannot delete the last remaining active Super Admin');
+      }
+    }
+
+    // 3. Last Admin guard within organization
+    const targetIsAdmin = targetIsSuperAdmin || target.role_name === 'organization_admin' || target.role_name === 'admin';
+    if (targetIsAdmin) {
+      const adminCountRes = await query<{ count: string }>(`
+        SELECT COUNT(DISTINCT u.id)::int AS count
+          FROM users u
+          JOIN roles r ON r.id = u.role_id
+         WHERE r.name IN ('super_admin', 'organization_admin', 'admin')
+           AND u.id != $1
+           AND u.deleted_at IS NULL
+           AND u.is_active = TRUE
+           AND (u.organization_id = $2 OR u.organization_id IS NULL)
+      `, [id, target.organization_id || null]);
+      const remainingAdmins = parseInt(adminCountRes.rows[0]?.count || '0', 10);
+      if (remainingAdmins <= 0) {
+        throw HttpError.badRequest('Cannot delete the last remaining administrator');
+      }
+    }
+
+    // 4. Data Scope Guard
+    if (isBranchUser(actor)) {
+      if (target.branch_id !== actor?.branchId) {
+        throw HttpError.forbidden('Branch Managers cannot delete users outside their assigned branch');
+      }
+    } else if (isResellerUser(actor)) {
+      if (target.reseller_id !== actor?.resellerId) {
+        throw HttpError.forbidden('Resellers cannot delete users outside their assigned reseller');
+      }
+    } else if (actor?.organizationId && !isSuperAdmin(actor)) {
+      if (target.organization_id && target.organization_id !== actor.organizationId) {
+        throw HttpError.forbidden('ISP Admins can only delete staff users within their organization');
+      }
+    }
+
+    // 5. Invalidate sessions
+    await this.forceLogout(id, actor?.userId, actor).catch(() => undefined);
+
+    // 6. Check historical records to decide Hard Delete vs Soft Delete
+    const [tktRes, comRes, auditRes, leadRes, recRes] = await Promise.all([
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM tickets WHERE created_by_id = $1 OR assigned_user_id = $1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM ticket_comments WHERE author_id = $1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM audit_logs WHERE actor_id = $1 OR actor = $2', [id, target.username]).catch(() => ({ rows: [{ count: '0' }] })),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM lead_activities WHERE author_id = $1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM recharge_transactions WHERE created_by = $1', [target.username]).catch(() => ({ rows: [{ count: '0' }] })),
+    ]);
+
+    const historyCount =
+      parseInt(tktRes.rows[0]?.count || '0', 10) +
+      parseInt(comRes.rows[0]?.count || '0', 10) +
+      parseInt(auditRes.rows[0]?.count || '0', 10) +
+      parseInt(leadRes.rows[0]?.count || '0', 10) +
+      parseInt(recRes.rows[0]?.count || '0', 10);
+
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      if (historyCount > 0) {
+        // Soft delete: set deleted_at, randomize password hash, mark inactive
+        const randomizedHash = `$deleted$${crypto.randomBytes(24).toString('hex')}`;
+        await client.query(`
+          UPDATE users
+             SET deleted_at = NOW(),
+                 is_active = FALSE,
+                 status = 'DELETED',
+                 password_hash = $1,
+                 token_version = token_version + 1,
+                 updated_at = NOW()
+           WHERE id = $2
+        `, [randomizedHash, id]);
+      } else {
+        // Clean user with no historical references: Hard delete cleanly
+        await client.query('DELETE FROM user_roles WHERE user_id = $1', [id]);
+        await client.query('DELETE FROM user_preferences WHERE user_id = $1', [id]).catch(() => undefined);
+        await client.query('DELETE FROM login_sessions WHERE user_id = $1', [id]).catch(() => undefined);
+        await client.query('DELETE FROM users WHERE id = $1', [id]);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await auditRepository.log({
+      action: 'user.delete',
+      entity: 'user',
+      entityId: id,
+      actor: actor?.username || 'admin',
+      details: { username: target.username, softDeleted: historyCount > 0 },
+    }).catch(() => undefined);
   },
 
   /** List user login history for a specific user */

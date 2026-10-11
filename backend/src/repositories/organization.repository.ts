@@ -116,25 +116,6 @@ export interface WalletTransactionItem {
   created_at: string;
 }
 
-export interface ChannelPricingRuleItem {
-  id: number;
-  rule_name: string;
-  channel_type: 'branch' | 'reseller';
-  branch_id: number | null;
-  branch_name?: string | null;
-  reseller_id: number | null;
-  reseller_name?: string | null;
-  package_id: number | null;
-  package_name?: string | null;
-  duration_months: number | null;
-  rule_type: 'percentage_discount' | 'percentage_commission' | 'fixed_discount' | 'fixed_override';
-  value: number;
-  is_active: boolean;
-  notes: string | null;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
 
 export interface OwnershipHistoryItem {
   id: number;
@@ -173,7 +154,12 @@ export const organizationRepository = {
     const values: any[] = [];
     let idx = 1;
 
-    if (input.name !== undefined) { fields.push(`name = $${idx++}`); values.push(input.name); }
+    if (input.name !== undefined) {
+      fields.push(`name = $${idx++}`);
+      values.push(input.name.trim());
+      fields.push(`brand_name = $${idx++}`);
+      values.push(input.name.trim());
+    }
     if (input.logo_url !== undefined) { fields.push(`logo_url = $${idx++}`); values.push(input.logo_url); }
     if (input.address !== undefined) { fields.push(`address = $${idx++}`); values.push(input.address); }
     if (input.phone !== undefined) { fields.push(`phone = $${idx++}`); values.push(input.phone); }
@@ -192,6 +178,15 @@ export const organizationRepository = {
     values.push(id);
     const sql = `UPDATE organizations SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`;
     const { rows } = await query<OrganizationItem>(sql, values);
+
+    await auditRepository.log({
+      action: 'organization.update',
+      entity: 'organization',
+      entityId: id,
+      actor: input.name || 'admin',
+      details: { updatedFields: Object.keys(input), name: rows[0]?.name },
+    }).catch(() => undefined);
+
     return rows[0];
   },
 
@@ -372,6 +367,95 @@ export const organizationRepository = {
     }
     const updated = await this.getBranch(id);
     if (!updated) throw HttpError.notFound('Branch not found');
+    return updated;
+  },
+
+  /**
+   * Delete Branch if no active dependencies exist, otherwise reject with conflict error
+   */
+  async deleteBranch(id: number, actor?: any): Promise<void> {
+    const branch = await this.getBranch(id);
+    if (!branch) throw HttpError.notFound('Branch not found');
+
+    const [subsRes, usersRes, wltRes, tktRes, oltRes] = await Promise.all([
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM subscribers WHERE branch_id = $1', [id]),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM users WHERE branch_id = $1 AND (deleted_at IS NULL)', [id]),
+      query<{ id: number; balance: string }>(
+        `SELECT w.id, w.balance, (SELECT COUNT(*)::int FROM wallet_transactions wt WHERE wt.branch_id = $1 OR wt.wallet_id = w.id) AS tx_count
+           FROM wallets w WHERE w.branch_id = $1`, [id]
+      ),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM tickets WHERE branch_id = $1', [id]),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM olts WHERE branch_id = $1', [id]),
+    ]);
+
+    const subscribersCount = parseInt(subsRes.rows[0]?.count || '0', 10);
+    const usersCount = parseInt(usersRes.rows[0]?.count || '0', 10);
+    const wallet = wltRes.rows[0];
+    const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
+    const transactionsCount = wallet ? parseInt((wallet as any).tx_count || '0', 10) : 0;
+    const ticketsCount = parseInt(tktRes.rows[0]?.count || '0', 10);
+    const oltsCount = parseInt(oltRes.rows[0]?.count || '0', 10);
+
+    const reasons: string[] = [];
+    if (subscribersCount > 0) reasons.push(`${subscribersCount} subscriber(s) assigned`);
+    if (usersCount > 0) reasons.push(`${usersCount} staff user(s) assigned`);
+    if (walletBalance !== 0) reasons.push(`wallet balance of Rs. ${walletBalance.toFixed(2)}`);
+    if (transactionsCount > 0) reasons.push(`${transactionsCount} financial transaction(s) recorded`);
+    if (ticketsCount > 0) reasons.push(`${ticketsCount} support ticket(s)`);
+    if (oltsCount > 0) reasons.push(`${oltsCount} OLT chassis mapped`);
+
+    if (reasons.length > 0) {
+      throw new HttpError(
+        409,
+        `Cannot delete branch "${branch.name}" because records depend on it: ${reasons.join(', ')}. Please reassign customers and staff or deactivate the branch instead.`,
+        {
+          dependencies: {
+            subscribers: subscribersCount,
+            staff: usersCount,
+            walletBalance,
+            transactions: transactionsCount,
+            tickets: ticketsCount,
+            olts: oltsCount,
+          },
+          safeAlternative: 'deactivate',
+        }
+      );
+    }
+
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      if (wallet?.id) {
+        await client.query('DELETE FROM credit_accounts WHERE wallet_id = $1', [wallet.id]);
+        await client.query('DELETE FROM wallets WHERE id = $1', [wallet.id]);
+      }
+      await client.query('DELETE FROM branches WHERE id = $1', [id]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await auditRepository.log({
+      action: 'branch.delete',
+      entity: 'branch',
+      entityId: id,
+      actor: actor?.username || 'admin',
+      details: { name: branch.name, code: branch.code },
+    }).catch(() => undefined);
+  },
+
+  async updateBranchStatus(id: number, status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED', actor?: any): Promise<BranchItem> {
+    const updated = await this.updateBranch(id, { status });
+    await auditRepository.log({
+      action: 'branch.status_update',
+      entity: 'branch',
+      entityId: id,
+      actor: actor?.username || 'admin',
+      details: { newStatus: status, branchName: updated.name },
+    }).catch(() => undefined);
     return updated;
   },
 
@@ -633,6 +717,99 @@ export const organizationRepository = {
     }
     const updated = await this.getReseller(id);
     if (!updated) throw HttpError.notFound('Reseller not found');
+    return updated;
+  },
+
+  /**
+   * Delete Reseller if no customers, staff, or financial transactions depend on it
+   */
+  async deleteReseller(id: number, actor?: any): Promise<void> {
+    const reseller = await this.getReseller(id);
+    if (!reseller) throw HttpError.notFound('Reseller not found');
+
+    const [subsRes, usersRes, wltRes, tktRes, commRes, recRes] = await Promise.all([
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM subscribers WHERE reseller_id = $1', [id]),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM users WHERE reseller_id = $1 AND (deleted_at IS NULL)', [id]),
+      query<{ id: number; balance: string }>(
+        `SELECT w.id, w.balance, (SELECT COUNT(*)::int FROM wallet_transactions wt WHERE wt.reseller_id = $1 OR wt.wallet_id = w.id) AS tx_count
+           FROM wallets w WHERE w.reseller_id = $1`, [id]
+      ),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM tickets WHERE reseller_id = $1', [id]),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM reseller_commissions WHERE reseller_id = $1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+      query<{ count: string }>('SELECT COUNT(*)::int AS count FROM recharge_transactions WHERE reseller_id = $1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+    ]);
+
+    const customersCount = parseInt(subsRes.rows[0]?.count || '0', 10);
+    const usersCount = parseInt(usersRes.rows[0]?.count || '0', 10);
+    const wallet = wltRes.rows[0];
+    const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
+    const transactionsCount = wallet ? parseInt((wallet as any).tx_count || '0', 10) : 0;
+    const ticketsCount = parseInt(tktRes.rows[0]?.count || '0', 10);
+    const commissionsCount = parseInt(commRes.rows[0]?.count || '0', 10);
+    const rechargesCount = parseInt(recRes.rows[0]?.count || '0', 10);
+
+    const reasons: string[] = [];
+    if (customersCount > 0) reasons.push(`${customersCount} customer(s) assigned`);
+    if (usersCount > 0) reasons.push(`${usersCount} staff account(s)`);
+    if (walletBalance !== 0) reasons.push(`wallet balance of Rs. ${walletBalance.toFixed(2)}`);
+    if (transactionsCount > 0) reasons.push(`${transactionsCount} financial transaction(s) recorded`);
+    if (commissionsCount > 0) reasons.push(`${commissionsCount} commission record(s)`);
+    if (rechargesCount > 0) reasons.push(`${rechargesCount} recharge transaction(s)`);
+    if (ticketsCount > 0) reasons.push(`${ticketsCount} support ticket(s)`);
+
+    if (reasons.length > 0) {
+      throw new HttpError(
+        409,
+        `Cannot delete reseller "${reseller.name}" because records depend on it: ${reasons.join(', ')}. To preserve financial integrity and audit trail, please deactivate the reseller instead.`,
+        {
+          dependencies: {
+            customers: customersCount,
+            staff: usersCount,
+            walletBalance,
+            transactions: transactionsCount,
+            commissions: commissionsCount,
+            recharges: rechargesCount,
+            tickets: ticketsCount,
+          },
+          safeAlternative: 'deactivate',
+        }
+      );
+    }
+
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      if (wallet?.id) {
+        await client.query('DELETE FROM credit_accounts WHERE wallet_id = $1', [wallet.id]);
+        await client.query('DELETE FROM wallets WHERE id = $1', [wallet.id]);
+      }
+      await client.query('DELETE FROM resellers WHERE id = $1', [id]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await auditRepository.log({
+      action: 'reseller.delete',
+      entity: 'reseller',
+      entityId: id,
+      actor: actor?.username || 'admin',
+      details: { name: reseller.name, code: reseller.code },
+    }).catch(() => undefined);
+  },
+
+  async updateResellerStatus(id: number, status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED', actor?: any): Promise<ResellerItem> {
+    const updated = await this.updateReseller(id, { status });
+    await auditRepository.log({
+      action: 'reseller.status_update',
+      entity: 'reseller',
+      entityId: id,
+      actor: actor?.username || 'admin',
+      details: { newStatus: status, resellerName: updated.name },
+    }).catch(() => undefined);
     return updated;
   },
 
@@ -1154,172 +1331,6 @@ export const organizationRepository = {
     return { transactions: rows, total };
   },
 
-  // ===========================================================================
-  // 6. Channel Pricing & Commission Rules
-  // ===========================================================================
-  async listPricingRules(filter?: {
-    channelType?: 'branch' | 'reseller';
-    branchId?: number;
-    resellerId?: number;
-    packageId?: number;
-  }): Promise<ChannelPricingRuleItem[]> {
-    const params: any[] = [];
-    const where: string[] = [];
-
-    if (filter?.channelType) {
-      params.push(filter.channelType);
-      where.push(`cpr.channel_type = $${params.length}`);
-    }
-    if (filter?.branchId) {
-      params.push(filter.branchId);
-      where.push(`cpr.branch_id = $${params.length}`);
-    }
-    if (filter?.resellerId) {
-      params.push(filter.resellerId);
-      where.push(`cpr.reseller_id = $${params.length}`);
-    }
-    if (filter?.packageId) {
-      params.push(filter.packageId);
-      where.push(`cpr.package_id = $${params.length}`);
-    }
-
-    const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const { rows } = await query<any>(`
-      SELECT cpr.id, cpr.rule_name, cpr.channel_type, cpr.branch_id, cpr.reseller_id,
-             cpr.package_id, cpr.duration_months, cpr.rule_type, cpr.value::float,
-             cpr.is_active, cpr.notes, cpr.created_by, cpr.created_at, cpr.updated_at,
-             b.name AS branch_name,
-             r.name AS reseller_name,
-             p.name AS package_name
-        FROM channel_pricing_rules cpr
-        LEFT JOIN branches b ON b.id = cpr.branch_id
-        LEFT JOIN resellers r ON r.id = cpr.reseller_id
-        LEFT JOIN packages p ON p.id = cpr.package_id
-       ${whereClause}
-       ORDER BY cpr.id ASC
-    `, params);
-    return rows;
-  },
-
-  async createPricingRule(input: {
-    rule_name: string;
-    channel_type: 'branch' | 'reseller';
-    branch_id?: number | null;
-    reseller_id?: number | null;
-    package_id?: number | null;
-    duration_months?: number | null;
-    rule_type: 'percentage_discount' | 'percentage_commission' | 'fixed_discount' | 'fixed_override';
-    value: number;
-    notes?: string;
-    created_by: string;
-  }): Promise<ChannelPricingRuleItem> {
-    const { rows } = await query<any>(`
-      INSERT INTO channel_pricing_rules (
-        rule_name, channel_type, branch_id, reseller_id, package_id,
-        duration_months, rule_type, value, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *
-    `, [
-      input.rule_name,
-      input.channel_type,
-      input.branch_id || null,
-      input.reseller_id || null,
-      input.package_id || null,
-      input.duration_months || null,
-      input.rule_type,
-      input.value,
-      input.notes || null,
-      input.created_by,
-    ]);
-    return rows[0];
-  },
-
-  async deletePricingRule(id: number): Promise<void> {
-    await query(`DELETE FROM channel_pricing_rules WHERE id = $1`, [id]);
-  },
-
-  // Calculate price for a channel transaction
-  async resolveChannelPrice(params: {
-    packageId: number;
-    durationMonths: number;
-    channelType: 'branch' | 'reseller';
-    entityId: number; // branch_id or reseller_id
-  }): Promise<{
-    originalPrice: number;
-    channelPrice: number;
-    discountOrCommission: number;
-    ruleApplied: string | null;
-  }> {
-    // 1. Get package base price for duration
-    const pkgRes = await query<{ price: string }>(`SELECT price FROM packages WHERE id = $1`, [params.packageId]);
-    if (!pkgRes.rows[0]) throw HttpError.notFound('Package not found');
-    const baseMonthlyPrice = Number(pkgRes.rows[0].price);
-
-    // Multi-month default calculation (consistent with Phase 5)
-    let standardPrice = baseMonthlyPrice * params.durationMonths;
-    if (params.durationMonths === 3) standardPrice = Math.round(standardPrice * 0.95);
-    else if (params.durationMonths === 6) standardPrice = Math.round(standardPrice * 0.90);
-    else if (params.durationMonths === 12) standardPrice = Math.round(standardPrice * 0.83);
-
-    // 2. Query pricing rules in precedence order:
-    // 1. Specific entity + specific package + specific duration
-    // 2. Specific entity + specific package + all durations
-    // 3. Specific entity + all packages + specific duration
-    // 4. Specific entity + all packages + all durations
-    // 5. Channel-wide + specific package + specific duration
-    // 6. Channel-wide + specific package + all durations
-    // 7. Channel-wide default
-    const entityCol = params.channelType === 'branch' ? 'branch_id' : 'reseller_id';
-    const { rows: rules } = await query<ChannelPricingRuleItem>(`
-      SELECT *
-        FROM channel_pricing_rules
-       WHERE is_active = TRUE
-         AND channel_type = $1
-         AND (${entityCol} = $2 OR ${entityCol} IS NULL)
-         AND (package_id = $3 OR package_id IS NULL)
-         AND (duration_months = $4 OR duration_months IS NULL)
-       ORDER BY
-         (${entityCol} IS NOT NULL) DESC,
-         (package_id IS NOT NULL) DESC,
-         (duration_months IS NOT NULL) DESC,
-         id DESC
-       LIMIT 1
-    `, [params.channelType, params.entityId, params.packageId, params.durationMonths]);
-
-    if (!rules[0]) {
-      return {
-        originalPrice: standardPrice,
-        channelPrice: standardPrice,
-        discountOrCommission: 0,
-        ruleApplied: null,
-      };
-    }
-
-    const r = rules[0];
-    let channelPrice = standardPrice;
-    let diff = 0;
-
-    if (r.rule_type === 'percentage_discount') {
-      diff = Math.round((standardPrice * r.value) / 100);
-      channelPrice = Math.max(0, standardPrice - diff);
-    } else if (r.rule_type === 'percentage_commission') {
-      diff = Math.round((standardPrice * r.value) / 100);
-      channelPrice = Math.max(0, standardPrice - diff);
-    } else if (r.rule_type === 'fixed_discount') {
-      diff = Math.min(standardPrice, r.value);
-      channelPrice = Math.max(0, standardPrice - diff);
-    } else if (r.rule_type === 'fixed_override') {
-      channelPrice = r.value;
-      diff = Math.max(0, standardPrice - channelPrice);
-    }
-
-    return {
-      originalPrice: standardPrice,
-      channelPrice,
-      discountOrCommission: diff,
-      ruleApplied: `${r.rule_name} (${r.value}${r.rule_type.startsWith('percentage') ? '%' : ' NPR'})`,
-    };
-  },
 
   // ===========================================================================
   // 7. Channel Recharge Execution (Database Transactional with Wallet Debit)
@@ -1359,15 +1370,16 @@ export const organizationRepository = {
         throw HttpError.forbidden('Access Denied: Subscriber does not belong to this branch');
       }
 
-      // 3. Resolve Channel Price
-      const priceCalc = await this.resolveChannelPrice({
-        packageId: input.packageId,
-        durationMonths: input.durationMonths,
-        channelType: input.channelType,
-        entityId: input.channelEntityId,
-      });
+      // 3. Resolve Standard Package Price
+      const pkgRes = await client.query<{ price: string }>(`SELECT price FROM packages WHERE id = $1`, [input.packageId]);
+      if (!pkgRes.rows[0]) throw HttpError.notFound('Package not found');
+      const baseMonthlyPrice = Number(pkgRes.rows[0].price);
+      let standardPrice = baseMonthlyPrice * input.durationMonths;
+      if (input.durationMonths === 3) standardPrice = Math.round(standardPrice * 0.95);
+      else if (input.durationMonths === 6) standardPrice = Math.round(standardPrice * 0.90);
+      else if (input.durationMonths === 12) standardPrice = Math.round(standardPrice * 0.83);
 
-      const requiredAmount = priceCalc.channelPrice;
+      const requiredAmount = standardPrice;
 
       // 4. Fetch and Lock Wallet & Credit Account
       const walletCol = input.channelType === 'branch' ? 'branch_id' : 'reseller_id';
@@ -1493,10 +1505,10 @@ export const organizationRepository = {
         input.packageId,
         pkgName,
         input.durationMonths,
-        priceCalc.originalPrice,
-        priceCalc.discountOrCommission > 0 ? 'percentage' : 'none',
-        priceCalc.discountOrCommission,
-        priceCalc.discountOrCommission,
+        standardPrice,
+        'none',
+        0,
+        0,
         requiredAmount,
         'WALLET',
         input.paymentReference || wallet.wallet_number,
@@ -1509,7 +1521,7 @@ export const organizationRepository = {
         branchId,
         resellerId,
         wallet.id,
-        priceCalc.discountOrCommission,
+        0,
       ]);
 
       // 11. Record Wallet Transaction Ledger

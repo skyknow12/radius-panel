@@ -349,7 +349,6 @@ export function Sidebar({
             {renderNavItem('billing_expiry', 'Expiry & Renewals', Clock, undefined, 'billing.view')}
             {renderNavItem('packages', 'Packages & Pricing', Package, undefined, ['package.view', 'billing.view'])}
             {renderNavItem('wallets', 'Wallets & Credit', Wallet, undefined, 'billing.view')}
-            {renderNavItem('channel_pricing', 'Channel Pricing', Percent, undefined, 'billing.view')}
             {renderNavItem('commission_report', 'Reseller Commission', FileText, undefined, 'billing.view')}
             {renderNavItem('payment_methods', 'Payment Gateways', CreditCard, undefined, 'billing.view')}
             {renderNavItem('billing_reports', 'Financial Reports', FileBarChart, undefined, ['billing.report', 'billing.view'])}

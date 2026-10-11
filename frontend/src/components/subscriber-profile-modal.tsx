@@ -748,6 +748,27 @@ export function SubscriberProfileModal({
     }
   };
 
+  const handleRevokeAuthException = async () => {
+    try {
+      setActionLoading(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/auth-exception/revoke`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        showNotice('Temporary authentication exception revoked. Standard password authentication is now restored.');
+        fetchProfile();
+        onUpdate();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showNotice(err.error || 'Failed to revoke authentication exception.');
+      }
+    } catch {
+      showNotice('Network error while revoking authentication exception.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const sub = profile?.subscriber;
 
   const getStatusBadge = (status?: string) => {
@@ -802,6 +823,11 @@ export function SubscriberProfileModal({
                   {sub?.full_name || 'Loading profile...'}
                 </h2>
                 {getStatusBadge(sub?.status)}
+                {sub?.auth_exception_enabled && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                    <ShieldAlert className="w-3.5 h-3.5" /> Temporary Auth Exception Active
+                  </span>
+                )}
                 {sub?.is_online ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -843,6 +869,30 @@ export function SubscriberProfileModal({
             <span>{actionNotice}</span>
             <button onClick={() => setActionNotice(null)} className="opacity-80 hover:opacity-100">
               Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Temporary Auth Exception Active Warning Banner */}
+        {sub?.auth_exception_enabled && (
+          <div className="bg-amber-500/15 border-b border-amber-500/30 px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <div>
+                <p className="font-semibold text-xs text-foreground">Temporary RADIUS Authentication Exception Active</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  This subscriber authenticates via temporary bypass (<code className="px-1 py-0.5 bg-muted rounded font-mono text-[10px]">Auth-Type := Accept</code>).
+                  Password verification is disabled until revoked or a new password is set.
+                  {sub?.auth_exception_granted_at && ` (Granted: ${new Date(sub.auth_exception_granted_at).toLocaleDateString()})`}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleRevokeAuthException}
+              disabled={actionLoading}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-colors flex items-center gap-1.5"
+            >
+              <Shield className="w-3.5 h-3.5" /> Revoke Exception
             </button>
           </div>
         )}

@@ -33,10 +33,12 @@ import {
   Store,
   ShieldCheck,
   RotateCcw,
+  FileSpreadsheet,
 } from 'lucide-react';
 import type { SubscriberItem, PackageItem, NasDeviceItem, IpPoolItem } from '@/types/api';
 import { SubscriberProfileModal } from './subscriber-profile-modal';
 import { SubscriberOwnershipModal } from './subscriber-ownership-modal';
+import { CustomerImportModal } from './customer-import-modal';
 
 interface SubscribersViewProps {
   onOpenSubscriberDetails?: (sub: SubscriberItem) => void;
@@ -66,6 +68,7 @@ export function SubscribersView({
   const [branches, setBranches] = React.useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [meta, setMeta] = React.useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+  const [importModalOpen, setImportModalOpen] = React.useState(false);
 
   // Filters & Search
   const [search, setSearch] = React.useState(initialSearch || '');
@@ -476,6 +479,13 @@ export function SubscribersView({
         </div>
 
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl border border-border bg-card hover:bg-accent text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Import customers from CSV or Excel"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Import Customers
+          </button>
           <button
             onClick={handleExportCsv}
             className="px-3.5 py-2 rounded-xl border border-border bg-card hover:bg-accent text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -1350,6 +1360,15 @@ export function SubscribersView({
           </div>
         </div>
       )}
+
+      {/* Customer Import Modal */}
+      <CustomerImportModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImportComplete={() => {
+          fetchSubscribers(1);
+        }}
+      />
     </div>
   );
 }

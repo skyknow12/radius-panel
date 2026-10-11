@@ -10,10 +10,13 @@ import {
   Wallet,
   CreditCard,
   Edit2,
+  Trash2,
+  Power,
   TrendingUp,
   X,
   Check,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   ChevronRight,
   ShieldCheck,
@@ -54,6 +57,78 @@ export function ResellersView({
   const [editModalOpen, setEditModalOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Deletion & Status state
+  const [resellerToDelete, setResellerToDelete] = React.useState<ResellerItem | null>(null);
+  const [deleteConflict, setDeleteConflict] = React.useState<{ message: string; dependencies?: any } | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
+  const [statusTogglingId, setStatusTogglingId] = React.useState<number | null>(null);
+
+  const handleToggleStatus = async (reseller: ResellerItem, newStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') => {
+    try {
+      setStatusTogglingId(reseller.id);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/resellers/${reseller.id}/status`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        fetchResellers();
+        if (resellerToDelete?.id === reseller.id) {
+          setResellerToDelete(null);
+          setDeleteConflict(null);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error?.message || err.error || 'Failed to update reseller status');
+      }
+    } catch {
+      setError('Network error while updating reseller status');
+    } finally {
+      setStatusTogglingId(null);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!resellerToDelete) return;
+    try {
+      setDeleting(true);
+      setDeleteConflict(null);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/resellers/${resellerToDelete.id}`, {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (res.ok) {
+        setResellerToDelete(null);
+        fetchResellers();
+      } else {
+        const json = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          setDeleteConflict({
+            message: json.error?.message || json.error || 'Reseller has dependent records.',
+            dependencies: json.error?.details?.dependencies,
+          });
+        } else {
+          setError(json.error?.message || json.error || 'Failed to delete reseller');
+          setResellerToDelete(null);
+        }
+      }
+    } catch {
+      setError('Network error while deleting reseller');
+      setResellerToDelete(null);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Create form state
   const [name, setName] = React.useState('');
@@ -434,6 +509,28 @@ export function ResellersView({
                             title="Edit Reseller"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleToggleStatus(r, r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE')}
+                            disabled={statusTogglingId === r.id}
+                            className={`p-1 rounded-lg border border-border hover:bg-muted transition-colors ${
+                              r.status === 'ACTIVE'
+                                ? 'text-amber-500 hover:text-amber-600'
+                                : 'text-emerald-500 hover:text-emerald-600'
+                            }`}
+                            title={r.status === 'ACTIVE' ? 'Deactivate Reseller' : 'Activate Reseller'}
+                          >
+                            <Power className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setResellerToDelete(r);
+                              setDeleteConflict(null);
+                            }}
+                            className="p-1 rounded-lg border border-border hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 transition-colors"
+                            title="Delete Reseller"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -948,6 +1045,111 @@ export function ResellersView({
             fetchDependencies();
           }}
         />
+      )}
+
+      {/* Reseller Delete / Conflict Confirmation Modal */}
+      {resellerToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                deleteConflict ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+              }`}>
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-foreground">
+                  {deleteConflict ? 'Cannot Delete Reseller' : 'Delete Reseller?'}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {resellerToDelete.name} ({resellerToDelete.code})
+                </p>
+              </div>
+            </div>
+
+            {deleteConflict ? (
+              <div className="space-y-3">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-600 dark:text-amber-400">
+                  <p className="font-semibold">{deleteConflict.message}</p>
+                </div>
+
+                {deleteConflict.dependencies && (
+                  <div className="space-y-1.5 text-xs text-muted-foreground bg-muted/40 p-3 rounded-xl border border-border">
+                    <p className="font-semibold text-foreground text-[11px] uppercase tracking-wider">Active Dependencies:</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                      {deleteConflict.dependencies.customers > 0 && (
+                        <li>{deleteConflict.dependencies.customers} customer(s) assigned</li>
+                      )}
+                      {deleteConflict.dependencies.staff > 0 && (
+                        <li>{deleteConflict.dependencies.staff} staff account(s)</li>
+                      )}
+                      {deleteConflict.dependencies.walletBalance !== 0 && (
+                        <li>Wallet balance: Rs. {deleteConflict.dependencies.walletBalance}</li>
+                      )}
+                      {deleteConflict.dependencies.transactions > 0 && (
+                        <li>{deleteConflict.dependencies.transactions} transaction(s) recorded</li>
+                      )}
+                      {deleteConflict.dependencies.commissions > 0 && (
+                        <li>{deleteConflict.dependencies.commissions} commission record(s)</li>
+                      )}
+                      {deleteConflict.dependencies.recharges > 0 && (
+                        <li>{deleteConflict.dependencies.recharges} recharge transaction(s)</li>
+                      )}
+                      {deleteConflict.dependencies.tickets > 0 && (
+                        <li>{deleteConflict.dependencies.tickets} support ticket(s)</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Resellers with historical transactions, active wallets, or customers cannot be permanently deleted. You can deactivate this reseller to prevent new logins and recharges while preserving all financial and customer records.
+                </p>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                  <button
+                    onClick={() => {
+                      setResellerToDelete(null);
+                      setDeleteConflict(null);
+                    }}
+                    className="px-4 py-2 rounded-xl border border-border hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => handleToggleStatus(resellerToDelete, 'INACTIVE')}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm transition-colors"
+                  >
+                    Deactivate Reseller Instead
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Are you sure you want to permanently delete this reseller? This action cannot be undone. If there are dependent customer or financial records, deletion will be safely rejected.
+                </p>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                  <button
+                    onClick={() => setResellerToDelete(null)}
+                    disabled={deleting}
+                    className="px-4 py-2 rounded-xl border border-border hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmDelete}
+                    disabled={deleting}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shadow-sm transition-colors flex items-center gap-1.5"
+                  >
+                    {deleting ? 'Deleting...' : 'Confirm Delete'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

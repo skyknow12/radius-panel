@@ -1,4 +1,5 @@
-import { query } from '../db/pool';
+import crypto from 'crypto';
+import { query, getClient } from '../db/pool';
 import { ipPoolRepository } from './ip-pool.repository';
 import { packageRepository } from './package.repository';
 import { RadiusClient } from '../radius/radius-client';
@@ -40,6 +41,10 @@ export interface SubscriberRow {
   grace_notes?: string | null;
   is_in_grace?: boolean;
   effective_expiry_date?: Date | null;
+  auth_exception_enabled?: boolean;
+  auth_exception_granted_at?: Date | null;
+  auth_exception_granted_by?: string | null;
+  auth_exception_reason?: string | null;
   vlan_id: number | null;
   nas_restriction_id: number | null;
   nas_name: string | null;
@@ -407,6 +412,7 @@ export const subscriberRepository = {
                ELSE s.expiry_date
              END AS effective_expiry_date,
              (s.expiry_date IS NOT NULL AND s.expiry_date < NOW() AND (s.grace_status != 'active' OR s.grace_end_date < NOW())) AS is_expired,
+             s.auth_exception_enabled, s.auth_exception_granted_at, s.auth_exception_granted_by, s.auth_exception_reason,
              s.vlan_id,
              s.nas_restriction_id, n.name AS nas_name,
              s.olt_pon_port, s.onu_mac_sn, s.onu_model,
@@ -469,6 +475,7 @@ export const subscriberRepository = {
                 ELSE s.expiry_date
               END AS effective_expiry_date,
               (s.expiry_date IS NOT NULL AND s.expiry_date < NOW() AND (s.grace_status != 'active' OR s.grace_end_date < NOW())) AS is_expired,
+              s.auth_exception_enabled, s.auth_exception_granted_at, s.auth_exception_granted_by, s.auth_exception_reason,
               s.vlan_id,
               s.nas_restriction_id, n.name AS nas_name,
               s.olt_pon_port, s.onu_mac_sn, s.onu_model,
@@ -518,6 +525,7 @@ export const subscriberRepository = {
                 ELSE s.expiry_date
               END AS effective_expiry_date,
               (s.expiry_date IS NOT NULL AND s.expiry_date < NOW() AND (s.grace_status != 'active' OR s.grace_end_date < NOW())) AS is_expired,
+              s.auth_exception_enabled, s.auth_exception_granted_at, s.auth_exception_granted_by, s.auth_exception_reason,
               s.vlan_id,
               s.nas_restriction_id, n.name AS nas_name,
               s.olt_pon_port, s.onu_mac_sn, s.onu_model,
@@ -851,6 +859,10 @@ export const subscriberRepository = {
               expiry_date = $23,
               notes = $24,
               password_cleartext = COALESCE($25, password_cleartext),
+              auth_exception_enabled = CASE WHEN $25 IS NOT NULL THEN FALSE ELSE auth_exception_enabled END,
+              auth_exception_granted_at = CASE WHEN $25 IS NOT NULL THEN NULL ELSE auth_exception_granted_at END,
+              auth_exception_granted_by = CASE WHEN $25 IS NOT NULL THEN NULL ELSE auth_exception_granted_by END,
+              auth_exception_reason = CASE WHEN $25 IS NOT NULL THEN NULL ELSE auth_exception_reason END,
               organization_id = COALESCE($26, organization_id),
               branch_id = $27,
               reseller_id = $28,
@@ -917,7 +929,17 @@ export const subscriberRepository = {
     const sub = await this.findById(id);
     if (!sub) throw new Error('Subscriber not found');
 
-    await query(`UPDATE subscribers SET password_cleartext = $1, updated_at = NOW() WHERE id = $2`, [newPassword, id]);
+    await query(
+      `UPDATE subscribers
+          SET password_cleartext = $1,
+              auth_exception_enabled = FALSE,
+              auth_exception_granted_at = NULL,
+              auth_exception_granted_by = NULL,
+              auth_exception_reason = NULL,
+              updated_at = NOW()
+        WHERE id = $2`,
+      [newPassword, id]
+    );
     await this.syncToRadius(id);
     await this.logActivity(id, 'password_changed', 'Password changed by administrator', adminUsername);
 
@@ -1296,6 +1318,7 @@ export const subscriberRepository = {
               host(s.static_ip) AS static_ip,
               s.expiry_date,
               s.mac_address, s.mac_binding_enabled,
+              s.auth_exception_enabled,
               s.grace_status, s.grace_end_date,
               (s.grace_status = 'active' AND s.grace_end_date IS NOT NULL AND s.grace_end_date >= NOW()) AS is_in_grace,
               p.name AS package_name,
@@ -1317,14 +1340,8 @@ export const subscriberRepository = {
     await query(`DELETE FROM radreply WHERE lower(username) = $1`, [username]);
     await query(`DELETE FROM radusergroup WHERE lower(username) = $1`, [username]);
 
-    // 2. Cleartext-Password
-    await query(
-      `INSERT INTO radcheck (username, attribute, op, value)
-       VALUES ($1, 'Cleartext-Password', ':=', $2)`,
-      [username, sub.password_cleartext],
-    );
-
-    // 3. Status checks: if suspended, disabled, or terminated -> Auth-Type := Reject
+    // 2. Authentication check:
+    // Status checks: if suspended, disabled, or terminated -> Auth-Type := Reject
     // Expired check: only reject if NOT in active grace!
     if (sub.status === 'suspended' || sub.status === 'disabled' || sub.status === 'terminated') {
       await query(
@@ -1337,6 +1354,20 @@ export const subscriberRepository = {
         `INSERT INTO radcheck (username, attribute, op, value)
          VALUES ($1, 'Auth-Type', ':=', 'Reject')`,
         [username],
+      );
+    } else if (sub.auth_exception_enabled) {
+      // Temporary Authentication Exception: Accept PPPoE/Hotspot authentication regardless of password
+      await query(
+        `INSERT INTO radcheck (username, attribute, op, value)
+         VALUES ($1, 'Auth-Type', ':=', 'Accept')`,
+        [username],
+      );
+    } else {
+      // Standard Cleartext-Password verification
+      await query(
+        `INSERT INTO radcheck (username, attribute, op, value)
+         VALUES ($1, 'Cleartext-Password', ':=', $2)`,
+        [username, sub.password_cleartext],
       );
     }
 
@@ -1750,4 +1781,484 @@ export const subscriberRepository = {
       recentCustomers: recentSubsRes.rows,
     };
   },
+
+  async grantAuthException(id: number, reason?: string, adminUsername = 'admin'): Promise<SubscriberRow> {
+    const sub = await this.findById(id);
+    if (!sub) throw new Error('Subscriber not found');
+
+    await query(
+      `UPDATE subscribers
+          SET auth_exception_enabled = TRUE,
+              auth_exception_granted_at = NOW(),
+              auth_exception_granted_by = $1,
+              auth_exception_reason = $2,
+              updated_at = NOW()
+        WHERE id = $3`,
+      [adminUsername, reason || 'Bulk import authentication exception', id]
+    );
+
+    await this.logActivity(
+      id,
+      'auth_exception_granted',
+      `Temporary authentication exception granted by ${adminUsername}`,
+      adminUsername
+    );
+
+    await this.syncToRadius(id);
+    return (await this.findById(id))!;
+  },
+
+  async revokeAuthException(id: number, adminUsername = 'admin'): Promise<SubscriberRow> {
+    const sub = await this.findById(id);
+    if (!sub) throw new Error('Subscriber not found');
+
+    await query(
+      `UPDATE subscribers
+          SET auth_exception_enabled = FALSE,
+              auth_exception_granted_at = NULL,
+              auth_exception_granted_by = NULL,
+              auth_exception_reason = NULL,
+              updated_at = NOW()
+        WHERE id = $1`,
+      [id]
+    );
+
+    await this.logActivity(
+      id,
+      'auth_exception_revoked',
+      `Temporary authentication exception revoked by ${adminUsername}`,
+      adminUsername
+    );
+
+    await this.syncToRadius(id);
+    return (await this.findById(id))!;
+  },
+
+  /**
+   * Bulk Customer Import with row validation preview and batch commit
+   */
+  async bulkImportSubscribers(
+    rawRows: any[],
+    options: {
+      allowAuthException?: boolean;
+      preferredDateFormat?: 'auto' | 'DMY' | 'MDY' | 'YMD';
+      commit?: boolean;
+    },
+    actor?: any
+  ) {
+    const adminUsername = actor?.username || 'admin';
+    const allowAuthException = Boolean(options.allowAuthException);
+    const commit = Boolean(options.commit);
+
+    // 1. Fetch reference lookup tables
+    const [pkgRes, brRes, resRes, existingSubsRes] = await Promise.all([
+      query<{ id: number; name: string; price: string }>(`SELECT id, name, price FROM packages`),
+      query<{ id: number; name: string; code: string }>(`SELECT id, name, code FROM branches`),
+      query<{ id: number; name: string; code: string }>(`SELECT id, name, code FROM resellers`),
+      query<{ username: string }>(`SELECT lower(username) as username FROM subscribers`),
+    ]);
+
+    const packages = pkgRes.rows;
+    const branches = brRes.rows;
+    const resellers = resRes.rows;
+    const existingUsernames = new Set(existingSubsRes.rows.map((r) => r.username.toLowerCase()));
+    const seenInBatch = new Set<string>();
+
+    // Helper maps
+    const packageByNameOrId = new Map<string, typeof packages[0]>();
+    for (const p of packages) {
+      packageByNameOrId.set(p.name.toLowerCase().trim(), p);
+      packageByNameOrId.set(String(p.id), p);
+    }
+
+    const branchByNameOrId = new Map<string, typeof branches[0]>();
+    for (const b of branches) {
+      branchByNameOrId.set(b.name.toLowerCase().trim(), b);
+      branchByNameOrId.set(b.code.toLowerCase().trim(), b);
+      branchByNameOrId.set(String(b.id), b);
+    }
+
+    const resellerByNameOrId = new Map<string, typeof resellers[0]>();
+    for (const r of resellers) {
+      resellerByNameOrId.set(r.name.toLowerCase().trim(), r);
+      resellerByNameOrId.set(r.code.toLowerCase().trim(), r);
+      resellerByNameOrId.set(String(r.id), r);
+    }
+
+    interface ParsedImportRow {
+      rowNumber: number;
+      username: string;
+      password: string;
+      fullName: string;
+      email: string | null;
+      phone: string | null;
+      address: string | null;
+      area: string | null;
+      packageId: number;
+      packageName: string;
+      expiryDate: Date | null;
+      branchId: number | null;
+      branchName: string | null;
+      resellerId: number | null;
+      resellerName: string | null;
+      macAddress: string | null;
+      staticIp: string | null;
+      connectionType: 'PPPoE' | 'IPoE' | 'Static IP' | 'Other';
+      raw: any;
+      errors: string[];
+      valid: boolean;
+    }
+
+    const processedRows: ParsedImportRow[] = [];
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const rowNumber = i + 1;
+      const errors: string[] = [];
+
+      // Flexible property extraction
+      const rawUsername = String(
+        row.username || row.Username || row['User Name'] || row.user || row.login || ''
+      ).trim();
+      const rawPassword = String(
+        row.password || row.Password || row.pass || ''
+      ).trim();
+      const rawFullName = String(
+        row.full_name || row.fullName || row.name || row.Name || row['Full Name'] || row['Customer Name'] || rawUsername
+      ).trim();
+      const rawEmail = String(row.email || row.Email || '').trim() || null;
+      const rawPhone = String(row.phone || row.mobile || row.Phone || row.Mobile || row.contact || '').trim() || null;
+      const rawAddress = String(row.address || row.Address || '').trim() || null;
+      const rawArea = String(row.area || row.Area || '').trim() || null;
+      const rawPackage = String(
+        row.package || row.Package || row.package_name || row.packageName || row['Package Name'] || row.plan || row.package_id || ''
+      ).trim();
+      const rawExpiry = row.expiry_date || row.expiryDate || row.expiry || row.Expiry || row.expiration || row['Expiry Date'];
+      const rawBranch = String(row.branch || row.Branch || row.branch_name || row.branch_id || '').trim();
+      const rawReseller = String(row.reseller || row.Reseller || row.reseller_name || row.reseller_id || '').trim();
+      const rawMac = String(row.mac || row.mac_address || row['MAC Address'] || '').trim();
+      const rawStaticIp = String(row.static_ip || row.ip || row['Static IP'] || '').trim();
+      const rawConnType = String(row.connection_type || row.connectionType || 'PPPoE').trim();
+
+      // 1. Username validation
+      const normUsername = rawUsername.toLowerCase();
+      if (!normUsername || normUsername.length < 3) {
+        errors.push('Username is required (minimum 3 characters)');
+      } else if (!/^[a-zA-Z0-9._@-]+$/.test(normUsername)) {
+        errors.push('Username contains invalid characters (allowed: alphanumeric, ., _, @, -)');
+      } else if (seenInBatch.has(normUsername)) {
+        errors.push(`Duplicate username "${normUsername}" within import file`);
+      } else if (existingUsernames.has(normUsername)) {
+        errors.push(`Username "${normUsername}" already exists in the system`);
+      } else {
+        seenInBatch.add(normUsername);
+      }
+
+      // 2. Password validation
+      let finalPassword = rawPassword;
+      if (!finalPassword) {
+        if (allowAuthException) {
+          finalPassword = crypto.randomBytes(6).toString('hex');
+        } else {
+          errors.push('Password is required (minimum 4 characters)');
+        }
+      } else if (finalPassword.length < 4 && !allowAuthException) {
+        errors.push('Password must be at least 4 characters');
+      }
+
+      // 3. Package validation
+      let matchedPackage = packages.length === 1 ? packages[0] : null;
+      if (rawPackage) {
+        const found = packageByNameOrId.get(rawPackage.toLowerCase());
+        if (found) {
+          matchedPackage = found;
+        } else {
+          errors.push(`Package "${rawPackage}" does not exist`);
+        }
+      } else if (!matchedPackage && packages.length > 0) {
+        matchedPackage = packages[0];
+      } else if (!matchedPackage) {
+        errors.push('Package is required');
+      }
+
+      // 4. Expiry Date validation
+      let parsedExpiry: Date | null = null;
+      if (rawExpiry !== undefined && rawExpiry !== null && rawExpiry !== '') {
+        parsedExpiry = parseImportDate(rawExpiry, options.preferredDateFormat);
+        if (!parsedExpiry) {
+          errors.push(`Invalid expiry date: "${rawExpiry}"`);
+        }
+      } else {
+        parsedExpiry = new Date();
+        parsedExpiry.setDate(parsedExpiry.getDate() + 30);
+      }
+
+      // 5. Branch & Reseller resolution
+      let matchedBranchId: number | null = null;
+      let matchedBranchName: string | null = null;
+      if (rawBranch) {
+        const b = branchByNameOrId.get(rawBranch.toLowerCase());
+        if (b) {
+          matchedBranchId = b.id;
+          matchedBranchName = b.name;
+        } else {
+          errors.push(`Branch "${rawBranch}" does not exist`);
+        }
+      }
+
+      let matchedResellerId: number | null = null;
+      let matchedResellerName: string | null = null;
+      if (rawReseller) {
+        const r = resellerByNameOrId.get(rawReseller.toLowerCase());
+        if (r) {
+          matchedResellerId = r.id;
+          matchedResellerName = r.name;
+        } else {
+          errors.push(`Reseller "${rawReseller}" does not exist`);
+        }
+      }
+
+      // 6. MAC validation
+      let normalizedMac: string | null = null;
+      if (rawMac) {
+        normalizedMac = normalizeMacAddress(rawMac);
+        if (!normalizedMac) {
+          errors.push(`Invalid MAC address format: "${rawMac}"`);
+        }
+      }
+
+      // 7. Connection type
+      const validTypes = ['PPPoE', 'IPoE', 'Static IP', 'Other'] as const;
+      const connectionType = validTypes.includes(rawConnType as any)
+        ? (rawConnType as 'PPPoE' | 'IPoE' | 'Static IP' | 'Other')
+        : 'PPPoE';
+
+      processedRows.push({
+        rowNumber,
+        username: normUsername || rawUsername,
+        password: finalPassword,
+        fullName: rawFullName || normUsername || 'Customer',
+        email: rawEmail,
+        phone: rawPhone,
+        address: rawAddress,
+        area: rawArea,
+        packageId: matchedPackage ? matchedPackage.id : 0,
+        packageName: matchedPackage ? matchedPackage.name : rawPackage,
+        expiryDate: parsedExpiry,
+        branchId: matchedBranchId,
+        branchName: matchedBranchName,
+        resellerId: matchedResellerId,
+        resellerName: matchedResellerName,
+        macAddress: normalizedMac,
+        staticIp: rawStaticIp || null,
+        connectionType,
+        raw: row,
+        errors,
+        valid: errors.length === 0,
+      });
+    }
+
+    const validRows = processedRows.filter((r) => r.valid);
+    const invalidRows = processedRows.filter((r) => !r.valid);
+
+    // PREVIEW MODE
+    if (!commit) {
+      return {
+        previewMode: true,
+        total: processedRows.length,
+        validCount: validRows.length,
+        invalidCount: invalidRows.length,
+        authExceptionEnabled: allowAuthException,
+        rows: processedRows.map((r) => ({
+          rowNumber: r.rowNumber,
+          username: r.username,
+          fullName: r.fullName,
+          phone: r.phone,
+          packageName: r.packageName,
+          expiryDate: r.expiryDate ? r.expiryDate.toISOString().split('T')[0] : null,
+          branchName: r.branchName,
+          resellerName: r.resellerName,
+          valid: r.valid,
+          errors: r.errors,
+        })),
+        errors: invalidRows.map((r) => ({
+          rowNumber: r.rowNumber,
+          username: r.username,
+          errors: r.errors,
+        })),
+      };
+    }
+
+    // COMMIT MODE
+    const client = await getClient();
+    const insertedIds: number[] = [];
+
+    try {
+      await client.query('BEGIN');
+
+      for (const row of validRows) {
+        const customerId = `CUST-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+        const ownershipType = row.resellerId ? 'reseller' : (row.branchId ? 'branch' : 'head_office');
+
+        const insertSubSql = `
+          INSERT INTO subscribers (
+            customer_id, username, password_cleartext, full_name, email, phone,
+            status, connection_type, address, area, current_package_id,
+            expiry_date, organization_id, branch_id, reseller_id, ownership_type,
+            mac_address, mac_binding_enabled, static_ip,
+            auth_exception_enabled, auth_exception_granted_at, auth_exception_granted_by, auth_exception_reason,
+            created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            'active', $7, $8, $9, $10,
+            $11, 1, $12, $13, $14,
+            $15, $16, $17,
+            $18, $19, $20, $21,
+            NOW(), NOW()
+          ) RETURNING id
+        `;
+
+        const subRes = await client.query<{ id: number }>(insertSubSql, [
+          customerId,
+          row.username,
+          row.password,
+          row.fullName,
+          row.email,
+          row.phone,
+          row.connectionType,
+          row.address,
+          row.area,
+          row.packageId,
+          row.expiryDate,
+          row.branchId,
+          row.resellerId,
+          ownershipType,
+          row.macAddress,
+          Boolean(row.macAddress),
+          row.staticIp,
+          allowAuthException,
+          allowAuthException ? new Date() : null,
+          allowAuthException ? adminUsername : null,
+          allowAuthException ? 'Bulk Import Authentication Exception' : null,
+        ]);
+
+        const newId = subRes.rows[0].id;
+        insertedIds.push(newId);
+
+        // Service record
+        await client.query(
+          `INSERT INTO subscriber_services (
+             service_id, subscriber_id, package_id, start_date, expiry_date, status, created_by
+           ) VALUES ($1, $2, $3, NOW(), $4, 'active', $5)`,
+          [`SRV-${customerId}`, newId, row.packageId, row.expiryDate, adminUsername]
+        );
+
+        // Activity log
+        await client.query(
+          `INSERT INTO subscriber_activity (subscriber_id, action, details, admin_username)
+           VALUES ($1, 'bulk_imported', $2, $3)`,
+          [
+            newId,
+            `Customer bulk imported${allowAuthException ? ' with Temporary Authentication Exception' : ''}`,
+            adminUsername,
+          ]
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    // Sync newly inserted subscribers to FreeRADIUS
+    for (const id of insertedIds) {
+      await this.syncToRadius(id).catch(() => undefined);
+    }
+
+    return {
+      success: true,
+      previewMode: false,
+      total: processedRows.length,
+      importedCount: insertedIds.length,
+      failedCount: invalidRows.length,
+      authExceptionEnabled: allowAuthException,
+      failedRows: invalidRows.map((r) => ({
+        ...r.raw,
+        error: r.errors.join('; '),
+      })),
+    };
+  },
 };
+
+export function parseImportDate(val: any, preferredFormat: 'auto' | 'DMY' | 'MDY' | 'YMD' = 'auto'): Date | null {
+  if (val === null || val === undefined || val === '') return null;
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val;
+  }
+
+  // Handle Excel serial date numbers (e.g. 45200)
+  if (typeof val === 'number' || (typeof val === 'string' && /^\d+(\.\d+)?$/.test(val.trim()))) {
+    const num = Number(val);
+    if (!isNaN(num) && num > 1000 && num < 100000) {
+      // 25569 days between 1899-12-30 and 1970-01-01
+      const ms = Math.round((num - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      return isNaN(d.getTime()) ? null : d;
+    }
+  }
+
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // 1. ISO YYYY-MM-DD or YYYY/MM/DD
+  const isoMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10) - 1;
+    const d = parseInt(isoMatch[3], 10);
+    const hh = isoMatch[4] ? parseInt(isoMatch[4], 10) : 23;
+    const mm = isoMatch[5] ? parseInt(isoMatch[5], 10) : 59;
+    const ss = isoMatch[6] ? parseInt(isoMatch[6], 10) : 59;
+    const dt = new Date(Date.UTC(y, m, d, hh, mm, ss));
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  // 2. Ambiguous DD/MM/YYYY or MM/DD/YYYY
+  const slashMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (slashMatch) {
+    const p1 = parseInt(slashMatch[1], 10);
+    const p2 = parseInt(slashMatch[2], 10);
+    const y = parseInt(slashMatch[3], 10);
+    const hh = slashMatch[4] ? parseInt(slashMatch[4], 10) : 23;
+    const mm = slashMatch[5] ? parseInt(slashMatch[5], 10) : 59;
+    const ss = slashMatch[6] ? parseInt(slashMatch[6], 10) : 59;
+
+    let day = p1;
+    let month = p2;
+
+    if (p1 > 12 && p2 <= 12) {
+      day = p1;
+      month = p2;
+    } else if (p2 > 12 && p1 <= 12) {
+      month = p1;
+      day = p2;
+    } else {
+      if (preferredFormat === 'MDY') {
+        month = p1;
+        day = p2;
+      } else {
+        day = p1;
+        month = p2;
+      }
+    }
+
+    const dt = new Date(Date.UTC(y, month - 1, day, hh, mm, ss));
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  const parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}

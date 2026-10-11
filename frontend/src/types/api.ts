@@ -216,6 +216,9 @@ export interface SubscriberItem {
   reseller_name?: string | null;
   ownership_type?: 'head_office' | 'branch' | 'reseller';
   notes: string | null;
+  auth_exception_enabled?: boolean;
+  auth_exception_granted_at?: string | null;
+  auth_exception_granted_by?: string | null;
   created_at: string;
   updated_at: string;
 }

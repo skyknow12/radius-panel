@@ -42,14 +42,14 @@ const SELECT_USER = `
 export const userRepository = {
   async findByUsername(username: string): Promise<UserRow | null> {
     const { rows } = await query<UserRow>(
-      `${SELECT_USER} WHERE lower(u.username) = lower($1) OR lower(u.email) = lower($1)`,
+      `${SELECT_USER} WHERE (lower(u.username) = lower($1) OR lower(u.email) = lower($1)) AND u.deleted_at IS NULL`,
       [username]
     );
     return rows[0] ?? null;
   },
 
   async findById(id: string): Promise<UserRow | null> {
-    const { rows } = await query<UserRow>(`${SELECT_USER} WHERE u.id = $1`, [id]);
+    const { rows } = await query<UserRow>(`${SELECT_USER} WHERE u.id = $1 AND u.deleted_at IS NULL`, [id]);
     return rows[0] ?? null;
   },
 

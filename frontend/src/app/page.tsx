@@ -36,7 +36,6 @@ import { OrganizationDashboardView } from '@/components/organization-dashboard-v
 import { BranchesView } from '@/components/branches-view';
 import { ResellersView } from '@/components/resellers-view';
 import { WalletsView } from '@/components/wallets-view';
-import { ChannelPricingView } from '@/components/channel-pricing-view';
 import { ResellerCommissionView } from '@/components/reseller-commission-view';
 import { ResellerProfileView } from '@/components/reseller-profile-view';
 import { ResellerReportsView } from '@/components/reseller-reports-view';
@@ -515,8 +514,6 @@ export default function DashboardPage() {
             />
           ) : activeTab === 'wallets' ? (
             <WalletsView currentUser={currentUser} />
-          ) : activeTab === 'channel_pricing' ? (
-            <ChannelPricingView />
           ) : activeTab === 'commission_report' ? (
             <ResellerCommissionView />
           ) : activeTab === 'crm' ? (

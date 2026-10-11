@@ -84,27 +84,49 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
     fetchData();
   }, []);
 
+  const isBranchOrReseller = currentUser?.userType === 'branch' || currentUser?.userType === 'reseller';
+  const canEditOrg = !isBranchOrReseller && (!currentUser || currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'organization_admin' || (currentUser.permissions && currentUser.permissions.includes('organization.edit')));
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('Organization name is required');
+      return;
+    }
+
     try {
       setSaving(true);
+      setError(null);
       const res = await fetch('/api/organization', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          phone,
-          email,
-          address,
-          website,
-          currency,
-          timezone,
+          name: trimmedName,
+          phone: phone.trim() || null,
+          email: email.trim() || null,
+          address: address.trim() || null,
+          website: website.trim() || null,
+          currency: currency.trim() || 'NPR',
+          timezone: timezone.trim() || 'Asia/Kathmandu',
           default_grace_period_days: defaultGracePeriodDays,
         }),
       });
+
+      const resJson = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Failed to update organization');
+        throw new Error(resJson.error || 'Failed to update organization');
+      }
+
+      const updatedOrg = resJson.data;
+      if (updatedOrg) {
+        setOrg(updatedOrg);
+        setName(updatedOrg.name);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('organization_updated', { detail: updatedOrg }));
+        }
       }
       setEditOpen(false);
       fetchData();
@@ -166,13 +188,15 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
           </div>
 
           <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => setEditOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-card border border-border hover:bg-muted text-xs font-semibold text-foreground transition-all flex items-center gap-2 shadow-sm"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-primary" />
-              <span>Edit Org Profile</span>
-            </button>
+            {canEditOrg && (
+              <button
+                onClick={() => setEditOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-card border border-border hover:bg-muted text-xs font-semibold text-foreground transition-all flex items-center gap-2 shadow-sm"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-primary" />
+                <span>Edit Org Profile</span>
+              </button>
+            )}
             <button
               onClick={() => onNavigate('branches')}
               className="px-3.5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-md shadow-primary/20 hover:opacity-90 transition-opacity flex items-center gap-1.5"
@@ -480,7 +504,7 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
         </div>
 
         <div
-          onClick={() => onNavigate('channel_pricing')}
+          onClick={() => onNavigate('commission_report')}
           className="p-5 rounded-2xl border border-border bg-card/60 hover:border-primary/50 transition-all cursor-pointer group flex items-start gap-4"
         >
           <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:scale-110 transition-transform">
@@ -488,11 +512,11 @@ export function OrganizationDashboardView({ onNavigate, currentUser }: Organizat
           </div>
           <div>
             <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5">
-              Channel Pricing & Commission
+              Reseller Commission
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Percentage discounts, fixed overrides, and duration-specific reseller commission rules.
+              Commission ledger, partner payouts, earnings reports, and settlement history.
             </p>
           </div>
         </div>
