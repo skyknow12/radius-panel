@@ -191,6 +191,34 @@ export function runDefaultRolesTests(): { name: string; passed: boolean; error?:
       reseller9SubBlocked = e.statusCode === 403;
     }
     assert(reseller9SubBlocked === true, 'BM Reseller 4: Blocked from subscriber in another reseller');
+
+    // Branch Manager cannot assign ISP Admin or Super Admin
+    let bmAssignIspBlocked = false;
+    try {
+      assertCanAssignRole(branchManagerResellerSession, 'isp_admin');
+    } catch (e: any) {
+      bmAssignIspBlocked = e.statusCode === 403;
+    }
+    assert(bmAssignIspBlocked === true, 'BM Reseller 5: Branch Manager blocked from assigning isp_admin');
+
+    let bmAssignSuperAdminBlocked = false;
+    try {
+      assertCanAssignRole(branchManagerResellerSession, 'super_admin');
+    } catch (e: any) {
+      bmAssignSuperAdminBlocked = e.statusCode === 403;
+    }
+    assert(bmAssignSuperAdminBlocked === true, 'BM Reseller 6: Branch Manager blocked from assigning super_admin');
+  }
+
+  // --- 6. Envelope with Authoritative User Stats ---
+  {
+    const usersList = [{ id: 'user-1', username: 'staff1' }];
+    const statsPayload = { total: 10, active: 8, suspended: 2 };
+    const env = envelope(usersList, 'live', { page: 1, limit: 15, total: 10, totalPages: 1, stats: statsPayload });
+    assert(env.success === true, 'Envelope Stats 1: success is true');
+    assert((env.meta as any).stats.total === 10, 'Envelope Stats 2: stats.total preserved');
+    assert((env.meta as any).stats.active === 8, 'Envelope Stats 3: stats.active preserved');
+    assert((env.meta as any).stats.suspended === 2, 'Envelope Stats 4: stats.suspended preserved');
   }
 
   return results;

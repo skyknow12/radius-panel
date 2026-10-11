@@ -3385,7 +3385,15 @@ apiRouter.get(
       },
       authReq.user
     );
-    res.json(envelope(result.users, 'live', { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }));
+    res.json(
+      envelope(result.users, 'live', {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: result.totalPages,
+        stats: result.stats,
+      })
+    );
   })
 );
 

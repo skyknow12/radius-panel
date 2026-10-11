@@ -46,9 +46,15 @@ export function isResellerUser(user?: AuthSession): boolean {
 
 /** Ensure caller can assign the given role */
 export function assertCanAssignRole(actor: AuthSession | undefined, targetRoleName: string): void {
-  if (DEVELOPER_ONLY_ROLES.includes(targetRoleName.toLowerCase())) {
+  const lowerRole = targetRoleName.toLowerCase();
+  if (DEVELOPER_ONLY_ROLES.includes(lowerRole)) {
     if (!isSuperAdmin(actor)) {
       throw HttpError.forbidden('Only Developer Super Admin can assign or grant the Super Admin role');
+    }
+  }
+  if (actor && !isSuperAdmin(actor) && !isIspAdmin(actor)) {
+    if (lowerRole === 'isp_admin' || lowerRole === 'organization_admin') {
+      throw HttpError.forbidden('Branch Managers cannot assign ISP Administrator roles');
     }
   }
 }

@@ -47,7 +47,14 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
   const [branches, setBranches] = React.useState<BranchItem[]>([]);
   const [resellers, setResellers] = React.useState<ResellerItem[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [meta, setMeta] = React.useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+  const [meta, setMeta] = React.useState<{
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    stats?: { total: number; active: number; suspended: number };
+  }>({ page: 1, limit: 15, total: 0, totalPages: 1 });
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
 
   // Filters for Users Tab
   const [search, setSearch] = React.useState('');
@@ -69,7 +76,6 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
   const [historyMeta, setHistoryMeta] = React.useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
 
   // Modals & Drawers
-  const [createModalOpen, setCreateModalOpen] = React.useState(false);
   const [editUser, setEditUser] = React.useState<UserManagementItem | null>(null);
   const [resetPassUser, setResetPassUser] = React.useState<UserManagementItem | null>(null);
   const [detailUser, setDetailUser] = React.useState<UserManagementItem | null>(null);
@@ -182,7 +188,14 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       ]);
       if (rRes.ok) {
         const j = await rRes.json();
-        setRoles(j.data || []);
+        const loadedRoles: RoleItem[] = j.data || [];
+        setRoles(loadedRoles);
+        setFormRoleIds((prev) => {
+          if (prev.length > 0) return prev;
+          const filtered = loadedRoles.filter((r) => isCallerSuperAdmin || (r.name !== 'super_admin' && !r.is_developer_only));
+          const defaultRole = filtered.find((r) => r.name === 'isp_admin' || r.name === 'branch_manager') || filtered[0];
+          return defaultRole ? [defaultRole.id] : [];
+        });
       }
       if (bRes.ok) {
         const j = await bRes.json();
@@ -198,6 +211,7 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
   const fetchUsers = async (page = meta.page) => {
     try {
       setLoading(true);
+      setFetchError(null);
       const params = new URLSearchParams();
       params.set('page', String(page));
       params.set('limit', String(meta.limit));
@@ -214,8 +228,16 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
         const json = await res.json();
         setUsers(json.data || []);
         if (json.meta) setMeta(json.meta);
+      } else {
+        const errJson = await res.json().catch(() => null);
+        const errMsg = errJson?.error?.message || errJson?.error || `Failed to load users (${res.status})`;
+        setFetchError(errMsg);
+        showNotice(errMsg, true);
       }
-    } catch {
+    } catch (err: any) {
+      const errMsg = err.message || 'Network error while loading users';
+      setFetchError(errMsg);
+      showNotice(errMsg, true);
     } finally {
       setLoading(false);
     }
@@ -291,7 +313,8 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     setFormEmail('');
     setFormPhone('');
     setFormPassword('');
-    setFormRoleIds(visibleRoles.length > 0 ? [visibleRoles[0].id] : []);
+    const defaultRole = visibleRoles.find((r) => r.name === 'isp_admin' || r.name === 'branch_manager') || visibleRoles[0];
+    setFormRoleIds(defaultRole ? [defaultRole.id] : []);
     setFormDataScope('ORGANIZATION');
     setFormUserType('isp');
     setFormBranchId('');
@@ -303,7 +326,7 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
 
   const openCreateModal = () => {
     resetFormFields();
-    setCreateModalOpen(true);
+    setActiveMainTab('create_user');
   };
 
   const openEditModal = (u: UserManagementItem) => {
@@ -349,7 +372,9 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formUsername || !formFullName || !formPassword) {
+    if (submitting) return;
+
+    if (!formUsername.trim() || !formFullName.trim() || !formPassword) {
       showNotice('Username, full name, and password are required', true);
       return;
     }
@@ -390,10 +415,10 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
         headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({
-          username: formUsername,
-          fullName: formFullName,
-          email: formEmail || undefined,
-          phone: formPhone || undefined,
+          username: formUsername.trim(),
+          fullName: formFullName.trim(),
+          email: formEmail.trim() || undefined,
+          phone: formPhone.trim() || undefined,
           password: formPassword,
           roleIds: formRoleIds,
           dataScope: formDataScope,
@@ -401,25 +426,27 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
           branchId: formBranchId !== '' ? Number(formBranchId) : undefined,
           resellerId: formResellerId !== '' ? Number(formResellerId) : undefined,
           forcePasswordReset: formForceReset,
-          notes: formNotes || undefined,
+          notes: formNotes.trim() || undefined,
         }),
       });
 
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
-        showNotice(json.error?.message || json.error || 'Failed to create user', true);
+        const errorMsg = json.error?.message || json.error || `Failed to create user (${res.status})`;
+        showNotice(errorMsg, true);
         return;
       }
 
-      showNotice(`Staff user "${formUsername}" created successfully`);
-      setCreateModalOpen(false);
+      showNotice(`Staff user "${formUsername.trim()}" created successfully`);
       resetFormFields();
-      if (activeMainTab === 'create_user') {
-        setActiveMainTab('users');
-      }
-      fetchUsers(1);
+      setSearch('');
+      setStatusFilter('all');
+      setRoleFilter('all');
+      setScopeFilter('all');
+      setActiveMainTab('users');
+      await fetchUsers(1);
     } catch (err: any) {
-      showNotice(err.message, true);
+      showNotice(err.message || 'Network error while creating user', true);
     } finally {
       setSubmitting(false);
     }
@@ -595,10 +622,10 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     return map;
   }, [userPermissions]);
 
-  // KPI calculations
-  const totalCount = meta.total;
-  const activeCount = users.filter((u) => u.status === 'ACTIVE').length;
-  const suspendedCount = users.filter((u) => u.status === 'SUSPENDED').length;
+  // Authoritative KPI calculations
+  const totalCount = meta.stats?.total ?? meta.total;
+  const activeCount = meta.stats?.active ?? users.filter((u) => u.status === 'ACTIVE').length;
+  const suspendedCount = meta.stats?.suspended ?? users.filter((u) => u.status === 'SUSPENDED').length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -631,10 +658,11 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          {activeMainTab === 'users' && (
+          {activeMainTab !== 'create_user' && (
             <button
+              type="button"
               onClick={openCreateModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 shadow-md shadow-primary/20 transition-all"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 shadow-md shadow-primary/20 transition-all cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
               Create Staff User
@@ -827,6 +855,21 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
                         Loading staff users...
                       </td>
                     </tr>
+                  ) : fetchError ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-rose-400">
+                        <AlertTriangle className="w-6 h-6 mx-auto mb-2 text-rose-400" />
+                        <p className="font-semibold text-xs text-rose-400 mb-1">Failed to load staff users</p>
+                        <p className="text-[11px] text-muted-foreground mb-3">{fetchError}</p>
+                        <button
+                          type="button"
+                          onClick={() => fetchUsers(meta.page)}
+                          className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+                        >
+                          Retry
+                        </button>
+                      </td>
+                    </tr>
                   ) : users.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-muted-foreground">
@@ -863,23 +906,27 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
 
                         <td className="py-3 px-3">
                           <div className="flex flex-wrap gap-1">
-                            {u.roles
-                              .filter((r) => isCallerSuperAdmin || r.name !== 'super_admin')
-                              .map((r) => {
-                              const isDevRole = r.name === 'super_admin';
-                              return (
-                                <span
-                                  key={r.id}
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                                    isDevRole
-                                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                                      : 'bg-primary/10 text-primary border-primary/20'
-                                  }`}
-                                >
-                                  {r.display_name}
-                                </span>
-                              );
-                            })}
+                            {u.roles && u.roles.length > 0 ? (
+                              u.roles
+                                .filter((r) => isCallerSuperAdmin || r.name !== 'super_admin')
+                                .map((r) => {
+                                  const isDevRole = r.name === 'super_admin';
+                                  return (
+                                    <span
+                                      key={r.id}
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                        isDevRole
+                                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                          : 'bg-primary/10 text-primary border-primary/20'
+                                      }`}
+                                    >
+                                      {r.display_name}
+                                    </span>
+                                  );
+                                })
+                            ) : (
+                              <span className="text-muted-foreground text-[11px]">{u.role_display_name || 'Unassigned'}</span>
+                            )}
                           </div>
                         </td>
 
@@ -995,9 +1042,15 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
             {/* Pagination Bar */}
             <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground bg-muted/20">
               <div>
-                Showing <span className="font-semibold text-foreground">{(meta.page - 1) * meta.limit + 1}</span> to{' '}
-                <span className="font-semibold text-foreground">{Math.min(meta.page * meta.limit, meta.total)}</span> of{' '}
-                <span className="font-semibold text-foreground">{meta.total}</span> users
+                Showing{' '}
+                <span className="font-semibold text-foreground">
+                  {meta.total === 0 ? 0 : (meta.page - 1) * meta.limit + 1}
+                </span>{' '}
+                to{' '}
+                <span className="font-semibold text-foreground">
+                  {Math.min(meta.page * meta.limit, meta.total)}
+                </span>{' '}
+                of <span className="font-semibold text-foreground">{meta.total}</span> users
               </div>
               <div className="flex items-center gap-1.5">
                 <button
@@ -1007,7 +1060,7 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="font-semibold text-foreground px-2">{meta.page}</span>
+                <span className="font-semibold text-foreground px-2">{meta.total === 0 ? 0 : meta.page}</span>
                 <button
                   onClick={() => fetchUsers(meta.page + 1)}
                   disabled={meta.page >= meta.totalPages || loading}

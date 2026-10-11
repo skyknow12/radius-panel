@@ -270,41 +270,47 @@ export const userManagementRepository = {
       sortOrder?: 'ASC' | 'DESC';
     },
     actor?: AuthSession
-  ): Promise<{ users: UserManagementItem[]; total: number; page: number; limit: number; totalPages: number }> {
+  ): Promise<{ users: UserManagementItem[]; total: number; page: number; limit: number; totalPages: number; stats?: { total: number; active: number; suspended: number } }> {
     const page = Math.max(1, params.page || 1);
     const limit = Math.min(100, Math.max(1, params.limit || 20));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ['1=1'];
-    const values: any[] = [];
-    let idx = 1;
+    const baseConditions: string[] = ['1=1'];
+    const baseValues: any[] = [];
+    let baseIdx = 1;
 
     // Scope Restriction: Non-super_admin CANNOT view Developer Super Admin users
     if (!isSuperAdmin(actor)) {
-      conditions.push(`NOT EXISTS (
+      baseConditions.push(`NOT EXISTS (
         SELECT 1 FROM user_roles ur_sa
         JOIN roles r_sa ON r_sa.id = ur_sa.role_id
         WHERE ur_sa.user_id = u.id AND r_sa.name = 'super_admin'
       )`);
-      conditions.push(`u.role_id NOT IN (SELECT id FROM roles WHERE name = 'super_admin')`);
+      baseConditions.push(`(u.role_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM roles r_sa WHERE r_sa.id = u.role_id AND r_sa.name = 'super_admin'
+      ))`);
 
       // Branch users can only view their own branch
       if (isBranchUser(actor)) {
-        conditions.push(`u.branch_id = $${idx}`);
-        values.push(actor?.branchId || -1);
-        idx++;
+        baseConditions.push(`u.branch_id = $${baseIdx}`);
+        baseValues.push(actor?.branchId || -1);
+        baseIdx++;
       } else if (isResellerUser(actor)) {
         // Reseller users can only view their own reseller
-        conditions.push(`u.reseller_id = $${idx}`);
-        values.push(actor?.resellerId || -1);
-        idx++;
+        baseConditions.push(`u.reseller_id = $${baseIdx}`);
+        baseValues.push(actor?.resellerId || -1);
+        baseIdx++;
       } else if (actor?.organizationId) {
         // ISP Admin scoped to own organization
-        conditions.push(`(u.organization_id = $${idx} OR u.organization_id IS NULL)`);
-        values.push(actor.organizationId);
-        idx++;
+        baseConditions.push(`(u.organization_id = $${baseIdx} OR u.organization_id IS NULL)`);
+        baseValues.push(actor.organizationId);
+        baseIdx++;
       }
     }
+
+    const conditions: string[] = [...baseConditions];
+    const values: any[] = [...baseValues];
+    let idx = baseIdx;
 
     if (params.search && params.search.trim()) {
       const q = `%${params.search.trim()}%`;
@@ -344,10 +350,15 @@ export const userManagementRepository = {
     }
 
     if (params.role && params.role !== 'all') {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM user_roles ur2
-        JOIN roles r2 ON r2.id = ur2.role_id
-        WHERE ur2.user_id = u.id AND (r2.name = $${idx} OR r2.id::text = $${idx})
+      conditions.push(`(
+        EXISTS (
+          SELECT 1 FROM user_roles ur2
+          JOIN roles r2 ON r2.id = ur2.role_id
+          WHERE ur2.user_id = u.id AND (r2.name = $${idx} OR r2.id::text = $${idx})
+        ) OR EXISTS (
+          SELECT 1 FROM roles r2
+          WHERE r2.id = u.role_id AND (r2.name = $${idx} OR r2.id::text = $${idx})
+        )
       )`);
       values.push(params.role);
       idx++;
@@ -360,6 +371,20 @@ export const userManagementRepository = {
       values
     );
     const total = parseInt(countRes.rows[0]?.count || '0', 10);
+
+    const baseWhereClause = baseConditions.join(' AND ');
+    const statsRes = await query<{ total: string; active: string; suspended: string }>(
+      `SELECT COUNT(*)::text as total,
+              COUNT(*) FILTER (WHERE COALESCE(u.status, 'ACTIVE') = 'ACTIVE')::text as active,
+              COUNT(*) FILTER (WHERE u.status = 'SUSPENDED')::text as suspended
+       FROM users u WHERE ${baseWhereClause}`,
+      baseValues
+    );
+    const stats = {
+      total: parseInt(statsRes.rows[0]?.total || '0', 10),
+      active: parseInt(statsRes.rows[0]?.active || '0', 10),
+      suspended: parseInt(statsRes.rows[0]?.suspended || '0', 10),
+    };
 
     const validSortCols: Record<string, string> = {
       username: 'u.username',
@@ -385,20 +410,23 @@ export const userManagementRepository = {
              u.force_password_reset,
              COALESCE(u.token_version, 1) AS token_version,
              u.created_at, u.updated_at,
-             COALESCE(
-               json_agg(
-                 json_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name)
-               ) FILTER (WHERE r.id IS NOT NULL),
-               '[]'::json
+             (
+               SELECT COALESCE(
+                 json_agg(json_build_object('id', ro.id, 'name', ro.name, 'display_name', ro.display_name)),
+                 '[]'::json
+               )
+               FROM (
+                 SELECT DISTINCT r2.id, r2.name, r2.display_name
+                 FROM roles r2
+                 WHERE r2.id = u.role_id
+                    OR EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role_id = r2.id)
+               ) ro
              ) AS roles
         FROM users u
    LEFT JOIN organizations org ON org.id = u.organization_id
    LEFT JOIN branches b ON b.id = u.branch_id
    LEFT JOIN resellers res ON res.id = u.reseller_id
-   LEFT JOIN user_roles ur ON ur.user_id = u.id
-   LEFT JOIN roles r ON r.id = ur.role_id
        WHERE ${whereClause}
-    GROUP BY u.id, org.name, b.name, res.business_name
     ORDER BY ${sortCol} ${sortDir}
        LIMIT $${idx} OFFSET $${idx + 1}
     `;
@@ -443,6 +471,7 @@ export const userManagementRepository = {
       page,
       limit,
       totalPages: Math.ceil(total / limit) || 1,
+      stats,
     };
   },
 
@@ -462,20 +491,23 @@ export const userManagementRepository = {
              u.force_password_reset,
              COALESCE(u.token_version, 1) AS token_version,
              u.created_at, u.updated_at,
-             COALESCE(
-               json_agg(
-                 DISTINCT jsonb_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name)
-               ) FILTER (WHERE r.id IS NOT NULL),
-               '[]'::json
+             (
+               SELECT COALESCE(
+                 json_agg(json_build_object('id', ro.id, 'name', ro.name, 'display_name', ro.display_name)),
+                 '[]'::json
+               )
+               FROM (
+                 SELECT DISTINCT r2.id, r2.name, r2.display_name
+                 FROM roles r2
+                 WHERE r2.id = u.role_id
+                    OR EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role_id = r2.id)
+               ) ro
              ) AS roles
         FROM users u
    LEFT JOIN organizations org ON org.id = u.organization_id
    LEFT JOIN branches b ON b.id = u.branch_id
    LEFT JOIN resellers res ON res.id = u.reseller_id
-   LEFT JOIN user_roles ur ON ur.user_id = u.id
-   LEFT JOIN roles r ON r.id = ur.role_id
        WHERE u.id = $1
-    GROUP BY u.id, org.name, b.name, res.business_name
     `;
 
     const { rows } = await query<any>(dataQuery, [id]);
@@ -506,10 +538,13 @@ export const userManagementRepository = {
     // Fetch unified permissions across all assigned roles
     const permRes = await query<{ key: string }>(
       `SELECT DISTINCT p.key
-         FROM user_roles ur
-         JOIN role_permissions rp ON rp.role_id = ur.role_id
+         FROM role_permissions rp
          JOIN permissions p ON p.id = rp.permission_id
-        WHERE ur.user_id = $1
+        WHERE rp.role_id IN (
+          SELECT role_id FROM user_roles WHERE user_id = $1
+          UNION
+          SELECT role_id FROM users WHERE id = $1 AND role_id IS NOT NULL
+        )
         ORDER BY p.key`,
       [id]
     );
@@ -564,10 +599,20 @@ export const userManagementRepository = {
     },
     actor?: AuthSession
   ): Promise<string> {
-    const existing = await query('SELECT id FROM users WHERE lower(username) = lower($1) OR (email IS NOT NULL AND lower(email) = lower($2))', [
-      input.username.trim(),
-      input.email?.trim() || '',
-    ]);
+    const trimmedUsername = input.username.trim();
+    const trimmedEmail = input.email?.trim() || null;
+    let existing;
+    if (trimmedEmail) {
+      existing = await query(
+        'SELECT id FROM users WHERE lower(username) = lower($1) OR (email IS NOT NULL AND email != \'\' AND lower(email) = lower($2))',
+        [trimmedUsername, trimmedEmail]
+      );
+    } else {
+      existing = await query(
+        'SELECT id FROM users WHERE lower(username) = lower($1)',
+        [trimmedUsername]
+      );
+    }
     if (existing.rows.length > 0) {
       throw HttpError.badRequest('Username or email already in use');
     }
@@ -676,8 +721,14 @@ export const userManagementRepository = {
     // Actor boundary enforcement
     if (isBranchUser(actor)) {
       branchId = actor?.branchId || undefined;
+      if (dataScope === 'PLATFORM' || dataScope === 'ORGANIZATION') {
+        dataScope = 'BRANCH';
+      }
     } else if (isResellerUser(actor)) {
       resellerId = actor?.resellerId || undefined;
+      if (dataScope === 'PLATFORM' || dataScope === 'ORGANIZATION') {
+        dataScope = 'RESELLER';
+      }
     }
 
     const passwordHash = await bcrypt.hash(input.password, 10);
