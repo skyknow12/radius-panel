@@ -2053,7 +2053,7 @@ export function SubscriberProfileModal({
         )}
 
         {/* 2. Unbind MAC Confirmation Modal */}
-        {unbindConfirmOpen && (
+        {unbindConfirmOpen && sub && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
             <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
               <div className="flex items-center gap-3">
@@ -2069,7 +2069,7 @@ export function SubscriberProfileModal({
               <div className="p-3.5 rounded-xl bg-muted/40 border border-border text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Currently Bound MAC:</span>
-                  <span className="font-mono font-bold text-foreground">{sub.mac_address}</span>
+                  <span className="font-mono font-bold text-foreground">{sub.mac_address || 'None'}</span>
                 </div>
                 <p className="text-muted-foreground leading-relaxed pt-1 border-t border-border/40 text-[11px]">
                   After unbinding, the next successful authentication will automatically bind the customer&apos;s new valid MAC address.
@@ -2098,7 +2098,7 @@ export function SubscriberProfileModal({
         )}
 
         {/* 3. Add Grace Period Modal */}
-        {addGraceModalOpen && (
+        {addGraceModalOpen && sub && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
             <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
               <div className="flex items-center justify-between">
@@ -2189,7 +2189,7 @@ export function SubscriberProfileModal({
         )}
 
         {/* 4. Revoke Grace Confirmation Modal */}
-        {revokeGraceConfirmOpen && (
+        {revokeGraceConfirmOpen && sub && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
             <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
               <div className="flex items-center gap-3">
@@ -2228,7 +2228,7 @@ export function SubscriberProfileModal({
         )}
 
         {/* 5. Customer Grace Override Modal */}
-        {overrideModalOpen && (
+        {overrideModalOpen && sub && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
             <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
               <div className="flex items-center justify-between">
