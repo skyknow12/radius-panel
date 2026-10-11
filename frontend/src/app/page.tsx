@@ -207,17 +207,20 @@ export default function DashboardPage() {
     }
   }, [range, currentUser]);
 
-  // Global search keyboard shortcut (Cmd+K / Ctrl+K)
+  // Global search keyboard shortcut (Cmd+K / Ctrl+K, ESC to close)
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setSearchOpen((prev) => !prev);
+      } else if (e.key === 'Escape' && searchOpen) {
+        e.preventDefault();
+        setSearchOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [searchOpen]);
 
   const handleOpenSubscriberByUsername = async (username: string) => {
     if (!username || username === '-') return;
