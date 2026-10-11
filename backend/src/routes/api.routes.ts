@@ -2374,9 +2374,14 @@ apiRouter.put(
     if (authReq.user?.userType === 'branch' || authReq.user?.userType === 'reseller') {
       throw HttpError.forbidden('Branch Managers and Resellers cannot modify organization-wide settings');
     }
-    const isSuperOrOrg = authReq.user?.role === 'super_admin' || authReq.user?.role === 'admin' || authReq.user?.role === 'organization_admin';
-    if (!isSuperOrOrg && !authReq.user?.permissions.includes('organization.edit')) {
-      throw HttpError.forbidden('Only Super Admin or Organization Admin can modify organization profile');
+    const isSuperOrOrg =
+      authReq.user?.role === 'super_admin' ||
+      authReq.user?.role === 'isp_admin' ||
+      authReq.user?.role === 'admin' ||
+      authReq.user?.role === 'organization_admin' ||
+      (authReq.user?.roles && (authReq.user.roles.includes('super_admin') || authReq.user.roles.includes('isp_admin') || authReq.user.roles.includes('admin')));
+    if (!isSuperOrOrg && !authReq.user?.permissions?.includes('organization.edit')) {
+      throw HttpError.forbidden('Only Administrator can modify organization profile');
     }
 
     const schema = z.object({
@@ -2388,13 +2393,18 @@ apiRouter.put(
       website: z.string().nullable().optional(),
       currency: z.string().nullable().optional(),
       timezone: z.string().nullable().optional(),
-      status: z.string().nullable().optional(),
+      status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
       default_grace_period_days: z.number().nullable().optional(),
     });
     const parsed = schema.parse(req.body);
 
     const org = await organizationRepository.getPrimaryOrganization();
-    const updated = await organizationRepository.updateOrganization(org.id, parsed);
+    const updated = await organizationRepository.updateOrganization(org.id, {
+      ...parsed,
+      currency: parsed.currency || undefined,
+      timezone: parsed.timezone || undefined,
+      default_grace_period_days: parsed.default_grace_period_days ?? undefined,
+    });
     res.json(envelope(updated, 'live'));
   })
 );

@@ -149,7 +149,7 @@ export const organizationRepository = {
     return rows[0];
   },
 
-  async updateOrganization(id: number, input: Partial<OrganizationItem>): Promise<OrganizationItem> {
+  async updateOrganization(id: number, input: Partial<OrganizationItem> | Record<string, any>): Promise<OrganizationItem> {
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -179,12 +179,12 @@ export const organizationRepository = {
     const sql = `UPDATE organizations SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`;
     const { rows } = await query<OrganizationItem>(sql, values);
 
-    await auditRepository.log({
+    await auditRepository.insert({
       action: 'organization.update',
-      entity: 'organization',
-      entityId: id,
-      actor: input.name || 'admin',
-      details: { updatedFields: Object.keys(input), name: rows[0]?.name },
+      entityType: 'organization',
+      entityId: String(id),
+      username: input.name || 'admin',
+      metadata: { updatedFields: Object.keys(input), name: rows[0]?.name },
     }).catch(() => undefined);
 
     return rows[0];
@@ -405,8 +405,7 @@ export const organizationRepository = {
     if (oltsCount > 0) reasons.push(`${oltsCount} OLT chassis mapped`);
 
     if (reasons.length > 0) {
-      throw new HttpError(
-        409,
+      throw HttpError.conflict(
         `Cannot delete branch "${branch.name}" because records depend on it: ${reasons.join(', ')}. Please reassign customers and staff or deactivate the branch instead.`,
         {
           dependencies: {
@@ -438,23 +437,23 @@ export const organizationRepository = {
       client.release();
     }
 
-    await auditRepository.log({
+    await auditRepository.insert({
       action: 'branch.delete',
-      entity: 'branch',
-      entityId: id,
-      actor: actor?.username || 'admin',
-      details: { name: branch.name, code: branch.code },
+      entityType: 'branch',
+      entityId: String(id),
+      username: actor?.username || 'admin',
+      metadata: { name: branch.name, code: branch.code },
     }).catch(() => undefined);
   },
 
   async updateBranchStatus(id: number, status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED', actor?: any): Promise<BranchItem> {
     const updated = await this.updateBranch(id, { status });
-    await auditRepository.log({
+    await auditRepository.insert({
       action: 'branch.status_update',
-      entity: 'branch',
-      entityId: id,
-      actor: actor?.username || 'admin',
-      details: { newStatus: status, branchName: updated.name },
+      entityType: 'branch',
+      entityId: String(id),
+      username: actor?.username || 'admin',
+      metadata: { newStatus: status, branchName: updated.name },
     }).catch(() => undefined);
     return updated;
   },
@@ -758,8 +757,7 @@ export const organizationRepository = {
     if (ticketsCount > 0) reasons.push(`${ticketsCount} support ticket(s)`);
 
     if (reasons.length > 0) {
-      throw new HttpError(
-        409,
+      throw HttpError.conflict(
         `Cannot delete reseller "${reseller.name}" because records depend on it: ${reasons.join(', ')}. To preserve financial integrity and audit trail, please deactivate the reseller instead.`,
         {
           dependencies: {
@@ -792,23 +790,23 @@ export const organizationRepository = {
       client.release();
     }
 
-    await auditRepository.log({
+    await auditRepository.insert({
       action: 'reseller.delete',
-      entity: 'reseller',
-      entityId: id,
-      actor: actor?.username || 'admin',
-      details: { name: reseller.name, code: reseller.code },
+      entityType: 'reseller',
+      entityId: String(id),
+      username: actor?.username || 'admin',
+      metadata: { name: reseller.name, code: reseller.code },
     }).catch(() => undefined);
   },
 
   async updateResellerStatus(id: number, status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED', actor?: any): Promise<ResellerItem> {
     const updated = await this.updateReseller(id, { status });
-    await auditRepository.log({
+    await auditRepository.insert({
       action: 'reseller.status_update',
-      entity: 'reseller',
-      entityId: id,
-      actor: actor?.username || 'admin',
-      details: { newStatus: status, resellerName: updated.name },
+      entityType: 'reseller',
+      entityId: String(id),
+      username: actor?.username || 'admin',
+      metadata: { newStatus: status, resellerName: updated.name },
     }).catch(() => undefined);
     return updated;
   },
@@ -1590,9 +1588,9 @@ export const organizationRepository = {
         username: sub.username,
         packageName: pkgName,
         duration: input.durationMonths,
-        originalPrice: priceCalc.originalPrice,
+        originalPrice: standardPrice,
         channelPrice: requiredAmount,
-        discountOrCommission: priceCalc.discountOrCommission,
+        discountOrCommission: 0,
         walletCashRemaining: newCashBalance,
         usedCredit: newUsedCredit,
         newExpiry: newExpiry.toISOString(),

@@ -36,6 +36,9 @@ export class HttpError extends Error {
   static notFound(message = 'Resource not found') {
     return new HttpError(404, 'NOT_FOUND', message);
   }
+  static conflict(message = 'Resource conflict', details?: unknown) {
+    return new HttpError(409, 'CONFLICT', message, details);
+  }
   static tooMany(message = 'Too many requests, please try again later') {
     return new HttpError(429, 'RATE_LIMITED', message);
   }

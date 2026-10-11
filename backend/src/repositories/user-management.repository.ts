@@ -1195,12 +1195,14 @@ export const userManagementRepository = {
       client.release();
     }
 
-    await auditRepository.log({
+    await auditRepository.insert({
       action: 'user.delete',
-      entity: 'user',
-      entityId: id,
-      actor: actor?.username || 'admin',
-      details: { username: target.username, softDeleted: historyCount > 0 },
+      entityType: 'user',
+      entityId: String(id),
+      username: actor?.username || 'admin',
+      userId: actor?.userId ? String(actor.userId) : null,
+      status: 'success',
+      metadata: { username: target.username, softDeleted: historyCount > 0 },
     }).catch(() => undefined);
   },
 
