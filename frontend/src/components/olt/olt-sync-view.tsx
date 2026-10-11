@@ -35,7 +35,7 @@ export function OltSyncView({
   const [loading, setLoading] = React.useState(true);
   const [syncingOltId, setSyncingOltId] = React.useState<number | null>(null);
   const [syncingAll, setSyncingAll] = React.useState(false);
-  const [notice, setNotice] =状React.useState<{ text: string; error?: boolean } | null>(null);
+  const [notice, setNotice] = React.useState<{ text: string; error?: boolean } | null>(null);
   const [syncResults, setSyncResults] = React.useState<Record<number, any>>({});
   const [selectedOltFilter, setSelectedOltFilter] = React.useState<number | 'all'>('all');
   const [flaggedOnus, setFlaggedOnus] = React.useState<OnuItem[]>([]);

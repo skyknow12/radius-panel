@@ -80,14 +80,21 @@ export function OltManagementView({
     setActiveSubTab('details');
   };
 
-  const navItems = [
+  interface NavItem {
+    id: OltSubTab;
+    label: string;
+    icon: React.ElementType;
+    badge?: string;
+  }
+
+  const navItems: NavItem[] = [
     { id: 'inventory', label: 'OLT Inventory', icon: Server },
     { id: 'registered_onus', label: 'Registered ONUs', icon: Layers },
     { id: 'discovery', label: 'ONU Discovery (Autofind)', icon: Radio, badge: 'AUTO' },
     { id: 'provision', label: 'Provision ONU', icon: PlusCircle },
     { id: 'sync', label: 'Synchronization Engine', icon: RefreshCw },
     { id: 'history', label: 'Operation History', icon: History },
-  ] as const;
+  ];
 
   return (
     <div className="space-y-6">
