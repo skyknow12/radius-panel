@@ -814,7 +814,6 @@ export const oltRepository = {
           pon_port: params.port ?? 0,
           ont_id: params.ontId ?? 0,
           run_state: 'online',
-          registration_state: 'registered',
         });
       }
     }
