@@ -1,6 +1,5 @@
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
-import { logger } from '../../lib/logger';
 
 // Telnet Protocol Bytes (RFC 854)
 const IAC = 255;

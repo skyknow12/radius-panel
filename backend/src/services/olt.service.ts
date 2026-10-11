@@ -1,11 +1,10 @@
-import { oltRepository, OltItem, OnuItem } from '../repositories/olt.repository';
+import { oltRepository } from '../repositories/olt.repository';
 import { huaweiDriver } from './olt/huawei-driver';
-import { DiscoveredOnt, OpticalInfo } from './olt/huawei-parser';
+import type { DiscoveredOnt, OpticalInfo } from './olt/huawei-parser';
 import { HttpError } from '../lib/http-error';
-import { isSuperAdmin, isIspAdmin, isBranchUser } from '../lib/access-control';
+import { isBranchUser } from '../lib/access-control';
 import type { AuthSession } from './auth.service';
 import { query } from '../db/pool';
-import { logger } from '../lib/logger';
 
 export interface ProvisionOnuInput {
   slot: number;
@@ -196,6 +195,10 @@ export const oltService = {
     const creds = await oltRepository.getDecryptedCredentials(oltId);
     if (!creds) throw HttpError.notFound('OLT not found');
 
+    if (isBranchUser(actor) && creds.branchId && creds.branchId !== actor?.branchId) {
+      throw HttpError.forbidden('Access denied to OLT belonging to another branch');
+    }
+
     const onuRes = await query<{
       serial_number: string;
       frame: number;
@@ -379,7 +382,18 @@ export const oltService = {
    * Search matching customer by ONU serial number, description, or MAC
    */
   async findMatchingCustomer(serialNumber: string, description?: string, macAddress?: string): Promise<any | null> {
-    // 1. Match by exact serial number in subscribers (e.g. notes or mac)
+    // 1. Match by exact serial number in subscribers (onu_mac_sn)
+    if (serialNumber) {
+      const snRes = await query(
+        'SELECT id, username, full_name, branch_id FROM subscribers WHERE lower(COALESCE(onu_mac_sn, \'\')) = $1',
+        [serialNumber.toLowerCase()]
+      );
+      if (snRes.rows.length === 1) {
+        return { customer: snRes.rows[0], matchType: 'sn_match' };
+      }
+    }
+
+    // 2. Match by MAC address
     if (macAddress) {
       const macClean = macAddress.toLowerCase().replace(/[^a-f0-9]/g, '');
       const macRes = await query(

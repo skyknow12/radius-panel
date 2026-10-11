@@ -1,9 +1,8 @@
 import { query } from '../db/pool';
 import { HttpError } from '../lib/http-error';
-import { isSuperAdmin, isIspAdmin, isBranchUser } from '../lib/access-control';
+import { isBranchUser } from '../lib/access-control';
 import type { AuthSession } from '../services/auth.service';
 import { encryptSecret, decryptSecret, maskSecret, sanitizeLogOutput } from '../lib/crypto';
-import { logger } from '../lib/logger';
 
 export interface OltItem {
   id: number;
