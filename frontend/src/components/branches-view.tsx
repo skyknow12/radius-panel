@@ -49,6 +49,28 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
   const [deleting, setDeleting] = React.useState(false);
   const [statusTogglingId, setStatusTogglingId] = React.useState<number | null>(null);
 
+  const fetchBranches = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/branches', { headers });
+      if (res.ok) {
+        const json = await res.json();
+        setBranches(json.data || []);
+      }
+    } catch {
+      setError('Failed to load branches');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchBranches();
+  }, []);
+
   const handleToggleStatus = async (branch: BranchItem, newStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') => {
     try {
       setStatusTogglingId(branch.id);
@@ -125,24 +147,6 @@ export function BranchesView({ onViewSubscribers, onViewWallet, currentUser }: B
   const [notes, setNotes] = React.useState('');
   const [gracePeriodDays, setGracePeriodDays] = React.useState('');
   const [status, setStatus] = React.useState<'ACTIVE' | 'INACTIVE' | 'SUSPENDED'>('ACTIVE');
-
-  const fetchBranches = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('radius_token');
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch('/api/branches', { headers });
-      if (res.ok) {
-        const json = await res.json();
-        setBranches(json.data || []);
-      }
-    } catch {
-      setError('Failed to load branches');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   React.useEffect(() => {
     fetchBranches();

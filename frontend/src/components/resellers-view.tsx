@@ -64,6 +64,32 @@ export function ResellersView({
   const [deleting, setDeleting] = React.useState(false);
   const [statusTogglingId, setStatusTogglingId] = React.useState<number | null>(null);
 
+  const fetchDependencies = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('radius_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const resRes = await fetch('/api/resellers', { headers });
+
+      if (resRes.ok) {
+        const json = await resRes.json();
+        setResellers(json.data || []);
+      }
+    } catch {
+      setError('Failed to load resellers');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchResellers = fetchDependencies;
+
+  React.useEffect(() => {
+    fetchDependencies();
+  }, []);
+
   const handleToggleStatus = async (reseller: ResellerItem, newStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') => {
     try {
       setStatusTogglingId(reseller.id);
@@ -77,7 +103,7 @@ export function ResellersView({
         body: JSON.stringify({ status: newStatus }),
       });
       if (res.ok) {
-        fetchResellers();
+        fetchDependencies();
         if (resellerToDelete?.id === reseller.id) {
           setResellerToDelete(null);
           setDeleteConflict(null);
@@ -109,7 +135,7 @@ export function ResellersView({
 
       if (res.ok) {
         setResellerToDelete(null);
-        fetchResellers();
+        fetchDependencies();
       } else {
         const json = await res.json().catch(() => ({}));
         if (res.status === 409) {
@@ -146,30 +172,6 @@ export function ResellersView({
   const [createLoginUser, setCreateLoginUser] = React.useState(false);
   const [loginUsername, setLoginUsername] = React.useState('');
   const [loginPassword, setLoginPassword] = React.useState('');
-
-  const fetchDependencies = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('radius_token');
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const resRes = await fetch('/api/resellers', { headers });
-
-      if (resRes.ok) {
-        const json = await resRes.json();
-        setResellers(json.data || []);
-      }
-    } catch {
-      setError('Failed to load resellers');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  React.useEffect(() => {
-    fetchDependencies();
-  }, []);
 
   const handleOpenResellerDetails = async (reseller: ResellerItem) => {
     setSelectedReseller(reseller);
