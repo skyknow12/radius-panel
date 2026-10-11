@@ -32,6 +32,7 @@ import { oltRepository } from '../repositories/olt.repository';
 import { oltService } from '../services/olt.service';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
+import { query } from '../db/pool';
 import { asyncHandler } from '../lib/async-handler';
 import { envelope } from '../lib/response';
 import { HttpError } from '../lib/http-error';

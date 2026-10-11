@@ -137,6 +137,7 @@ export interface ProcessRechargeInput {
   idempotency_key?: string;
   created_by: string;
   user_role?: string;
+  reseller_id?: number;
 }
 
 import { calculateNewExpiry, calculateRechargePricing, formatRadiusExpiration } from '../lib/billing-utils';
