@@ -9,9 +9,174 @@ import {
   assertCanAssignRole,
   assertCanGrantPermissions,
   assertCanManageUser,
+  isDeveloperOnlyPermission,
   DEVELOPER_ONLY_PERMISSIONS,
 } from '../lib/access-control';
 import type { AuthSession } from '../services/auth.service';
+
+export const PERMISSION_CATALOG: Array<{ key: string; module: string; description: string }> = [
+  // Developer & System
+  { key: 'system.developer_config', module: 'system', description: 'Access developer-only settings and technical configuration' },
+  { key: 'system.diagnostics', module: 'system', description: 'Access developer system diagnostics, raw socket tests, and recovery tools' },
+  { key: 'system.database_tools', module: 'system', description: 'Access database migration and schema management tools' },
+  { key: 'platform.organizations.manage', module: 'system', description: 'Manage platform-level multi-organization entities' },
+
+  // Dashboard
+  { key: 'dashboard.view', module: 'dashboard', description: 'View general dashboard metrics and widgets' },
+  { key: 'dashboard.export', module: 'dashboard', description: 'Export dashboard summaries and KPIs' },
+
+  // User Management
+  { key: 'users.view', module: 'users', description: 'View staff user accounts and login records' },
+  { key: 'users.create', module: 'users', description: 'Create new staff user accounts' },
+  { key: 'users.edit', module: 'users', description: 'Edit user accounts and information' },
+  { key: 'users.disable', module: 'users', description: 'Disable, enable, or suspend user accounts' },
+  { key: 'users.delete', module: 'users', description: 'Permanently delete user accounts where safe' },
+  { key: 'users.reset_password', module: 'users', description: 'Reset user passwords and force password resets' },
+  { key: 'users.force_logout', module: 'users', description: 'Force terminate user active sessions' },
+  { key: 'users.export', module: 'users', description: 'Export staff user directory to CSV/Excel' },
+
+  // Role Management
+  { key: 'roles.view', module: 'roles', description: 'View role definitions and assigned permissions' },
+  { key: 'roles.create', module: 'roles', description: 'Create custom operational roles' },
+  { key: 'roles.edit', module: 'roles', description: 'Modify roles and permission mappings' },
+  { key: 'roles.delete', module: 'roles', description: 'Delete custom roles' },
+  { key: 'roles.assign', module: 'roles', description: 'Assign roles to user accounts' },
+
+  // Organization & Hierarchy
+  { key: 'organization.view', module: 'organization', description: 'View ISP organization profiles and metrics' },
+  { key: 'organization.edit', module: 'organization', description: 'Configure organization details, branding and settings' },
+  { key: 'organization.report', module: 'organization', description: 'Generate organization-level consolidated reports' },
+  { key: 'branch.view', module: 'branch', description: 'View branch listing, profiles and statistics' },
+  { key: 'branch.create', module: 'branch', description: 'Create new branch locations' },
+  { key: 'branch.edit', module: 'branch', description: 'Update branch details and operational statuses' },
+  { key: 'branch.delete', module: 'branch', description: 'Deactivate or remove branch entities' },
+  { key: 'branch.report', module: 'branch', description: 'Generate branch-level performance and financial reports' },
+  { key: 'reseller.view', module: 'reseller', description: 'View reseller accounts, profiles and commissions' },
+  { key: 'reseller.create', module: 'reseller', description: 'Onboard new reseller accounts' },
+  { key: 'reseller.edit', module: 'reseller', description: 'Modify reseller configuration and commission models' },
+  { key: 'reseller.suspend', module: 'reseller', description: 'Suspend or reactivate reseller access' },
+  { key: 'reseller.delete', module: 'reseller', description: 'Delete or deactivate reseller accounts' },
+  { key: 'reseller.report', module: 'reseller', description: 'Generate reseller sales, recharge and commission reports' },
+  { key: 'reseller.pricing.view', module: 'reseller', description: 'View reseller custom package pricing overrides' },
+  { key: 'reseller.pricing.edit', module: 'reseller', description: 'Configure reseller custom package pricing overrides' },
+
+  // Subscribers / Customers
+  { key: 'subscriber.view', module: 'subscribers', description: 'View subscribers and profiles' },
+  { key: 'subscriber.create', module: 'subscribers', description: 'Register new subscriber accounts' },
+  { key: 'subscriber.edit', module: 'subscribers', description: 'Modify subscriber account details and credentials' },
+  { key: 'subscriber.activate', module: 'subscribers', description: 'Activate subscriber internet access' },
+  { key: 'subscriber.suspend', module: 'subscribers', description: 'Suspend subscriber internet access' },
+  { key: 'subscriber.resume', module: 'subscribers', description: 'Resume subscriber internet access' },
+  { key: 'subscriber.terminate', module: 'subscribers', description: 'Terminate subscriber accounts' },
+  { key: 'subscriber.recharge', module: 'subscribers', description: 'Perform service recharge for subscribers' },
+  { key: 'subscriber.change_package', module: 'subscribers', description: 'Change subscriber service package tier' },
+  { key: 'subscriber.change_speed', module: 'subscribers', description: 'Modify subscriber dynamic speed limit via CoA' },
+  { key: 'subscriber.change_ip', module: 'subscribers', description: 'Assign or modify static IP addresses' },
+  { key: 'subscriber.export', module: 'subscribers', description: 'Export subscriber database to CSV' },
+  { key: 'subscriber.unbind_mac', module: 'subscribers', description: 'Unbind customer MAC address' },
+
+  // Packages & Pricing
+  { key: 'package.view', module: 'packages', description: 'View bandwidth service packages' },
+  { key: 'package.create', module: 'packages', description: 'Create new bandwidth service packages' },
+  { key: 'package.edit', module: 'packages', description: 'Modify bandwidth package configurations and rates' },
+  { key: 'package.delete', module: 'packages', description: 'Deactivate or delete service packages' },
+  { key: 'package.price', module: 'packages', description: 'Configure multi-duration pricing tiers' },
+
+  // RADIUS & NAS
+  { key: 'radius.view', module: 'radius', description: 'View RADIUS server status and activity' },
+  { key: 'radius.test', module: 'radius', description: 'Execute synthetic RADIUS authentication tests' },
+  { key: 'radius.disconnect', module: 'radius', description: 'Send Disconnect-Request (PoD) packets' },
+  { key: 'radius.coa', module: 'radius', description: 'Send Change-of-Authorization (CoA) packets' },
+  { key: 'radius.restart', module: 'radius', description: 'Restart FreeRADIUS services and reload dictionary' },
+  { key: 'nas.view', module: 'nas', description: 'View NAS / BNG gateway inventory' },
+  { key: 'nas.create', module: 'nas', description: 'Add NAS / BNG gateway devices' },
+  { key: 'nas.edit', module: 'nas', description: 'Update NAS / BNG gateway settings and secrets' },
+  { key: 'nas.delete', module: 'nas', description: 'Remove NAS / BNG gateway devices' },
+
+  // IP Pools
+  { key: 'ip_pools.view', module: 'ip_pools', description: 'View IPv4 and IPv6 subnet pools' },
+  { key: 'ip_pools.manage', module: 'ip_pools', description: 'Allocate, edit, or delete IP subnet pools' },
+
+  // Sessions, Logs & Accounting
+  { key: 'sessions.view', module: 'sessions', description: 'View active online subscriber sessions' },
+  { key: 'sessions.disconnect', module: 'sessions', description: 'Terminate subscriber active sessions' },
+  { key: 'sessions.export', module: 'sessions', description: 'Export active session lists to CSV' },
+  { key: 'auth_logs.view', module: 'auth_logs', description: 'View live RADIUS authentication attempts' },
+  { key: 'auth_logs.export', module: 'auth_logs', description: 'Export authentication log records to CSV' },
+  { key: 'accounting.view', module: 'accounting', description: 'View FreeRADIUS accounting session history' },
+  { key: 'accounting.export', module: 'accounting', description: 'Export accounting records to CSV' },
+
+  // Billing & Financials
+  { key: 'billing.view', module: 'billing', description: 'View financial invoices, receipts and revenue summaries' },
+  { key: 'billing.recharge', module: 'billing', description: 'Process subscriber renewals and recharges' },
+  { key: 'billing.discount', module: 'billing', description: 'Apply promotional discounts on recharges' },
+  { key: 'billing.adjustment', module: 'billing', description: 'Apply manual financial credit and debit adjustments' },
+  { key: 'billing.refund', module: 'billing', description: 'Process service refunds and transaction reversals' },
+  { key: 'billing.invoice', module: 'billing', description: 'Generate and download tax invoices' },
+  { key: 'billing.receipt', module: 'billing', description: 'Issue customer payment receipts' },
+  { key: 'billing.report', module: 'billing', description: 'View comprehensive financial sales reports' },
+  { key: 'billing.export', module: 'billing', description: 'Export billing transactions and ledger records' },
+
+  // Wallets & Credit
+  { key: 'wallet.view', module: 'wallets', description: 'View channel wallet balances and ledgers' },
+  { key: 'wallet.topup', module: 'wallets', description: 'Perform cash and credit wallet balance top-ups' },
+  { key: 'wallet.debit', module: 'wallets', description: 'Debit wallet balances for transactions' },
+  { key: 'wallet.adjust', module: 'wallets', description: 'Reconcile and adjust wallet balances' },
+  { key: 'wallet.refund', module: 'wallets', description: 'Reverse and refund wallet balance debits' },
+  { key: 'wallet.report', module: 'wallets', description: 'Generate wallet transactions and balance audit reports' },
+  { key: 'reseller.wallet.view', module: 'wallets', description: 'View reseller wallet balance and transaction ledger' },
+  { key: 'reseller.wallet.topup', module: 'wallets', description: 'Add balance to reseller wallet (Cash & Credit)' },
+  { key: 'reseller.wallet.adjust', module: 'wallets', description: 'Manually adjust reseller balance' },
+  { key: 'reseller.wallet.refund', module: 'wallets', description: 'Process refund on reseller wallet' },
+  { key: 'credit.view', module: 'credit', description: 'View credit facilities and limits' },
+  { key: 'credit.create', module: 'credit', description: 'Grant credit top-up to channels' },
+  { key: 'credit.edit', module: 'credit', description: 'Adjust credit limits and terms' },
+  { key: 'credit.suspend', module: 'credit', description: 'Freeze or suspend credit facilities' },
+  { key: 'reseller.credit.view', module: 'credit', description: 'View reseller credit facility and used credit' },
+  { key: 'reseller.credit.create', module: 'credit', description: 'Grant credit top-up to reseller' },
+  { key: 'reseller.credit.adjust', module: 'credit', description: 'Adjust reseller credit limit' },
+  { key: 'reseller.credit.suspend', module: 'credit', description: 'Suspend reseller credit facility' },
+  { key: 'reseller.credit.override', module: 'credit', description: 'Override credit limit during top-up' },
+
+  // Commission & Pricing
+  { key: 'commission.view', module: 'commission', description: 'View reseller commission percentages and rates' },
+  { key: 'commission.report', module: 'commission', description: 'View reseller commission earnings ledger and reports' },
+  { key: 'commission.payout', module: 'commission', description: 'Process commission settlements and payouts' },
+  { key: 'pricing.view', module: 'pricing', description: 'View channel pricing rules and tier overrides' },
+  { key: 'pricing.edit', module: 'pricing', description: 'Configure channel pricing rules and tier overrides' },
+  { key: 'pricing.discount', module: 'pricing', description: 'Configure channel discount rules' },
+  { key: 'pricing.commission', module: 'pricing', description: 'Configure reseller commission percentages' },
+
+  // Reports
+  { key: 'reports.view', module: 'reports', description: 'View centralized ISP operational and analytical reports' },
+  { key: 'reports.export', module: 'reports', description: 'Export analytical reports to CSV or PDF' },
+
+  // CRM & Support Tickets
+  { key: 'crm.view', module: 'crm', description: 'View customer CRM profile, history, and timeline' },
+  { key: 'crm.create', module: 'crm', description: 'Add CRM notes and log customer communications' },
+  { key: 'crm.edit', module: 'crm', description: 'Edit customer CRM notes and pinned items' },
+  { key: 'crm.delete', module: 'crm', description: 'Delete customer CRM records' },
+  { key: 'tickets.view', module: 'tickets', description: 'View customer complaints and support tickets' },
+  { key: 'tickets.create', module: 'tickets', description: 'Create new customer support tickets' },
+  { key: 'tickets.edit', module: 'tickets', description: 'Update ticket subject, description and priority' },
+  { key: 'tickets.assign', module: 'tickets', description: 'Assign tickets to staff and field technicians' },
+  { key: 'tickets.comment', module: 'tickets', description: 'Post internal and public ticket comments' },
+  { key: 'tickets.close', module: 'tickets', description: 'Resolve and close support tickets' },
+  { key: 'tickets.reopen', module: 'tickets', description: 'Reopen resolved or closed support tickets' },
+  { key: 'tickets.delete', module: 'tickets', description: 'Delete invalid or duplicate tickets' },
+
+  // Notifications, Audit Logs & Settings
+  { key: 'notifications.view', module: 'notifications', description: 'View received notifications and alerts' },
+  { key: 'notifications.create', module: 'notifications', description: 'Create and broadcast system notifications' },
+  { key: 'notifications.send', module: 'notifications', description: 'Send direct alerts to customers or staff' },
+  { key: 'notifications.manage', module: 'notifications', description: 'Configure automated notification triggers' },
+  { key: 'audit_logs.view', module: 'audit', description: 'View security audit trail logs' },
+  { key: 'audit_logs.export', module: 'audit', description: 'Export audit trail records to CSV' },
+  { key: 'settings.view', module: 'settings', description: 'View ISP operational settings and policies' },
+  { key: 'settings.edit', module: 'settings', description: 'Update ISP operational settings and policies' },
+  { key: 'settings.appearance', module: 'settings', description: 'Manage system themes and appearance' },
+  { key: 'settings.branding', module: 'settings', description: 'Manage ISP company name, logo and portal styling' },
+];
 
 export interface UserManagementItem {
   id: string;
@@ -321,6 +486,12 @@ export const userManagementRepository = {
 
     const r = rows[0];
     const parsedRoles = Array.isArray(r.roles) ? r.roles : [];
+
+    // Hide Developer Super Admin user from non-super_admin actors
+    const isTargetSuperAdmin = parsedRoles.some((ro: any) => ro.name === 'super_admin');
+    if (isTargetSuperAdmin && !isSuperAdmin(actor)) {
+      throw HttpError.notFound('User not found');
+    }
 
     // Verify actor can manage/view target user
     if (actor) {
@@ -1073,7 +1244,19 @@ export const userManagementRepository = {
    * Guaranteed to run without creating duplicate roles or breaking customizations.
    */
   async ensureDefaultRoles(): Promise<void> {
-    // 1. Ensure the 3 default roles exist with stable internal identifiers
+    // 1. Ensure all permissions from PERMISSION_CATALOG are registered in permissions table
+    for (const perm of PERMISSION_CATALOG) {
+      await query(
+        `INSERT INTO permissions (key, module, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (key) DO UPDATE SET
+           module = EXCLUDED.module,
+           description = EXCLUDED.description`,
+        [perm.key, perm.module, perm.description]
+      );
+    }
+
+    // 2. Ensure the 3 default roles exist with stable internal identifiers
     await query(`
       INSERT INTO roles (name, display_name, description, is_system, is_active)
       VALUES
@@ -1087,7 +1270,7 @@ export const userManagementRepository = {
         is_active = TRUE
     `);
 
-    // 2. Grant all permissions to super_admin
+    // 3. Grant all permissions to super_admin
     await query(`
       INSERT INTO role_permissions (role_id, permission_id)
       SELECT r.id, p.id
@@ -1096,7 +1279,7 @@ export const userManagementRepository = {
       ON CONFLICT DO NOTHING
     `);
 
-    // 3. Grant operational permissions to isp_admin (excluding developer-only)
+    // 4. Grant operational permissions to isp_admin (excluding developer/system permissions)
     await query(`
       INSERT INTO role_permissions (role_id, permission_id)
       SELECT r.id, p.id
@@ -1108,10 +1291,11 @@ export const userManagementRepository = {
            'system.database_tools',
            'platform.organizations.manage'
          )
+         AND p.module != 'system'
       ON CONFLICT DO NOTHING
     `);
 
-    // 4. Grant branch & reseller operational permissions to branch_manager
+    // 5. Grant branch & reseller operational permissions to branch_manager
     await query(`
       INSERT INTO role_permissions (role_id, permission_id)
       SELECT r.id, p.id
@@ -1137,8 +1321,11 @@ export const userManagementRepository = {
     `);
   },
 
-  /** List all roles with member counts, permission count, and developer flags */
+  /** List all roles with member counts, permission count, and developer flags (Super Admin hidden for non-developers) */
   async listRoles(actor?: AuthSession): Promise<RoleItem[]> {
+    const isDev = isSuperAdmin(actor);
+    const filterClause = !isDev ? "WHERE r.name != 'super_admin'" : "";
+
     const { rows } = await query<any>(`
       SELECT r.id, r.name, r.display_name, r.description, r.is_system,
              COALESCE(r.is_active, TRUE) AS is_active,
@@ -1148,6 +1335,7 @@ export const userManagementRepository = {
         FROM roles r
    LEFT JOIN user_roles ur ON ur.role_id = r.id
    LEFT JOIN role_permissions rp ON rp.role_id = r.id
+   ${filterClause}
     GROUP BY r.id
     ORDER BY
       CASE
@@ -1164,7 +1352,7 @@ export const userManagementRepository = {
       return {
         ...r,
         is_developer_only: isDevOnly,
-        can_edit: !isDevOnly && (r.is_system ? isSuperAdmin(actor) : true),
+        can_edit: !isDevOnly && (r.is_system ? isDev : true),
         created_at: new Date(r.created_at).toISOString(),
         updated_at: new Date(r.updated_at).toISOString(),
       };
@@ -1177,6 +1365,11 @@ export const userManagementRepository = {
     if (!rows[0]) throw HttpError.notFound('Role not found');
     const r = rows[0];
 
+    // If caller is not developer super admin, Super Admin role does not exist to them
+    if (r.name === 'super_admin' && !isSuperAdmin(actor)) {
+      throw HttpError.notFound('Role not found');
+    }
+
     const permRes = await query<{ key: string }>(
       `SELECT p.key FROM role_permissions rp
          JOIN permissions p ON p.id = rp.permission_id
@@ -1185,12 +1378,21 @@ export const userManagementRepository = {
       [roleId]
     );
 
-    // Fetch users assigned to this role
+    // Fetch users assigned to this role (excluding super_admin users for non-super_admins)
+    const userConditions = ['ur.role_id = $1'];
+    if (!isSuperAdmin(actor)) {
+      userConditions.push(`NOT EXISTS (
+        SELECT 1 FROM user_roles ur_sa
+        JOIN roles r_sa ON r_sa.id = ur_sa.role_id
+        WHERE ur_sa.user_id = u.id AND r_sa.name = 'super_admin'
+      )`);
+    }
+
     const usersRes = await query<{ id: string; username: string; full_name: string | null; email: string | null; status: string }>(
       `SELECT u.id, u.username, u.full_name, u.email, COALESCE(u.status, 'ACTIVE') AS status
          FROM users u
          JOIN user_roles ur ON ur.user_id = u.id
-        WHERE ur.role_id = $1
+        WHERE ${userConditions.join(' AND ')}
         ORDER BY u.username ASC
         LIMIT 100`,
       [roleId]
@@ -1221,12 +1423,13 @@ export const userManagementRepository = {
       displayName: string;
       description?: string;
       permissionKeys: string[];
+      isActive?: boolean;
       actorId?: string;
     },
     actor?: AuthSession
   ): Promise<number> {
     const sanitizedName = input.name.trim().toLowerCase().replace(/\s+/g, '_');
-    if (sanitizedName === 'super_admin' || sanitizedName === 'isp_admin') {
+    if (sanitizedName === 'super_admin' || sanitizedName === 'isp_admin' || sanitizedName === 'branch_manager') {
       throw HttpError.badRequest('Reserved role name');
     }
 
@@ -1237,14 +1440,32 @@ export const userManagementRepository = {
 
     assertCanGrantPermissions(actor, input.permissionKeys || []);
 
+    // Validate that every requested permission exists in permissions table
+    if (input.permissionKeys && input.permissionKeys.length > 0) {
+      const validPerms = await query<{ key: string }>(
+        'SELECT key FROM permissions WHERE key = ANY($1::text[])',
+        [input.permissionKeys]
+      );
+      const validSet = new Set(validPerms.rows.map((p) => p.key));
+      const invalidKeys = input.permissionKeys.filter((k) => !validSet.has(k));
+      if (invalidKeys.length > 0) {
+        throw HttpError.badRequest(`Invalid permission key(s): ${invalidKeys.join(', ')}`);
+      }
+    }
+
     const client = await getClient();
     try {
       await client.query('BEGIN');
 
       const roleRes = await client.query<{ id: number }>(
         `INSERT INTO roles (name, display_name, description, is_system, is_active)
-         VALUES ($1, $2, $3, FALSE, TRUE) RETURNING id`,
-        [sanitizedName, input.displayName.trim(), input.description?.trim() || null]
+         VALUES ($1, $2, $3, FALSE, $4) RETURNING id`,
+        [
+          sanitizedName,
+          input.displayName.trim(),
+          input.description?.trim() || null,
+          input.isActive !== undefined ? input.isActive : true,
+        ]
       );
       const roleId = roleRes.rows[0].id;
 
@@ -1308,7 +1529,7 @@ export const userManagementRepository = {
   /** Toggle role active/inactive status */
   async toggleRoleStatus(roleId: number, isActive: boolean, actor?: AuthSession): Promise<void> {
     const role = await this.getRoleById(roleId, actor);
-    if (role.name === 'super_admin' || role.name === 'isp_admin' || role.name === 'organization_admin') {
+    if (role.name === 'super_admin' || role.name === 'isp_admin' || role.name === 'branch_manager' || role.name === 'organization_admin') {
       throw HttpError.forbidden('Core system roles cannot be disabled');
     }
 
@@ -1331,6 +1552,7 @@ export const userManagementRepository = {
       displayName?: string;
       description?: string;
       permissionKeys?: string[];
+      isActive?: boolean;
       actorId?: string;
     },
     actor?: AuthSession
@@ -1340,11 +1562,23 @@ export const userManagementRepository = {
 
     const roleName = roleRes.rows[0].name;
     if (roleName === 'super_admin' && !isSuperAdmin(actor)) {
-      throw HttpError.forbidden('Only Developer Super Admin can modify the Super Admin role');
+      throw HttpError.notFound('Role not found');
     }
 
     if (input.permissionKeys !== undefined) {
       assertCanGrantPermissions(actor, input.permissionKeys);
+
+      if (input.permissionKeys.length > 0) {
+        const validPerms = await query<{ key: string }>(
+          'SELECT key FROM permissions WHERE key = ANY($1::text[])',
+          [input.permissionKeys]
+        );
+        const validSet = new Set(validPerms.rows.map((p) => p.key));
+        const invalidKeys = input.permissionKeys.filter((k) => !validSet.has(k));
+        if (invalidKeys.length > 0) {
+          throw HttpError.badRequest(`Invalid permission key(s): ${invalidKeys.join(', ')}`);
+        }
+      }
     }
 
     const client = await getClient();
@@ -1355,9 +1589,15 @@ export const userManagementRepository = {
         `UPDATE roles
             SET display_name = COALESCE($2, display_name),
                 description = COALESCE($3, description),
+                is_active = COALESCE($4, is_active),
                 updated_at = NOW()
           WHERE id = $1`,
-        [roleId, input.displayName?.trim() || null, input.description?.trim() || null]
+        [
+          roleId,
+          input.displayName?.trim() || null,
+          input.description?.trim() || null,
+          input.isActive !== undefined ? input.isActive : null,
+        ]
       );
 
       if (input.permissionKeys !== undefined) {
@@ -1407,9 +1647,12 @@ export const userManagementRepository = {
   },
 
   /** Delete custom role */
-  async deleteRole(roleId: number, actorId?: string, _actor?: AuthSession): Promise<void> {
+  async deleteRole(roleId: number, actorId?: string, actor?: AuthSession): Promise<void> {
     const roleRes = await query<{ is_system: boolean; name: string }>('SELECT is_system, name FROM roles WHERE id = $1', [roleId]);
     if (!roleRes.rows[0]) throw HttpError.notFound('Role not found');
+    if (roleRes.rows[0].name === 'super_admin' && !isSuperAdmin(actor)) {
+      throw HttpError.notFound('Role not found');
+    }
     if (roleRes.rows[0].is_system) {
       throw HttpError.forbidden('System roles cannot be deleted');
     }
@@ -1440,11 +1683,12 @@ export const userManagementRepository = {
     const grouped: Record<string, PermissionItem[]> = {};
 
     for (const p of rows) {
-      if (!isDev && DEVELOPER_ONLY_PERMISSIONS.includes(p.key)) {
+      if (!isDev && isDeveloperOnlyPermission(p.key)) {
         continue;
       }
-      if (!grouped[p.module]) grouped[p.module] = [];
-      grouped[p.module].push(p);
+      const mod = p.module.toUpperCase();
+      if (!grouped[mod]) grouped[mod] = [];
+      grouped[mod].push(p);
     }
     return grouped;
   },

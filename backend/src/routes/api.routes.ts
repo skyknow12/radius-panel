@@ -3646,11 +3646,14 @@ apiRouter.post(
       description: z.string().optional().nullable(),
       permissionKeys: z.array(z.string()).optional(),
       permissions: z.array(z.string()).optional(),
+      isActive: z.boolean().optional(),
+      is_active: z.boolean().optional(),
     });
 
     const parsed = schema.parse(req.body);
     const displayName = parsed.displayName || parsed.display_name || parsed.name;
     const permissionKeys = parsed.permissionKeys || parsed.permissions || [];
+    const isActive = parsed.isActive !== undefined ? parsed.isActive : (parsed.is_active !== undefined ? parsed.is_active : true);
 
     const roleId = await userManagementRepository.createRole(
       {
@@ -3658,6 +3661,7 @@ apiRouter.post(
         displayName,
         description: parsed.description || undefined,
         permissionKeys,
+        isActive,
         actorId: authReq.user?.userId,
       },
       authReq.user
@@ -3722,11 +3726,14 @@ apiRouter.put(
       description: z.string().optional().nullable(),
       permissionKeys: z.array(z.string()).optional(),
       permissions: z.array(z.string()).optional(),
+      isActive: z.boolean().optional(),
+      is_active: z.boolean().optional(),
     });
 
     const parsed = schema.parse(req.body);
     const displayName = parsed.displayName || parsed.display_name;
     const permissionKeys = parsed.permissionKeys || parsed.permissions;
+    const isActive = parsed.isActive !== undefined ? parsed.isActive : parsed.is_active;
 
     await userManagementRepository.updateRole(
       Number(req.params.id),
@@ -3734,6 +3741,7 @@ apiRouter.put(
         displayName,
         description: parsed.description || undefined,
         permissionKeys,
+        isActive,
         actorId: authReq.user?.userId,
       },
       authReq.user

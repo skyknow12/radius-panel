@@ -168,12 +168,18 @@ export const searchService = {
       });
     }
 
-    // 10. Staff Users
+    // 10. Staff Users (Excluding Developer Super Admin)
     const userRes = await query<{ id: string; username: string; full_name: string; role_name: string; status: string }>(
       `SELECT u.id, u.username, u.full_name, r.display_name AS role_name, COALESCE(u.status, 'ACTIVE') AS status
          FROM users u
          JOIN roles r ON r.id = u.role_id
-        WHERE u.username ILIKE $1 OR u.full_name ILIKE $1 OR u.email ILIKE $1
+        WHERE (u.username ILIKE $1 OR u.full_name ILIKE $1 OR u.email ILIKE $1)
+          AND r.name != 'super_admin'
+          AND NOT EXISTS (
+            SELECT 1 FROM user_roles ur_sa
+            JOIN roles r_sa ON r_sa.id = ur_sa.role_id
+            WHERE ur_sa.user_id = u.id AND r_sa.name = 'super_admin'
+          )
         LIMIT 3`,
       [pattern]
     );

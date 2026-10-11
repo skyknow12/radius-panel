@@ -30,6 +30,51 @@ export function authMiddleware(req: AuthenticatedRequest, _res: Response, next: 
   }
 }
 
+const PERMISSION_ALIASES: Record<string, string[]> = {
+  'subscriber.view': ['customers.view'],
+  'customers.view': ['subscriber.view'],
+  'subscriber.create': ['customers.create'],
+  'customers.create': ['subscriber.create'],
+  'subscriber.edit': ['customers.edit'],
+  'customers.edit': ['subscriber.edit'],
+  'subscriber.activate': ['customers.activate'],
+  'customers.activate': ['subscriber.activate'],
+  'subscriber.suspend': ['customers.suspend'],
+  'customers.suspend': ['subscriber.suspend'],
+  'subscriber.resume': ['customers.resume'],
+  'customers.resume': ['subscriber.resume'],
+  'subscriber.terminate': ['customers.terminate', 'customers.delete'],
+  'customers.terminate': ['subscriber.terminate'],
+  'subscriber.recharge': ['customers.recharge', 'billing.recharge'],
+  'customers.recharge': ['subscriber.recharge', 'billing.recharge'],
+  'subscriber.change_package': ['customers.change_package'],
+  'customers.change_package': ['subscriber.change_package'],
+  'package.view': ['packages.view'],
+  'packages.view': ['package.view'],
+  'package.create': ['packages.create'],
+  'packages.create': ['package.create'],
+  'package.edit': ['packages.edit'],
+  'packages.edit': ['package.edit'],
+  'package.delete': ['packages.delete'],
+  'packages.delete': ['package.delete'],
+  'branch.view': ['branches.view'],
+  'branches.view': ['branch.view'],
+  'branch.create': ['branches.create'],
+  'branches.create': ['branch.create'],
+  'branch.edit': ['branches.edit'],
+  'branches.edit': ['branch.edit'],
+  'branch.delete': ['branches.delete'],
+  'branches.delete': ['branch.delete'],
+  'reseller.view': ['resellers.view'],
+  'resellers.view': ['reseller.view'],
+  'reseller.create': ['resellers.create'],
+  'resellers.create': ['reseller.create'],
+  'reseller.edit': ['resellers.edit'],
+  'resellers.edit': ['reseller.edit'],
+  'reseller.delete': ['resellers.delete'],
+  'resellers.delete': ['reseller.delete'],
+};
+
 export function requirePermission(permissionKey: string) {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -39,7 +84,12 @@ export function requirePermission(permissionKey: string) {
     if (req.user.role === 'super_admin' || (req.user.roles && req.user.roles.includes('super_admin'))) {
       return next();
     }
-    if (req.user.permissions && req.user.permissions.includes(permissionKey)) {
+    const userPerms = req.user.permissions || [];
+    if (userPerms.includes('*') || userPerms.includes(permissionKey)) {
+      return next();
+    }
+    const aliases = PERMISSION_ALIASES[permissionKey] || [];
+    if (aliases.some((alias) => userPerms.includes(alias))) {
       return next();
     }
     return next(HttpError.forbidden(`Missing required permission: ${permissionKey}`));

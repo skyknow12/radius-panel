@@ -7,6 +7,7 @@ import {
   assertCanGrantPermissions,
   assertCanManageUser,
   assertCanAccessSubscriber,
+  isDeveloperOnlyPermission,
   DEVELOPER_ONLY_PERMISSIONS,
 } from '../lib/access-control';
 import { envelope } from '../lib/response';
@@ -103,6 +104,13 @@ export function runDefaultRolesTests(): { name: string; passed: boolean; error?:
       blockedManageSuperAdmin = e.statusCode === 403;
     }
     assert(blockedManageSuperAdmin === true, 'ISP Admin 5: Blocked from managing super_admin accounts');
+
+    // Developer permission detection
+    assert(isDeveloperOnlyPermission('system.developer_config') === true, 'Developer Perms 1: system.developer_config is developer-only');
+    assert(isDeveloperOnlyPermission('system.diagnostics') === true, 'Developer Perms 2: system.diagnostics is developer-only');
+    assert(isDeveloperOnlyPermission('platform.organizations.manage') === true, 'Developer Perms 3: platform.organizations.manage is developer-only');
+    assert(isDeveloperOnlyPermission('subscriber.create') === false, 'Developer Perms 4: subscriber.create is not developer-only');
+    assert(isDeveloperOnlyPermission('billing.recharge') === false, 'Developer Perms 5: billing.recharge is not developer-only');
   }
 
   // --- 4. Branch Manager Assigned to Branch ---

@@ -21,6 +21,10 @@ import {
   ToggleRight,
   UserCheck,
   Sparkles,
+  ChevronDown,
+  ChevronRight,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { RoleItem, PermissionItem } from '@/types/api';
 
@@ -49,7 +53,10 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
   const [formDisplayName, setFormDisplayName] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formPermissions, setFormPermissions] = useState<string[]>([]);
+  const [formIsActive, setFormIsActive] = useState<boolean>(true);
   const [formError, setFormError] = useState<string | null>(null);
+  const [modalPermSearch, setModalPermSearch] = useState('');
+  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
 
   // Duplicate form
   const [dupDisplayName, setDupDisplayName] = useState('');
@@ -60,24 +67,37 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
     currentUser?.role === 'super_admin' ||
     (Array.isArray(currentUser?.roles) && currentUser.roles.includes('super_admin'));
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('radius_token') : null;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
   const fetchRolesAndPermissions = async () => {
     setLoading(true);
     try {
       const [resRoles, resPerms] = await Promise.all([
-        fetch('/api/roles'),
-        fetch('/api/permissions'),
+        fetch('/api/roles', { headers: getAuthHeaders(), credentials: 'include' }),
+        fetch('/api/permissions', { headers: getAuthHeaders(), credentials: 'include' }),
       ]);
       const dataRoles = await resRoles.json();
       const dataPerms = await resPerms.json();
 
+      let loadedRoles: RoleItem[] = [];
       if ((dataRoles.success || resRoles.ok) && dataRoles.data) {
-        setRoles(dataRoles.data || []);
-        if (dataRoles.data && dataRoles.data.length > 0 && !selectedRole) {
-          fetchRoleDetail(dataRoles.data[0].id);
+        loadedRoles = (dataRoles.data || []).filter((r: RoleItem) => {
+          if (!isCallerSuperAdmin && (r.name === 'super_admin' || r.is_developer_only)) {
+            return false;
+          }
+          return true;
+        });
+        setRoles(loadedRoles);
+        if (loadedRoles.length > 0 && (!selectedRole || !loadedRoles.some((r) => r.id === selectedRole.id))) {
+          fetchRoleDetail(loadedRoles[0].id);
         }
       }
       if ((dataPerms.success || resPerms.ok) && dataPerms.data) {
-        // Flatten or map permissions
         if (Array.isArray(dataPerms.data)) {
           setPermissions(dataPerms.data);
         } else if (typeof dataPerms.data === 'object' && dataPerms.data !== null) {
@@ -97,9 +117,12 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
 
   const fetchRoleDetail = async (id: number) => {
     try {
-      const res = await fetch(`/api/roles/${id}`);
+      const res = await fetch(`/api/roles/${id}`, { headers: getAuthHeaders(), credentials: 'include' });
       const data = await res.json();
       if ((data.success || res.ok) && data.data) {
+        if (!isCallerSuperAdmin && data.data.name === 'super_admin') {
+          return;
+        }
         setSelectedRole(data.data);
       }
     } catch (err) {
@@ -111,15 +134,39 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
     fetchRolesAndPermissions();
   }, []);
 
-  // Group permissions by module
+  // Filter roles visible to caller
+  const visibleRoles = React.useMemo(() => {
+    return roles.filter((r) => {
+      if (!isCallerSuperAdmin && (r.name === 'super_admin' || r.is_developer_only)) {
+        return false;
+      }
+      return true;
+    });
+  }, [roles, isCallerSuperAdmin]);
+
+  const filteredRoles = React.useMemo(() => {
+    const q = searchRole.trim().toLowerCase();
+    return visibleRoles.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.display_name.toLowerCase().includes(q)
+    );
+  }, [visibleRoles, searchRole]);
+
+  // Group permissions by module for main page view
   const groupedPermissions = React.useMemo(() => {
     const map: Record<string, PermissionItem[]> = {};
-    const filtered = permissions.filter(
-      (p) =>
-        p.key.toLowerCase().includes(searchPerm.toLowerCase()) ||
-        (p.description && p.description.toLowerCase().includes(searchPerm.toLowerCase())) ||
-        p.module.toLowerCase().includes(searchPerm.toLowerCase())
-    );
+    const filtered = permissions.filter((p) => {
+      if (!isCallerSuperAdmin && (p.module.toLowerCase() === 'system' || p.key.startsWith('system.') || p.key.startsWith('platform.'))) {
+        return false;
+      }
+      const q = searchPerm.toLowerCase();
+      return (
+        p.key.toLowerCase().includes(q) ||
+        (p.description && p.description.toLowerCase().includes(q)) ||
+        p.module.toLowerCase().includes(q)
+      );
+    });
 
     filtered.forEach((p) => {
       const mod = p.module.toUpperCase();
@@ -127,28 +174,91 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
       map[mod].push(p);
     });
     return map;
-  }, [permissions, searchPerm]);
+  }, [permissions, searchPerm, isCallerSuperAdmin]);
+
+  // Available permissions for current admin
+  const availablePermissions = React.useMemo(() => {
+    return permissions.filter((p) => {
+      if (!isCallerSuperAdmin && (p.module.toLowerCase() === 'system' || p.key.startsWith('system.') || p.key.startsWith('platform.'))) {
+        return false;
+      }
+      return true;
+    });
+  }, [permissions, isCallerSuperAdmin]);
+
+  // Group permissions for Modal, filtered by modal search
+  const modalGroupedPermissions = React.useMemo(() => {
+    const map: Record<string, PermissionItem[]> = {};
+    const q = modalPermSearch.trim().toLowerCase();
+    const filtered = availablePermissions.filter((p) => {
+      if (!q) return true;
+      return (
+        p.key.toLowerCase().includes(q) ||
+        (p.description && p.description.toLowerCase().includes(q)) ||
+        p.module.toLowerCase().includes(q)
+      );
+    });
+
+    filtered.forEach((p) => {
+      const mod = p.module.toUpperCase();
+      if (!map[mod]) map[mod] = [];
+      map[mod].push(p);
+    });
+    return map;
+  }, [availablePermissions, modalPermSearch]);
 
   const handleOpenCreate = () => {
     setFormName('');
     setFormDisplayName('');
     setFormDescription('');
     setFormPermissions([]);
+    setFormIsActive(true);
     setFormError(null);
+    setModalPermSearch('');
+
+    const initialExpanded: Record<string, boolean> = {};
+    availablePermissions.forEach((p) => {
+      initialExpanded[p.module.toUpperCase()] = true;
+    });
+    setExpandedModules(initialExpanded);
     setShowCreateModal(true);
   };
 
-  const handleOpenEdit = (role: RoleItem) => {
+  const handleOpenEdit = async (role: RoleItem) => {
     if (role.name === 'super_admin' && !isCallerSuperAdmin) {
       alert('Developer Super Admin role cannot be modified by ISP users.');
       return;
     }
-    setFormName(role.name);
-    setFormDisplayName(role.display_name);
-    setFormDescription(role.description || '');
-    setFormPermissions(role.permissions || []);
-    setFormError(null);
-    setShowEditModal(true);
+
+    try {
+      const res = await fetch(`/api/roles/${role.id}`, { headers: getAuthHeaders(), credentials: 'include' });
+      const data = await res.json();
+      const targetRole = (data.success || res.ok) && data.data ? data.data : role;
+
+      setFormName(targetRole.name);
+      setFormDisplayName(targetRole.display_name);
+      setFormDescription(targetRole.description || '');
+      setFormPermissions(targetRole.permissions || []);
+      setFormIsActive(targetRole.is_active !== false);
+      setFormError(null);
+      setModalPermSearch('');
+
+      const initialExpanded: Record<string, boolean> = {};
+      availablePermissions.forEach((p) => {
+        initialExpanded[p.module.toUpperCase()] = true;
+      });
+      setExpandedModules(initialExpanded);
+      setShowEditModal(true);
+    } catch {
+      setFormName(role.name);
+      setFormDisplayName(role.display_name);
+      setFormDescription(role.description || '');
+      setFormPermissions(role.permissions || []);
+      setFormIsActive(role.is_active !== false);
+      setFormError(null);
+      setModalPermSearch('');
+      setShowEditModal(true);
+    }
   };
 
   const handleOpenDuplicate = (role: RoleItem) => {
@@ -169,7 +279,7 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
   };
 
   const handleSelectAllModule = (moduleKey: string) => {
-    const modPerms = groupedPermissions[moduleKey]?.map((p) => p.key) || [];
+    const modPerms = modalGroupedPermissions[moduleKey]?.map((p) => p.key) || [];
     const allSelected = modPerms.every((k) => formPermissions.includes(k));
     if (allSelected) {
       setFormPermissions(formPermissions.filter((k) => !modPerms.includes(k)));
@@ -177,6 +287,21 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
       const set = new Set([...formPermissions, ...modPerms]);
       setFormPermissions(Array.from(set));
     }
+  };
+
+  const toggleModuleAccordion = (mod: string) => {
+    setExpandedModules((prev) => ({
+      ...prev,
+      [mod]: prev[mod] !== undefined ? !prev[mod] : false,
+    }));
+  };
+
+  const handleExpandAllModules = (expand: boolean) => {
+    const next: Record<string, boolean> = {};
+    Object.keys(modalGroupedPermissions).forEach((m) => {
+      next[m] = expand;
+    });
+    setExpandedModules(next);
   };
 
   const handleSaveRole = async (isEdit: boolean) => {
@@ -192,12 +317,14 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
 
     setSaving(true);
     try {
-      const url = isEdit ? `/api/roles/${selectedRole?.id}` : '/api/roles';
+      const targetId = isEdit ? selectedRole?.id : undefined;
+      const url = isEdit ? `/api/roles/${targetId}` : '/api/roles';
       const method = isEdit ? 'PUT' : 'POST';
       const body: any = {
         displayName: formDisplayName.trim(),
         description: formDescription.trim(),
         permissionKeys: formPermissions,
+        isActive: formIsActive,
       };
 
       if (!isEdit) {
@@ -206,7 +333,8 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(body),
       });
       const data = await res.json();
@@ -218,8 +346,10 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
       setShowCreateModal(false);
       setShowEditModal(false);
       await fetchRolesAndPermissions();
-      if (isEdit && selectedRole) {
-        fetchRoleDetail(selectedRole.id);
+
+      const savedRoleId = isEdit ? targetId : data.data?.id;
+      if (savedRoleId) {
+        await fetchRoleDetail(savedRoleId);
       }
     } catch (err: any) {
       setFormError(err.message || 'Error occurred');
@@ -241,7 +371,8 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
     try {
       const res = await fetch(`/api/roles/${duplicateTarget.id}/duplicate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           name: dupName.trim() || undefined,
           displayName: dupDisplayName.trim(),
@@ -275,7 +406,8 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
     try {
       const res = await fetch(`/api/roles/${role.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ isActive: nextActive }),
       });
       const data = await res.json();
@@ -306,7 +438,11 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
     }
 
     try {
-      const res = await fetch(`/api/roles/${role.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/roles/${role.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
       const data = await res.json();
       if (!res.ok || data.success === false) {
         alert(data.error?.message || data.error || 'Failed to delete role');
@@ -318,12 +454,6 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
       alert('Network error deleting role');
     }
   };
-
-  const filteredRoles = roles.filter(
-    (r) =>
-      r.name.toLowerCase().includes(searchRole.toLowerCase()) ||
-      r.display_name.toLowerCase().includes(searchRole.toLowerCase())
-  );
 
   return (
     <div className="space-y-6">
@@ -337,7 +467,7 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
             <div>
               <h1 className="text-2xl font-bold text-foreground tracking-tight">Roles & Permissions Governance</h1>
               <p className="text-muted-foreground text-sm">
-                Granular module permissions, custom role cloning, and staff assignment management
+                Granular module permissions, custom role creation, and staff assignment management
               </p>
             </div>
           </div>
@@ -355,7 +485,7 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
             className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-sm font-medium shadow-sm transition"
           >
             <Plus className="w-4 h-4" />
-            Create Custom Role
+            Create Role
           </button>
         </div>
       </div>
@@ -368,7 +498,7 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <Layers className="w-4 h-4 text-primary" />
-                Defined Roles ({roles.length})
+                Defined Roles ({visibleRoles.length})
               </h2>
             </div>
             <div className="relative">
@@ -447,6 +577,18 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
+                        {role.can_edit && (!role.is_developer_only || isCallerSuperAdmin) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEdit(role);
+                            }}
+                            className="p-1 hover:text-primary transition"
+                            title="Edit permissions"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {!role.is_system && (
                           <>
                             <button
@@ -458,16 +600,6 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                               title={isDisabled ? 'Enable role' : 'Disable role'}
                             >
                               {isDisabled ? <ToggleLeft className="w-4 h-4" /> : <ToggleRight className="w-4 h-4" />}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenEdit(role);
-                              }}
-                              className="p-1 hover:text-primary transition"
-                              title="Edit role"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={(e) => {
@@ -531,7 +663,7 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                     <Copy className="w-3.5 h-3.5" />
                     Duplicate Role
                   </button>
-                  {!selectedRole.is_system && (
+                  {selectedRole.can_edit && (!selectedRole.is_developer_only || isCallerSuperAdmin) && (
                     <button
                       onClick={() => handleOpenEdit(selectedRole)}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-xl text-xs font-medium transition"
@@ -587,7 +719,7 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                       <span className="font-semibold text-primary">
                         {selectedRole.permissions?.length || 0}
                       </span>{' '}
-                      / {permissions.length} total
+                      / {availablePermissions.length} available
                     </div>
                   </div>
 
@@ -598,53 +730,40 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                         selectedRole.permissions?.includes(p.key)
                       ).length;
                       return (
-                        <div
-                          key={moduleName}
-                          className="bg-muted/20 border border-border rounded-xl p-4 space-y-3"
-                        >
-                          <div className="flex items-center justify-between pb-2 border-b border-border">
-                            <div className="flex items-center gap-2">
-                              <Key className="w-4 h-4 text-primary" />
-                              <h3 className="font-bold text-sm text-foreground tracking-wide">
-                                {moduleName}
-                              </h3>
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              {assignedInMod} of {perms.length} enabled
+                        <div key={moduleName} className="border border-border rounded-xl p-4 bg-background/50 space-y-3">
+                          <div className="flex items-center justify-between border-b border-border pb-2">
+                            <span className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
+                              <Key className="w-3.5 h-3.5 text-primary" />
+                              {moduleName}
+                            </span>
+                            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded font-medium">
+                              {assignedInMod} / {perms.length} granted
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                            {perms.map((p) => {
-                              const isAssigned = selectedRole.permissions?.includes(p.key);
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                            {perms.map((perm) => {
+                              const isGranted = selectedRole.permissions?.includes(perm.key);
                               return (
                                 <div
-                                  key={p.key}
-                                  className={`p-2.5 rounded-lg border flex items-start gap-2.5 transition ${
-                                    isAssigned
-                                      ? 'bg-primary/10 border-primary/30 text-foreground'
-                                      : 'bg-background border-border text-muted-foreground opacity-70'
+                                  key={perm.key}
+                                  className={`p-2.5 rounded-lg border text-xs transition ${
+                                    isGranted
+                                      ? 'bg-primary/10 border-primary/40 text-foreground font-medium'
+                                      : 'bg-muted/30 border-border text-muted-foreground opacity-60'
                                   }`}
                                 >
-                                  <div className="pt-0.5">
-                                    {isAssigned ? (
-                                      <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                                  <div className="flex items-center gap-2">
+                                    {isGranted ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0" />
                                     ) : (
-                                      <XCircle className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
+                                      <XCircle className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                                     )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p
-                                      className={`text-xs font-mono font-medium ${
-                                        isAssigned ? 'text-primary' : 'text-foreground/80'
-                                      }`}
-                                    >
-                                      {p.key}
-                                    </p>
-                                    {p.description && (
-                                      <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                                        {p.description}
-                                      </p>
-                                    )}
+                                    <div className="min-w-0">
+                                      <div className="font-mono text-[11px] truncate">{perm.key}</div>
+                                      {perm.description && (
+                                        <div className="text-[10px] text-muted-foreground line-clamp-1">{perm.description}</div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -657,35 +776,27 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                 </>
               ) : (
                 /* Assigned Users Subtab */
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div className="text-xs text-muted-foreground">
-                    Staff members granted the <span className="text-primary font-semibold">{selectedRole.display_name}</span> role:
+                    Active staff accounts currently assigned this role ({selectedRole.users?.length || 0})
                   </div>
-                  {(!selectedRole.users || selectedRole.users.length === 0) ? (
-                    <div className="bg-muted/20 border border-border rounded-xl p-8 text-center text-muted-foreground">
-                      <UserCheck className="w-8 h-8 mx-auto mb-2 opacity-30 text-muted-foreground" />
-                      <p className="text-sm">No staff users currently assigned to this role.</p>
-                      <p className="text-xs text-muted-foreground mt-1">Assign users through User Management.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-2">
+                  {selectedRole.users && selectedRole.users.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
                       {selectedRole.users.map((u) => (
-                        <div
-                          key={u.id}
-                          className="p-3 bg-card border border-border rounded-xl flex items-center justify-between"
-                        >
-                          <div>
-                            <span className="font-semibold text-sm text-foreground block">
-                              {u.full_name || u.username}
-                            </span>
-                            <span className="text-xs text-primary font-mono">@{u.username}</span>
-                            {u.email && <span className="text-[11px] text-muted-foreground block truncate">{u.email}</span>}
+                        <div key={u.id} className="p-3 bg-card border border-border rounded-xl flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                            {(u.full_name || u.username).slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-xs text-foreground truncate">{u.full_name || u.username}</div>
+                            <div className="text-[11px] text-muted-foreground font-mono truncate">@{u.username}</div>
+                            {u.email && <div className="text-[10px] text-muted-foreground truncate">{u.email}</div>}
                           </div>
                           <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
                               u.status === 'ACTIVE'
-                                ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                                : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
                             }`}
                           >
                             {u.status}
@@ -693,14 +804,19 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                         </div>
                       ))}
                     </div>
+                  ) : (
+                    <div className="py-12 text-center text-muted-foreground text-xs bg-muted/20 border border-dashed border-border rounded-xl">
+                      <UserCheck className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                      No staff accounts are directly assigned to this role.
+                    </div>
                   )}
                 </div>
               )}
             </div>
           ) : (
             <div className="bg-card border border-border rounded-2xl p-12 text-center text-muted-foreground shadow-sm">
-              <Shield className="w-12 h-12 mx-auto mb-3 opacity-30 text-primary" />
-              <p>Select a role on the left to inspect its permissions and assigned staff</p>
+              <Shield className="w-12 h-12 mx-auto text-muted-foreground/40 mb-3" />
+              <p className="text-sm font-medium">Select a role from the left panel to inspect permissions and assignments.</p>
             </div>
           )}
         </div>
@@ -709,14 +825,16 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
       {/* CREATE / EDIT ROLE MODAL */}
       {(showCreateModal || showEditModal) && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col">
-            <div className="p-5 border-b border-border flex items-center justify-between">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-border flex items-center justify-between bg-card">
               <div>
-                <h3 className="text-lg font-bold text-foreground">
-                  {showEditModal ? `Configure Role: ${formDisplayName}` : 'Create Custom Operational Role'}
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-primary" />
+                  {showEditModal ? `Configure Role: ${formDisplayName}` : 'Create Role'}
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Assign granular functional permissions across ISP operational modules
+                  Select and configure granular functional permissions across operational modules
                 </p>
               </div>
               <button
@@ -724,12 +842,13 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                   setShowCreateModal(false);
                   setShowEditModal(false);
                 }}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground text-lg p-1.5 rounded-lg hover:bg-muted transition"
               >
                 ✕
               </button>
             </div>
 
+            {/* Modal Content */}
             <div className="p-6 space-y-5 overflow-y-auto flex-1">
               {formError && (
                 <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-500 text-xs rounded-xl flex items-center gap-2">
@@ -738,13 +857,15 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Basic Role Info: Name, Key, Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">
+                  <label className="block text-xs font-semibold text-foreground mb-1">
                     Display Name *
                   </label>
                   <input
                     type="text"
+                    required
                     placeholder="e.g. Senior Billing Officer"
                     value={formDisplayName}
                     onChange={(e) => setFormDisplayName(e.target.value)}
@@ -752,7 +873,7 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">
+                  <label className="block text-xs font-semibold text-foreground mb-1">
                     Role Identifier (Key) *
                   </label>
                   <input
@@ -762,120 +883,214 @@ export const RolesPermissionsView: React.FC<RolesPermissionsViewProps> = ({ curr
                     value={formName}
                     onChange={(e) => setFormName(e.target.value.toLowerCase())}
                     className={`w-full bg-background border border-border rounded-xl px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary ${
-                      showEditModal ? 'opacity-50 cursor-not-allowed' : ''
+                      showEditModal ? 'opacity-60 cursor-not-allowed bg-muted/50' : ''
                     }`}
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-foreground mb-1">
+                    Role Status
+                  </label>
+                  <select
+                    value={formIsActive ? 'ACTIVE' : 'INACTIVE'}
+                    onChange={(e) => setFormIsActive(e.target.value === 'ACTIVE')}
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="ACTIVE">Active (Enabled)</option>
+                    <option value="INACTIVE">Inactive (Disabled)</option>
+                  </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-foreground mb-1">Description</label>
+                <label className="block text-xs font-semibold text-foreground mb-1">Description</label>
                 <input
                   type="text"
-                  placeholder="Explain role duties and operational scope..."
+                  placeholder="Explain operational responsibilities and authority boundary..."
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
-              {/* Interactive Permissions Matrix */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Permissions Selection ({formPermissions.length} selected)
-                  </h4>
-                  <div className="flex gap-2">
+              {/* Permission Selection Area */}
+              <div className="space-y-3 pt-2 border-t border-border">
+                {/* Search & Actions Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/30 p-3 rounded-xl border border-border">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-foreground">
+                      Permissions ({formPermissions.length} of {availablePermissions.length} selected)
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                      {Math.round((formPermissions.length / Math.max(availablePermissions.length, 1)) * 100)}% granted
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setFormPermissions(permissions.map((p) => p.key))}
-                      className="text-[11px] text-primary hover:underline"
+                      onClick={() => setFormPermissions(availablePermissions.map((p) => p.key))}
+                      className="px-2.5 py-1 text-xs font-medium bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition border border-primary/20"
                     >
-                      Select All
+                      Select All Available
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormPermissions([])}
+                      className="px-2.5 py-1 text-xs font-medium bg-muted hover:bg-accent text-muted-foreground hover:text-foreground rounded-lg transition border border-border"
+                    >
+                      Clear Selection
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExpandAllModules(true)}
+                      className="px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      Expand All
                     </button>
                     <span className="text-border">|</span>
                     <button
                       type="button"
-                      onClick={() => setFormPermissions([])}
-                      className="text-[11px] text-muted-foreground hover:underline"
+                      onClick={() => handleExpandAllModules(false)}
+                      className="px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
                     >
-                      Deselect All
+                      Collapse All
                     </button>
                   </div>
                 </div>
 
-                <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
-                  {Object.entries(groupedPermissions).map(([mod, perms]) => {
-                    const allModSelected = perms.every((p) => formPermissions.includes(p.key));
-                    return (
-                      <div key={mod} className="bg-muted/20 border border-border rounded-xl p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={allModSelected}
-                              onChange={() => handleSelectAllModule(mod)}
-                              className="rounded border-border text-primary focus:ring-0 bg-background"
-                            />
-                            <span className="text-xs font-bold text-foreground uppercase">{mod}</span>
-                          </label>
-                          <span className="text-[10px] text-muted-foreground">
-                            {perms.filter((p) => formPermissions.includes(p.key)).length} / {perms.length}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-4">
-                          {perms.map((p) => {
-                            const isChecked = formPermissions.includes(p.key);
-                            return (
-                              <label
-                                key={p.key}
-                                className={`flex items-start gap-2 p-1.5 rounded-lg cursor-pointer transition ${
-                                  isChecked ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent/50'
+                {/* Filter Search Input */}
+                <div className="relative">
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search permissions by name, key, or module..."
+                    value={modalPermSearch}
+                    onChange={(e) => setModalPermSearch(e.target.value)}
+                    className="w-full bg-background border border-border rounded-xl pl-9 pr-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  {modalPermSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setModalPermSearch('')}
+                      className="absolute right-3 top-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Expandable Module Groups */}
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-1 pt-1">
+                  {Object.entries(modalGroupedPermissions).length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
+                      No permissions match &quot;{modalPermSearch}&quot;.
+                    </div>
+                  ) : (
+                    Object.entries(modalGroupedPermissions).map(([mod, perms]) => {
+                      const isExpanded = modalPermSearch.trim().length > 0 || expandedModules[mod] !== false;
+                      const selectedInMod = perms.filter((p) => formPermissions.includes(p.key)).length;
+                      const allModSelected = perms.length > 0 && selectedInMod === perms.length;
+
+                      return (
+                        <div key={mod} className="bg-card border border-border rounded-xl overflow-hidden transition shadow-sm">
+                          {/* Module Accordion Header */}
+                          <div
+                            onClick={() => toggleModuleAccordion(mod)}
+                            className="p-3 bg-muted/40 hover:bg-muted/70 flex items-center justify-between cursor-pointer select-none transition border-b border-border/50"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                              )}
+                              <span className="text-xs font-bold text-foreground uppercase tracking-wider">{mod}</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
+                                {selectedInMod} / {perms.length}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectAllModule(mod)}
+                                className={`text-[11px] font-semibold px-2 py-1 rounded transition border ${
+                                  allModSelected
+                                    ? 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500/20'
+                                    : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20'
                                 }`}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => handleTogglePermission(p.key)}
-                                  className="mt-0.5 rounded border-border text-primary focus:ring-0 bg-background"
-                                />
-                                <div className="text-xs leading-tight">
-                                  <div className="font-mono text-[11px]">{p.key}</div>
-                                  {p.description && (
-                                    <div className="text-[10px] text-muted-foreground">{p.description}</div>
-                                  )}
-                                </div>
-                              </label>
-                            );
-                          })}
+                                {allModSelected ? 'Deselect Module' : 'Select Module'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Module Permissions Grid */}
+                          {isExpanded && (
+                            <div className="p-3 bg-background/50 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {perms.map((p) => {
+                                const isChecked = formPermissions.includes(p.key);
+                                return (
+                                  <label
+                                    key={p.key}
+                                    className={`flex items-start gap-2.5 p-2 rounded-lg cursor-pointer transition border ${
+                                      isChecked
+                                        ? 'bg-primary/10 border-primary/30 text-foreground shadow-xs'
+                                        : 'bg-card border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => handleTogglePermission(p.key)}
+                                      className="mt-0.5 rounded border-border text-primary focus:ring-0 bg-background cursor-pointer"
+                                    />
+                                    <div className="min-w-0 flex-1 leading-tight">
+                                      <div className="font-mono text-[11px] font-semibold text-foreground truncate">{p.key}</div>
+                                      {p.description && (
+                                        <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{p.description}</div>
+                                      )}
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="p-4 border-t border-border flex items-center justify-end gap-3 bg-muted/20 rounded-b-2xl">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setShowEditModal(false);
-                }}
-                className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => handleSaveRole(showEditModal)}
-                className="px-5 py-2 bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground rounded-xl text-xs font-medium shadow-sm transition flex items-center gap-2"
-              >
-                {saving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                {showEditModal ? 'Update Role' : 'Create Role'}
-              </button>
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-border flex items-center justify-between bg-card">
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{formPermissions.length}</span> permissions selected
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setShowEditModal(false);
+                  }}
+                  className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleSaveRole(showEditModal)}
+                  className="px-5 py-2 bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground rounded-xl text-xs font-semibold shadow-sm transition flex items-center gap-2"
+                >
+                  {saving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  {showEditModal ? 'Save Changes' : 'Create Role'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

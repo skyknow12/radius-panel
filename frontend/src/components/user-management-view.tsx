@@ -166,12 +166,19 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     }
   };
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('radius_token') : null;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
   const fetchDependencies = async () => {
     try {
       const [rRes, bRes, resRes] = await Promise.all([
-        fetch('/api/roles'),
-        fetch('/api/branches'),
-        fetch('/api/resellers'),
+        fetch('/api/roles', { headers: getAuthHeaders(), credentials: 'include' }),
+        fetch('/api/branches', { headers: getAuthHeaders(), credentials: 'include' }),
+        fetch('/api/resellers', { headers: getAuthHeaders(), credentials: 'include' }),
       ]);
       if (rRes.ok) {
         const j = await rRes.json();
@@ -199,7 +206,10 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       if (roleFilter !== 'all') params.set('role', roleFilter);
       if (scopeFilter !== 'all') params.set('data_scope', scopeFilter);
 
-      const res = await fetch(`/api/users?${params.toString()}`);
+      const res = await fetch(`/api/users?${params.toString()}`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
       if (res.ok) {
         const json = await res.json();
         setUsers(json.data || []);
@@ -219,7 +229,10 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       params.set('limit', String(sessionsMeta.limit));
       if (sessionsSearch.trim()) params.set('search', sessionsSearch.trim());
 
-      const res = await fetch(`/api/user-sessions?${params.toString()}`);
+      const res = await fetch(`/api/user-sessions?${params.toString()}`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
       if (res.ok) {
         const json = await res.json();
         setSessionsList(json.data || []);
@@ -239,7 +252,10 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       if (historySearch.trim()) params.set('search', historySearch.trim());
       if (historyStatus !== 'all') params.set('status', historyStatus);
 
-      const res = await fetch(`/api/login-history?${params.toString()}`);
+      const res = await fetch(`/api/login-history?${params.toString()}`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
       if (res.ok) {
         const json = await res.json();
         setHistoryList(json.data || []);
@@ -310,9 +326,9 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     setDetailLoading(true);
     try {
       const [uRes, hRes, sRes] = await Promise.all([
-        fetch(`/api/users/${u.id}`),
-        fetch(`/api/users/${u.id}/login-history`),
-        fetch(`/api/users/${u.id}/sessions`),
+        fetch(`/api/users/${u.id}`, { headers: getAuthHeaders(), credentials: 'include' }),
+        fetch(`/api/users/${u.id}/login-history`, { headers: getAuthHeaders(), credentials: 'include' }),
+        fetch(`/api/users/${u.id}/sessions`, { headers: getAuthHeaders(), credentials: 'include' }),
       ]);
       if (uRes.ok) {
         const uj = await uRes.json();
@@ -371,7 +387,8 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       setSubmitting(true);
       const res = await fetch('/api/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           username: formUsername,
           fullName: formFullName,
@@ -441,7 +458,8 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       setSubmitting(true);
       const res = await fetch(`/api/users/${editUser.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           fullName: formFullName,
           email: formEmail || undefined,
@@ -477,7 +495,8 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     try {
       const res = await fetch(`/api/users/${u.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) {
@@ -496,6 +515,8 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     try {
       const res = await fetch(`/api/users/${u.id}/force-logout`, {
         method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
       });
       if (!res.ok) {
         const j = await res.json();
@@ -514,6 +535,8 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
     try {
       const res = await fetch(`/api/user-sessions/${sessionId}/revoke`, {
         method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
       });
       if (!res.ok) {
         const j = await res.json();
@@ -541,7 +564,8 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
       setSubmitting(true);
       const res = await fetch(`/api/users/${resetPassUser.id}/reset-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ password: newPassword, forceNextReset }),
       });
       if (!res.ok) {
@@ -722,7 +746,7 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
                 <span className="text-xs font-medium text-muted-foreground">Operational Roles</span>
                 <Shield className="w-4 h-4 text-indigo-400" />
               </div>
-              <div className="mt-2 text-2xl font-bold text-indigo-400">{roles.length}</div>
+              <div className="mt-2 text-2xl font-bold text-indigo-400">{visibleRoles.length}</div>
               <span className="text-[11px] text-muted-foreground">Configured roles</span>
             </div>
           </div>
@@ -839,7 +863,9 @@ export function UserManagementView({ currentUser }: UserManagementViewProps) {
 
                         <td className="py-3 px-3">
                           <div className="flex flex-wrap gap-1">
-                            {u.roles.map((r) => {
+                            {u.roles
+                              .filter((r) => isCallerSuperAdmin || r.name !== 'super_admin')
+                              .map((r) => {
                               const isDevRole = r.name === 'super_admin';
                               return (
                                 <span

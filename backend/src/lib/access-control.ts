@@ -53,10 +53,18 @@ export function assertCanAssignRole(actor: AuthSession | undefined, targetRoleNa
   }
 }
 
+export function isDeveloperOnlyPermission(key: string): boolean {
+  return (
+    DEVELOPER_ONLY_PERMISSIONS.includes(key) ||
+    key.startsWith('system.') ||
+    key.startsWith('platform.')
+  );
+}
+
 /** Ensure caller can grant the requested permissions */
 export function assertCanGrantPermissions(actor: AuthSession | undefined, permissionKeys: string[]): void {
   if (!isSuperAdmin(actor)) {
-    const attemptedDevPerms = permissionKeys.filter((k) => DEVELOPER_ONLY_PERMISSIONS.includes(k));
+    const attemptedDevPerms = permissionKeys.filter((k) => isDeveloperOnlyPermission(k));
     if (attemptedDevPerms.length > 0) {
       throw HttpError.forbidden(
         `Cannot grant developer-only permissions: ${attemptedDevPerms.join(', ')}`
