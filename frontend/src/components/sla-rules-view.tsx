@@ -321,10 +321,3 @@ export const SlaRulesView: React.FC<SlaRulesViewProps> = ({ currentUser }) => {
     </div>
   );
 };
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
