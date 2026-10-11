@@ -1237,6 +1237,7 @@ export function SubscribersView({
                       onChange={(e) => setFormMac(e.target.value)}
                       placeholder="AA:BB:CC:DD:EE:FF"
                       className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
                     <span className="text-[10px] text-muted-foreground block mt-1">
                       Automatic binding active: If left blank, customer device MAC binds automatically on first successful login.
                     </span>
