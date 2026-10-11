@@ -412,15 +412,12 @@ export const userManagementRepository = {
              u.created_at, u.updated_at,
              (
                SELECT COALESCE(
-                 json_agg(json_build_object('id', ro.id, 'name', ro.name, 'display_name', ro.display_name)),
+                 json_agg(json_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name)),
                  '[]'::json
                )
-               FROM (
-                 SELECT DISTINCT r2.id, r2.name, r2.display_name
-                 FROM roles r2
-                 WHERE r2.id = u.role_id
-                    OR EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role_id = r2.id)
-               ) ro
+               FROM roles r
+               WHERE r.id = u.role_id
+                  OR r.id IN (SELECT ur.role_id FROM user_roles ur WHERE ur.user_id = u.id)
              ) AS roles
         FROM users u
    LEFT JOIN organizations org ON org.id = u.organization_id
@@ -493,15 +490,12 @@ export const userManagementRepository = {
              u.created_at, u.updated_at,
              (
                SELECT COALESCE(
-                 json_agg(json_build_object('id', ro.id, 'name', ro.name, 'display_name', ro.display_name)),
+                 json_agg(json_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name)),
                  '[]'::json
                )
-               FROM (
-                 SELECT DISTINCT r2.id, r2.name, r2.display_name
-                 FROM roles r2
-                 WHERE r2.id = u.role_id
-                    OR EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role_id = r2.id)
-               ) ro
+               FROM roles r
+               WHERE r.id = u.role_id
+                  OR r.id IN (SELECT ur.role_id FROM user_roles ur WHERE ur.user_id = u.id)
              ) AS roles
         FROM users u
    LEFT JOIN organizations org ON org.id = u.organization_id
