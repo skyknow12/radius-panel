@@ -49,6 +49,7 @@ import { SettingsAppearanceView } from '@/components/settings-appearance-view';
 import { DeveloperToolsView } from '@/components/developer-tools-view';
 import { GlobalSearchDialog } from '@/components/global-search-dialog';
 import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
+import { OltManagementView } from '@/components/olt-management-view';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
 import type { TimeRange } from '@/types/api';
 
@@ -434,6 +435,33 @@ export default function DashboardPage() {
                 setNasFilterForSessions(ip);
                 handleNavigate('sessions');
               }}
+            />
+          ) : activeTab === 'olt_management' ||
+              activeTab === 'olts' ||
+              activeTab === 'olt_inventory' ||
+              activeTab === 'registered_onus' ||
+              activeTab === 'onu_discovery' ||
+              activeTab === 'olt_provision' ||
+              activeTab === 'olt_sync' ||
+              activeTab === 'olt_history' ? (
+            <OltManagementView
+              initialSubTab={
+                activeTab === 'olt_inventory'
+                  ? 'inventory'
+                  : activeTab === 'registered_onus'
+                  ? 'registered_onus'
+                  : activeTab === 'onu_discovery'
+                  ? 'discovery'
+                  : activeTab === 'olt_provision'
+                  ? 'provision'
+                  : activeTab === 'olt_sync'
+                  ? 'sync'
+                  : activeTab === 'olt_history'
+                  ? 'history'
+                  : 'inventory'
+              }
+              onOpenCustomer={(id) => setSubscriberProfileId(id)}
+              currentUser={currentUser}
             />
           ) : activeTab === 'organization_dashboard' ? (
             <OrganizationDashboardView

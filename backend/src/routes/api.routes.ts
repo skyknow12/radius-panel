@@ -28,6 +28,8 @@ import { notificationService } from '../services/notification.service';
 import { settingsRepository } from '../repositories/settings.repository';
 import { radiusCatalogRepository } from '../repositories/radius-catalog.repository';
 import { radiusManagementService } from '../services/radius-management.service';
+import { oltRepository } from '../repositories/olt.repository';
+import { oltService } from '../services/olt.service';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { asyncHandler } from '../lib/async-handler';
@@ -4425,6 +4427,422 @@ apiRouter.patch(
     res.json(envelope(prefs, 'live'));
   })
 );
+
+// =============================================================================
+// OLT MANAGEMENT & ONU INTEGRATION ROUTES
+// =============================================================================
+
+// List OLTs (branch scoped)
+apiRouter.get(
+  '/olts',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+    const search = req.query.search ? String(req.query.search) : undefined;
+
+    const olts = await oltRepository.listOlts(authReq.user, { branch_id: branchId, search });
+    res.json(envelope(olts, 'live'));
+  })
+);
+
+// Create new OLT
+apiRouter.post(
+  '/olts',
+  authMiddleware,
+  requirePermission('olt.create'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      name: z.string().min(1),
+      vendor: z.string().optional(),
+      model: z.string().optional(),
+      management_ip: z.string().min(1),
+      management_port: z.number().int().positive().optional(),
+      branch_id: z.number().int().optional().nullable(),
+      snmp_version: z.string().optional(),
+      snmp_port: z.number().int().positive().optional(),
+      snmp_community: z.string().optional(),
+      cli_protocol: z.enum(['telnet', 'ssh']).optional(),
+      cli_username: z.string().min(1),
+      cli_password: z.string().min(1),
+      connection_timeout: z.number().int().positive().optional(),
+      polling_interval: z.number().int().positive().optional(),
+      enabled: z.boolean().optional(),
+      optical_warning_threshold: z.number().optional(),
+      optical_critical_threshold: z.number().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    const id = await oltRepository.createOlt(parsed, authReq.user);
+    res.status(201).json(envelope({ id }, 'live'));
+  })
+);
+
+// Get single OLT by ID
+apiRouter.get(
+  '/olts/:id',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const olt = await oltRepository.findById(id, authReq.user);
+    if (!olt) throw HttpError.notFound('OLT not found');
+    res.json(envelope(olt, 'live'));
+  })
+);
+
+// Update OLT
+apiRouter.put(
+  '/olts/:id',
+  authMiddleware,
+  requirePermission('olt.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const schema = z.object({
+      name: z.string().min(1).optional(),
+      vendor: z.string().optional(),
+      model: z.string().optional(),
+      management_ip: z.string().min(1).optional(),
+      management_port: z.number().int().positive().optional(),
+      branch_id: z.number().int().optional().nullable(),
+      snmp_version: z.string().optional(),
+      snmp_port: z.number().int().positive().optional(),
+      snmp_community: z.string().optional(),
+      cli_protocol: z.enum(['telnet', 'ssh']).optional(),
+      cli_username: z.string().min(1).optional(),
+      cli_password: z.string().min(1).optional(),
+      connection_timeout: z.number().int().positive().optional(),
+      polling_interval: z.number().int().positive().optional(),
+      enabled: z.boolean().optional(),
+      optical_warning_threshold: z.number().optional(),
+      optical_critical_threshold: z.number().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    await oltRepository.updateOlt(id, parsed, authReq.user);
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+// Delete OLT
+apiRouter.delete(
+  '/olts/:id',
+  authMiddleware,
+  requirePermission('olt.delete'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    await oltRepository.deleteOlt(id, authReq.user);
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+// Test CLI connectivity
+apiRouter.post(
+  '/olts/:id/test-cli',
+  authMiddleware,
+  requirePermission('olt.test_connection'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const result = await oltService.testConnection(id, authReq.user);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// Synchronize OLT registered ONUs
+apiRouter.post(
+  '/olts/:id/sync',
+  authMiddleware,
+  requirePermission('olt.sync'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const result = await oltService.syncOlt(id, authReq.user);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// Discover unregistered ONUs via autofind
+apiRouter.get(
+  '/olts/:id/discover',
+  authMiddleware,
+  requirePermission('olt.discover'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const slot = req.query.slot ? Number(req.query.slot) : undefined;
+    const port = req.query.port ? Number(req.query.port) : undefined;
+
+    const discovered = await oltService.discoverUnregistered(id, { slot, port }, authReq.user);
+    res.json(envelope(discovered, 'live'));
+  })
+);
+
+// List ONUs for an OLT
+apiRouter.get(
+  '/olts/:id/onus',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const result = await oltRepository.listOnus({
+      olt_id: id,
+      run_state: req.query.run_state ? String(req.query.run_state) : undefined,
+      search: req.query.search ? String(req.query.search) : undefined,
+      page: req.query.page ? Number(req.query.page) : 1,
+      limit: req.query.limit ? Number(req.query.limit) : 50,
+    }, authReq.user);
+
+    res.json(envelope(result.onus, 'live', {
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    }));
+  })
+);
+
+// Read optical power for an ONU
+apiRouter.get(
+  '/olts/:id/onus/:onuId/optical',
+  authMiddleware,
+  requirePermission('olt.view_optical'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const oltId = parseInt(req.params.id, 10);
+    const onuId = parseInt(req.params.onuId, 10);
+
+    const optical = await oltService.getOpticalPower(oltId, onuId, authReq.user);
+    res.json(envelope(optical, 'live'));
+  })
+);
+
+// Provision ONU with multi-step transaction
+apiRouter.post(
+  '/olts/:id/provision',
+  authMiddleware,
+  requirePermission('olt.register_onu'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const oltId = parseInt(req.params.id, 10);
+
+    const schema = z.object({
+      slot: z.number().int().min(0).max(19),
+      port: z.number().int().min(0).max(15),
+      serialNumber: z.string().min(8).max(64),
+      lineProfileId: z.number().int().positive(),
+      serviceProfileId: z.number().int().positive(),
+      description: z.string().optional(),
+      vlanId: z.number().int().min(1).max(4094),
+      userVlanId: z.number().int().min(1).max(4094),
+      gemPort: z.number().int().positive().optional().default(10),
+      tagTransform: z.string().optional().default('translate'),
+      customerId: z.number().int().positive().optional(),
+    });
+
+    const parsed = schema.parse(req.body);
+    const result = await oltService.provisionOnu(oltId, parsed, authReq.user);
+    res.status(201).json(envelope(result, 'live'));
+  })
+);
+
+// Delete registered ONU
+apiRouter.delete(
+  '/olts/:id/onus/:onuId',
+  authMiddleware,
+  requirePermission('olt.delete_onu'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const oltId = parseInt(req.params.id, 10);
+    const onuId = parseInt(req.params.onuId, 10);
+
+    const result = await oltService.deleteOnu(oltId, onuId, authReq.user);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// List OLT line & service profiles
+apiRouter.get(
+  '/olts/:id/profiles',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const oltId = parseInt(req.params.id, 10);
+    const profiles = await oltRepository.listProfiles(oltId);
+    res.json(envelope(profiles, 'live'));
+  })
+);
+
+// Create or update OLT profile
+apiRouter.post(
+  '/olts/:id/profiles',
+  authMiddleware,
+  requirePermission('olt.manage_profiles'),
+  asyncHandler(async (req, res) => {
+    const oltId = parseInt(req.params.id, 10);
+    const schema = z.object({
+      profileType: z.enum(['line', 'service']),
+      profileId: z.number().int().positive(),
+      profileName: z.string().min(1),
+    });
+    const parsed = schema.parse(req.body);
+    await oltRepository.upsertProfile(oltId, parsed.profileType, parsed.profileId, parsed.profileName, 'local');
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+// List OLT operation history
+apiRouter.get(
+  '/olts/:id/history',
+  authMiddleware,
+  requirePermission('olt.view_history'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const oltId = parseInt(req.params.id, 10);
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+
+    const history = await oltRepository.listOperationHistory(oltId, authReq.user, limit);
+    res.json(envelope(history, 'live'));
+  })
+);
+
+// List global OLT operation history
+apiRouter.get(
+  '/olt-operations/history',
+  authMiddleware,
+  requirePermission('olt.view_history'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const oltId = req.query.olt_id ? Number(req.query.olt_id) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 100;
+
+    const history = await oltRepository.listOperationHistory(oltId, authReq.user, limit);
+    res.json(envelope(history, 'live'));
+  })
+);
+
+// Global registered ONUs list across all OLTs
+apiRouter.get(
+  '/onus',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const result = await oltRepository.listOnus({
+      olt_id: req.query.olt_id ? Number(req.query.olt_id) : undefined,
+      branch_id: req.query.branch_id ? Number(req.query.branch_id) : undefined,
+      run_state: req.query.run_state ? String(req.query.run_state) : undefined,
+      search: req.query.search ? String(req.query.search) : undefined,
+      page: req.query.page ? Number(req.query.page) : 1,
+      limit: req.query.limit ? Number(req.query.limit) : 25,
+    }, authReq.user);
+
+    res.json(envelope(result.onus, 'live', {
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    }));
+  })
+);
+
+// Associate customer with ONU
+apiRouter.post(
+  '/onus/:id/associate',
+  authMiddleware,
+  requirePermission('olt.register_onu'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const onuId = parseInt(req.params.id, 10);
+    const schema = z.object({
+      customerId: z.number().int().positive(),
+      source: z.enum(['manual', 'sn_match', 'description_match', 'mac_match']).optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    await oltRepository.associateCustomer(parsed.customerId, onuId, authReq.user, parsed.source || 'manual');
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+// Dissociate customer from ONU
+apiRouter.post(
+  '/onus/:id/dissociate',
+  authMiddleware,
+  requirePermission('olt.register_onu'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      customerId: z.number().int().positive(),
+    });
+    const parsed = schema.parse(req.body);
+
+    await oltRepository.dissociateCustomer(parsed.customerId, authReq.user);
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+// Get optical reading history for ONU
+apiRouter.get(
+  '/onus/:id/optical-history',
+  authMiddleware,
+  requirePermission('olt.view_optical'),
+  asyncHandler(async (req, res) => {
+    const onuId = parseInt(req.params.id, 10);
+    const limit = req.query.limit ? Number(req.query.limit) : 20;
+    const history = await oltRepository.getOpticalHistory(onuId, limit);
+    res.json(envelope(history, 'live'));
+  })
+);
+
+// Customer ONU details endpoint
+apiRouter.get(
+  '/subscribers/:id/onu',
+  authMiddleware,
+  requirePermission('subscriber.view'),
+  asyncHandler(async (req, res) => {
+    const customerId = parseInt(req.params.id, 10);
+    const onu = await oltRepository.getCustomerOnu(customerId);
+    res.json(envelope(onu, 'live'));
+  })
+);
+
+// Associate ONU with subscriber
+apiRouter.post(
+  '/subscribers/:id/onu',
+  authMiddleware,
+  requirePermission('subscriber.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const customerId = parseInt(req.params.id, 10);
+    const schema = z.object({
+      onuId: z.number().int().positive(),
+      source: z.enum(['manual', 'sn_match', 'description_match', 'mac_match']).optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    await oltRepository.associateCustomer(customerId, parsed.onuId, authReq.user, parsed.source || 'manual');
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+// Remove ONU association from subscriber
+apiRouter.delete(
+  '/subscribers/:id/onu',
+  authMiddleware,
+  requirePermission('subscriber.edit'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const customerId = parseInt(req.params.id, 10);
+    await oltRepository.dissociateCustomer(customerId, authReq.user);
+    res.json(envelope({ success: true }, 'live'));
+  })
+);
+
 
 
 

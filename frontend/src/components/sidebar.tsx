@@ -37,6 +37,7 @@ import {
   Sparkles,
   Terminal,
   Wrench,
+  Cpu,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppTheme } from '@/context/app-theme-context';
@@ -195,7 +196,27 @@ export function Sidebar({
         'customers_expired',
         'customers_dashboard',
       ].includes(activeTab);
-    const isNetworkActive = key === 'network' && activeTab === 'noc_dashboard';
+    const isNetworkActive =
+      key === 'network' &&
+      [
+        'noc_dashboard',
+        'nas_devices',
+        'olt_management',
+        'olts',
+        'olt_inventory',
+        'onu_discovery',
+        'registered_onus',
+        'olt_sync',
+        'olt_history',
+        'radius_overview',
+        'radius_profiles',
+        'sessions',
+        'auth_logs',
+        'ip_pools',
+        'ip_addresses',
+        'network_events',
+        'alerts',
+      ].includes(activeTab);
     const isOrgActive =
       key === 'organization' &&
       [
@@ -304,6 +325,7 @@ export function Sidebar({
           <>
             {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'LIVE', 'radius.view')}
             {renderNavItem('nas_devices', 'NAS / BNG Gateways', Server, undefined, 'radius.view')}
+            {renderNavItem('olt_management', 'OLT Management', Cpu, 'FTTH', 'olt.view')}
             {renderNavItem('radius_overview', 'RADIUS Overview', Radio, undefined, 'radius.view')}
             {renderNavItem('radius_profiles', 'RADIUS Profiles', ShieldCheck, undefined, 'radius.view')}
             {renderNavItem('sessions', 'Online Sessions', Layers, undefined, 'radius.view')}

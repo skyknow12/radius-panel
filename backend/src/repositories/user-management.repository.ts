@@ -92,6 +92,20 @@ export const PERMISSION_CATALOG: Array<{ key: string; module: string; descriptio
   { key: 'nas.edit', module: 'nas', description: 'Update NAS / BNG gateway settings and secrets' },
   { key: 'nas.delete', module: 'nas', description: 'Remove NAS / BNG gateway devices' },
 
+  // OLT & Optical Network
+  { key: 'olt.view', module: 'olt', description: 'View OLT inventory, status, and boards' },
+  { key: 'olt.create', module: 'olt', description: 'Register new OLT devices' },
+  { key: 'olt.edit', module: 'olt', description: 'Modify OLT device configurations and credentials' },
+  { key: 'olt.delete', module: 'olt', description: 'Remove OLT devices from inventory' },
+  { key: 'olt.test_connection', module: 'olt', description: 'Execute CLI and SNMP connectivity tests to OLT' },
+  { key: 'olt.discover', module: 'olt', description: 'Run unregistered ONU discovery on OLT PON ports' },
+  { key: 'olt.sync', module: 'olt', description: 'Synchronize live ONU inventory with OLT hardware' },
+  { key: 'olt.view_optical', module: 'olt', description: 'Read and view ONU optical power and diagnostics' },
+  { key: 'olt.register_onu', module: 'olt', description: 'Provision and register ONUs and service ports' },
+  { key: 'olt.delete_onu', module: 'olt', description: 'Unregister and delete ONUs from OLT' },
+  { key: 'olt.manage_profiles', module: 'olt', description: 'Manage line and service profile catalogs' },
+  { key: 'olt.view_history', module: 'olt', description: 'View OLT operations, execution logs, and audit trail' },
+
   // IP Pools
   { key: 'ip_pools.view', module: 'ip_pools', description: 'View IPv4 and IPv6 subnet pools' },
   { key: 'ip_pools.manage', module: 'ip_pools', description: 'Allocate, edit, or delete IP subnet pools' },
@@ -1359,7 +1373,13 @@ export const userManagementRepository = {
            'crm.view', 'crm.create', 'crm.edit',
            'sessions.view',
            'accounting.view',
-           'notifications.view'
+           'notifications.view',
+           'olt.view',
+           'olt.view_optical',
+           'olt.discover',
+           'olt.register_onu',
+           'olt.sync',
+           'olt.view_history'
          )
       ON CONFLICT DO NOTHING
     `);

@@ -32,6 +32,10 @@ import {
   Unlock,
   ShieldAlert,
   Sparkles,
+  Cpu,
+  Signal,
+  Link,
+  Unlink,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -70,9 +74,19 @@ export function SubscriberProfileModal({
   const [packages, setPackages] = React.useState<PackageItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState<
-    'overview' | 'service' | 'radius' | 'sessions' | 'usage' | 'auth' | 'recharge' | 'tickets' | 'activity' | 'notes'
+    'overview' | 'service' | 'radius' | 'sessions' | 'usage' | 'auth' | 'recharge' | 'tickets' | 'activity' | 'notes' | 'onu'
   >('overview');
   const [usageRange, setUsageRange] = React.useState<'today' | '7d' | '30d'>('30d');
+
+  // FTTH ONU & Optical states
+  const [customerOnu, setCustomerOnu] = React.useState<any | null>(null);
+  const [onuOpticalHistory, setOnuOpticalHistory] = React.useState<any[]>([]);
+  const [samplingOptical, setSamplingOptical] = React.useState(false);
+  const [dissociatingOnu, setDissociatingOnu] = React.useState(false);
+  const [associateModalOpen, setAssociateModalOpen] = React.useState(false);
+  const [availableOnus, setAvailableOnus] = React.useState<any[]>([]);
+  const [selectedOnuToAssociate, setSelectedOnuToAssociate] = React.useState<number | ''>('');
+  const [associatingOnu, setAssociatingOnu] = React.useState(false);
 
   // Modals inside profile
   const [rechargeModalOpen, setRechargeModalOpen] = React.useState(false);
@@ -118,7 +132,7 @@ export function SubscriberProfileModal({
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const [profRes, usageRes, pkgRes, recRes, tktRes, crmNotesRes, crmActRes] = await Promise.all([
+      const [profRes, usageRes, pkgRes, recRes, tktRes, crmNotesRes, crmActRes, onuRes] = await Promise.all([
         fetch(`/api/subscribers/${subscriberId}/profile`),
         fetch(`/api/subscribers/${subscriberId}/usage?range=${usageRange}`),
         fetch('/api/packages'),
@@ -126,6 +140,7 @@ export function SubscriberProfileModal({
         fetch(`/api/tickets?subscriber_id=${subscriberId}&limit=50`),
         fetch(`/api/crm/subscribers/${subscriberId}/notes`),
         fetch(`/api/crm/subscribers/${subscriberId}/activities`),
+        fetch(`/api/subscribers/${subscriberId}/onu`),
       ]);
 
       if (profRes.ok) {
@@ -166,6 +181,18 @@ export function SubscriberProfileModal({
         const json = await crmActRes.json();
         setCrmActivities(json.data || []);
       }
+      if (onuRes.ok) {
+        const json = await onuRes.json();
+        setCustomerOnu(json.data);
+        if (json.data?.onu_id) {
+          fetch(`/api/onus/${json.data.onu_id}/optical-history`)
+            .then((r) => r.json())
+            .then((j) => setOnuOpticalHistory(j.data || []))
+            .catch(() => {});
+        } else {
+          setOnuOpticalHistory([]);
+        }
+      }
     } catch {} finally {
       setLoading(false);
     }
@@ -178,6 +205,102 @@ export function SubscriberProfileModal({
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 4000);
+  };
+
+  const handleSampleOptical = async () => {
+    if (!customerOnu?.olt_id || !customerOnu?.onu_id) return;
+    try {
+      setSamplingOptical(true);
+      const res = await fetch(`/api/olts/${customerOnu.olt_id}/onus/${customerOnu.onu_id}/optical`, {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showNotice('Live optical telemetry sampled successfully from Huawei OLT!');
+        setCustomerOnu((prev: any) => ({
+          ...prev,
+          last_rx_power: json.data?.rxPower,
+          last_tx_power: json.data?.txPower,
+          last_olt_rx_power: json.data?.oltRxPower,
+          last_optical_reading_at: new Date().toISOString(),
+        }));
+        try {
+          const hRes = await fetch(`/api/onus/${customerOnu.onu_id}/optical-history`);
+          if (hRes.ok) {
+            const hJson = await hRes.json();
+            setOnuOpticalHistory(hJson.data || []);
+          }
+        } catch {}
+      } else {
+        showNotice(json.error || 'Failed to sample optical power from OLT');
+      }
+    } catch {
+      showNotice('Communication error with OLT');
+    } finally {
+      setSamplingOptical(false);
+    }
+  };
+
+  const handleDissociateOnu = async () => {
+    if (!confirm('Are you sure you want to dissociate this ONU from the subscriber?')) return;
+    try {
+      setDissociatingOnu(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        showNotice('ONU dissociated from subscriber successfully');
+        setCustomerOnu(null);
+        setOnuOpticalHistory([]);
+        fetchProfile();
+      } else {
+        const json = await res.json();
+        showNotice(json.error || 'Failed to dissociate ONU');
+      }
+    } catch {
+      showNotice('Error dissociating ONU');
+    } finally {
+      setDissociatingOnu(false);
+    }
+  };
+
+  const handleOpenAssociateModal = async () => {
+    setAssociateModalOpen(true);
+    try {
+      const res = await fetch('/api/onus?limit=100');
+      if (res.ok) {
+        const json = await res.json();
+        setAvailableOnus(json.data || []);
+      }
+    } catch {}
+  };
+
+  const handleSaveAssociateOnu = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOnuToAssociate) return;
+    try {
+      setAssociatingOnu(true);
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          onuId: Number(selectedOnuToAssociate),
+          source: 'manual',
+        }),
+      });
+      if (res.ok) {
+        showNotice('ONU assigned to subscriber successfully');
+        setAssociateModalOpen(false);
+        fetchProfile();
+      } else {
+        const json = await res.json();
+        showNotice(json.error || 'Failed to associate ONU');
+      }
+    } catch {
+      showNotice('Error saving ONU association');
+    } finally {
+      setAssociatingOnu(false);
+    }
   };
 
   const handleSuspendResume = async (action: 'suspend' | 'resume') => {
@@ -635,6 +758,7 @@ export function SubscriberProfileModal({
               { key: 'tickets', label: `Tickets (${subTickets.length})`, icon: LifeBuoy },
               { key: 'activity', label: 'Activity Timeline', icon: Clock },
               { key: 'notes', label: `CRM Notes (${profile?.notes.length || crmNotes.length || 0})`, icon: FileText },
+              { key: 'onu', label: 'ONU / Optical Access', icon: Cpu },
             ] as const
           ).map((tab) => {
             const Icon = tab.icon;
@@ -1834,6 +1958,273 @@ export function SubscriberProfileModal({
                   </div>
                 </div>
               )}
+
+              {/* 11. ONU / Optical Information Tab */}
+              {activeTab === 'onu' && (
+                <div className="space-y-6 animate-in fade-in">
+                  {!customerOnu ? (
+                    <div className="p-8 rounded-xl border border-dashed border-border bg-card/60 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                        <Cpu className="w-6 h-6" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="font-bold text-sm text-foreground">No ONT / ONU Linked</h4>
+                        <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                          This customer is not currently mapped to an OLT GPON ONT device. Link a registered ONU to inspect live optical signal telemetry and configure FTTH access.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleOpenAssociateModal}
+                        className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm inline-flex items-center gap-1.5"
+                      >
+                        <Link className="w-3.5 h-3.5" />
+                        Associate Registered ONU
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Top Action Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-border bg-card/60">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-foreground">
+                              {customerOnu.serial_number}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                customerOnu.run_state === 'online'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                              }`}
+                            >
+                              {customerOnu.run_state}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {customerOnu.olt_name} &bull; GPON 0/{customerOnu.slot}/{customerOnu.pon_port} &bull; ONT ID: {customerOnu.ont_id}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            onClick={handleSampleOptical}
+                            disabled={samplingOptical}
+                            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <Signal className={`w-3.5 h-3.5 ${samplingOptical ? 'animate-pulse' : ''}`} />
+                            {samplingOptical ? 'Sampling CLI...' : 'Sample Live Optical Power'}
+                          </button>
+                          <button
+                            onClick={handleOpenAssociateModal}
+                            className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted transition-colors flex items-center gap-1.5"
+                          >
+                            <Link className="w-3.5 h-3.5 text-primary" />
+                            Change ONU
+                          </button>
+                          <button
+                            onClick={handleDissociateOnu}
+                            disabled={dissociatingOnu}
+                            className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-medium hover:bg-rose-500/10 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <Unlink className="w-3.5 h-3.5" />
+                            Dissociate
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Optical Power Telemetry Cards */}
+                      {(() => {
+                        const rx = customerOnu.last_rx_power;
+                        const warn = customerOnu.optical_warning_threshold ?? -25.0;
+                        const crit = customerOnu.optical_critical_threshold ?? -28.0;
+
+                        let rxBadge = { label: 'Optimal', color: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20' };
+                        if (rx !== null && rx !== undefined) {
+                          if (rx <= crit) {
+                            rxBadge = { label: 'Critical Low', color: 'text-rose-600 bg-rose-500/10 border-rose-500/20' };
+                          } else if (rx <= warn) {
+                            rxBadge = { label: 'Warning Low', color: 'text-amber-600 bg-amber-500/10 border-amber-500/20' };
+                          }
+                        }
+
+                        return (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3.5 rounded-xl border border-border bg-card shadow-sm space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-muted-foreground uppercase font-bold">
+                                  Rx Power (ONT)
+                                </span>
+                                {rx !== null && (
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${rxBadge.color}`}>
+                                    {rxBadge.label}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xl font-bold font-mono text-foreground">
+                                {rx !== null && rx !== undefined ? `${rx.toFixed(2)} dBm` : '—'}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                Warn &lt; {warn} &bull; Crit &lt; {crit} dBm
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl border border-border bg-card shadow-sm space-y-1">
+                              <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                                Tx Power (ONT)
+                              </span>
+                              <div className="text-xl font-bold font-mono text-foreground">
+                                {customerOnu.last_tx_power !== null && customerOnu.last_tx_power !== undefined
+                                  ? `${customerOnu.last_tx_power.toFixed(2)} dBm`
+                                  : '—'}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">Normal range: 0.5 to 5.0 dBm</p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl border border-border bg-card shadow-sm space-y-1">
+                              <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                                OLT Rx Power
+                              </span>
+                              <div className="text-xl font-bold font-mono text-foreground">
+                                {customerOnu.last_olt_rx_power !== null && customerOnu.last_olt_rx_power !== undefined
+                                  ? `${customerOnu.last_olt_rx_power.toFixed(2)} dBm`
+                                  : '—'}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">At OLT GPON Port Receiver</p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl border border-border bg-card shadow-sm space-y-1">
+                              <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                                Config State
+                              </span>
+                              <div className="text-xl font-bold font-mono text-foreground capitalize">
+                                {customerOnu.config_state || 'normal'}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                Match: {customerOnu.match_state || 'match'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Technical Hardware Details */}
+                      <div className="p-4 rounded-xl border border-border bg-card/40 space-y-3">
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <Cpu className="w-3.5 h-3.5 text-primary" /> Technical Hardware Specifications
+                        </h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                          <div>
+                            <span className="text-muted-foreground block text-[11px]">OLT Node:</span>
+                            <span className="font-semibold text-foreground">{customerOnu.olt_name}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block text-[11px]">GPON Location:</span>
+                            <span className="font-mono font-semibold text-foreground">
+                              0/{customerOnu.slot}/{customerOnu.pon_port} : ONT {customerOnu.ont_id}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block text-[11px]">Serial Number:</span>
+                            <span className="font-mono font-semibold text-foreground">{customerOnu.serial_number}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block text-[11px]">Model / Equipment:</span>
+                            <span className="font-semibold text-foreground">
+                              {customerOnu.vendor_id || 'Huawei'} {customerOnu.model || customerOnu.equipment_id || 'EG8145V5'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block text-[11px]">Association Source:</span>
+                            <span className="font-mono text-foreground capitalize">
+                              {customerOnu.association_source} ({new Date(customerOnu.associated_at).toLocaleDateString()})
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block text-[11px]">Last Optical Reading:</span>
+                            <span className="text-foreground">
+                              {customerOnu.last_optical_reading_at
+                                ? new Date(customerOnu.last_optical_reading_at).toLocaleString()
+                                : 'No live samples taken yet'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Optical Telemetry History Table */}
+                      <div className="rounded-xl border border-border overflow-hidden bg-card">
+                        <div className="p-3 border-b border-border flex items-center justify-between">
+                          <h4 className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-primary" />
+                            Optical Telemetry History (Last 10 Samples)
+                          </h4>
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {onuOpticalHistory.length} recordings logged
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
+                              <tr>
+                                <th className="py-2 px-3">Timestamp</th>
+                                <th className="py-2 px-3">Rx Power</th>
+                                <th className="py-2 px-3">Tx Power</th>
+                                <th className="py-2 px-3">OLT Rx</th>
+                                <th className="py-2 px-3">Temperature</th>
+                                <th className="py-2 px-3">Voltage</th>
+                                <th className="py-2 px-3">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {onuOpticalHistory.length === 0 ? (
+                                <tr>
+                                  <td colSpan={7} className="py-6 text-center text-muted-foreground text-xs">
+                                    No optical readings logged for this ONT yet. Click &quot;Sample Live Optical Power&quot; to query Huawei hardware now.
+                                  </td>
+                                </tr>
+                              ) : (
+                                onuOpticalHistory.map((h) => (
+                                  <tr key={h.id} className="hover:bg-muted/30 transition-colors font-mono text-[11px]">
+                                    <td className="py-2 px-3 text-muted-foreground font-sans">
+                                      {new Date(h.collected_at).toLocaleString()}
+                                    </td>
+                                    <td className="py-2 px-3 font-bold text-foreground">
+                                      {h.rx_power !== null ? `${Number(h.rx_power).toFixed(2)} dBm` : '—'}
+                                    </td>
+                                    <td className="py-2 px-3 text-foreground">
+                                      {h.tx_power !== null ? `${Number(h.tx_power).toFixed(2)} dBm` : '—'}
+                                    </td>
+                                    <td className="py-2 px-3 text-foreground">
+                                      {h.olt_rx_power !== null ? `${Number(h.olt_rx_power).toFixed(2)} dBm` : '—'}
+                                    </td>
+                                    <td className="py-2 px-3 text-muted-foreground">
+                                      {h.temperature !== null ? `${Number(h.temperature).toFixed(1)} °C` : '—'}
+                                    </td>
+                                    <td className="py-2 px-3 text-muted-foreground">
+                                      {h.voltage !== null ? `${Number(h.voltage).toFixed(2)} V` : '—'}
+                                    </td>
+                                    <td className="py-2 px-3 font-sans">
+                                      <span
+                                        className={`px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+                                          h.collection_status === 'ok'
+                                            ? 'bg-emerald-500/10 text-emerald-600'
+                                            : 'bg-rose-500/10 text-rose-600'
+                                        }`}
+                                      >
+                                        {h.collection_status.toUpperCase()}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -2319,6 +2710,67 @@ export function SubscriberProfileModal({
           onClose={() => setReceiptTx(null)}
           transaction={receiptTx}
         />
+
+        {/* Associate ONU Modal */}
+        {associateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-card border border-border rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Cpu className="w-5 h-5 text-primary" />
+                  Associate FTTH ONU with {sub?.username}
+                </h3>
+                <button
+                  onClick={() => setAssociateModalOpen(false)}
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveAssociateOnu} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-semibold text-foreground block mb-1.5">
+                    Select Registered ONU from Inventory:
+                  </label>
+                  <select
+                    value={selectedOnuToAssociate}
+                    onChange={(e) => setSelectedOnuToAssociate(e.target.value === '' ? '' : Number(e.target.value))}
+                    required
+                    className="w-full px-3 py-2 rounded-xl bg-background border border-border focus:ring-2 focus:ring-primary outline-none font-mono text-xs"
+                  >
+                    <option value="">-- Choose an ONU ({availableOnus.length} available) --</option>
+                    {availableOnus.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.serial_number} &bull; {o.olt_name || `OLT #${o.olt_id}`} (0/{o.slot}/{o.pon_port}:{o.ont_id}) {o.customer_username ? `[Used by ${o.customer_username}]` : '[Unassigned]'}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-muted-foreground text-[11px] mt-1.5 leading-relaxed">
+                    Connecting this ONU maps the optical metrics and GPON service port to this subscriber.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setAssociateModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-accent font-medium hover:bg-accent/80"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={associatingOnu || !selectedOnuToAssociate}
+                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-95 disabled:opacity-50"
+                  >
+                    {associatingOnu ? 'Associating...' : 'Confirm Association'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
