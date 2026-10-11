@@ -151,7 +151,9 @@ export function OltManagementView({
             {activeSubTab === 'inventory' && (
               <OltInventoryView
                 onSelectOlt={handleSelectOlt}
-                onNavigateToProvision={handleNavigateToProvision}
+                onNavigateToProvision={(oltId) =>
+                  handleNavigateToProvision(typeof oltId === 'number' ? { oltId } : oltId)
+                }
                 onNavigateToDiscovery={(oltId) => {
                   setProvisionParams({ oltId });
                   setActiveSubTab('discovery');

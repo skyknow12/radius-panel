@@ -23,7 +23,7 @@ import type { OltItem } from '@/types/olt';
 
 interface OltInventoryViewProps {
   onSelectOlt: (olt: OltItem) => void;
-  onNavigateToProvision: (oltId?: number) => void;
+  onNavigateToProvision: (params?: number | { oltId?: number; slot?: number; port?: number; sn?: string }) => void;
   onNavigateToDiscovery: (oltId?: number) => void;
   currentUser?: any;
 }
