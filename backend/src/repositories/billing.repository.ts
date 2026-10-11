@@ -139,6 +139,9 @@ export interface ProcessRechargeInput {
   user_role?: string;
 }
 
+import { calculateNewExpiry, calculateRechargePricing, formatRadiusExpiration } from '../lib/billing-utils';
+export { calculateNewExpiry, calculateRechargePricing, formatRadiusExpiration };
+
 export const billingRepository = {
   // =========================================================================
   // 1. Package Pricing & Price History
@@ -201,8 +204,8 @@ export const billingRepository = {
         );
 
         await client.query(
-          `INSERT INTO audit_logs (actor, action, target_type, target_id, details)
-           VALUES ($1, 'package.price_updated', 'package', $2, $3)`,
+          `INSERT INTO audit_logs (username, action, entity_type, entity_id, status, metadata)
+           VALUES ($1, 'package.price_updated', 'package', $2, 'success', $3)`,
           [
             changedBy,
             String(packageId),
@@ -297,9 +300,10 @@ export const billingRepository = {
       idempotency_key,
       created_by,
       user_role,
+      reseller_id,
     } = input;
 
-    if (duration_months <= 0) {
+    if (!duration_months || duration_months <= 0) {
       throw HttpError.badRequest('Recharge duration must be at least 1 month');
     }
 
@@ -318,17 +322,23 @@ export const billingRepository = {
       }
     }
 
+    // 1. Validate Customer
     const subscriber = await subscriberRepository.findById(subscriber_id);
-    if (!subscriber) throw HttpError.notFound('Subscriber not found');
+    if (!subscriber) {
+      throw HttpError.notFound('Customer record could not be found.');
+    }
 
-    const pkgRes = await query<{ id: number; name: string; price: string; currency: string }>(
-      `SELECT id, name, price, currency FROM packages WHERE id = $1`,
+    // 2. Validate Package and Availability
+    const pkgRes = await query<{ id: number; name: string; price: string; currency: string; is_active: boolean }>(
+      `SELECT id, name, price, currency, is_active FROM packages WHERE id = $1`,
       [package_id],
     );
-    if (!pkgRes.rows.length) throw HttpError.notFound('Package not found');
+    if (!pkgRes.rows.length || pkgRes.rows[0].is_active === false) {
+      throw HttpError.badRequest('Selected package is no longer available.');
+    }
     const pkg = pkgRes.rows[0];
 
-    // Determine Base Price
+    // 3. Decimal-Safe Pricing and Discounts
     let originalPrice = input.original_price;
     if (originalPrice === undefined || originalPrice <= 0) {
       const priceRes = await query<PackagePriceRecord>(
@@ -338,11 +348,10 @@ export const billingRepository = {
       if (priceRes.rows.length > 0) {
         originalPrice = Number(priceRes.rows[0].price);
       } else {
-        originalPrice = Number(pkg.price) * duration_months;
+        originalPrice = Math.round(Number(pkg.price) * duration_months * 100) / 100;
       }
     }
 
-    // Validate & Calculate Discount
     let discountAmount = 0;
     if (discount_type === 'percentage') {
       const pct = Math.max(0, Math.min(100, Number(discount_value)));
@@ -354,7 +363,7 @@ export const billingRepository = {
       discountAmount = Math.round((originalPrice * pct) / 100 * 100) / 100;
     } else if (discount_type === 'fixed') {
       const fixed = Math.max(0, Number(discount_value));
-      const impliedPct = (fixed / originalPrice) * 100;
+      const impliedPct = originalPrice > 0 ? (fixed / originalPrice) * 100 : 0;
       if (user_role === 'operator' && impliedPct > 5) {
         throw HttpError.forbidden('Operators cannot give fixed discounts exceeding 5% of price.');
       } else if (user_role === 'admin' && impliedPct > 15) {
@@ -363,55 +372,156 @@ export const billingRepository = {
       discountAmount = Math.min(originalPrice, fixed);
     }
 
-    const priceAfterDiscount = Math.max(0, originalPrice - discountAmount);
+    const priceAfterDiscount = Math.max(0, Math.round((originalPrice - discountAmount) * 100) / 100);
     const taxAmount = tax_rate > 0 ? Math.round((priceAfterDiscount * tax_rate) / 100 * 100) / 100 : 0;
     const finalAmount = Math.round((priceAfterDiscount + taxAmount) * 100) / 100;
 
-    // Expiry calculation:
-    // If active and expiry > now, add from existing valid expiry.
-    // If expired or missing, start from NOW.
     const now = new Date();
-    let baseExpiry = now;
-    if (subscriber.expiry_date && new Date(subscriber.expiry_date) > now) {
-      baseExpiry = new Date(subscriber.expiry_date);
-    }
-    const newExpiry = new Date(baseExpiry);
-    newExpiry.setMonth(newExpiry.getMonth() + duration_months);
-
-    // Generate unique IDs
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
     const randomHex = Math.floor(1000 + Math.random() * 9000);
     const transactionId = `REC-${dateStr}-${randomHex}`;
     const invoiceNo = `INV-${dateStr}-${randomHex}`;
+    const serviceId = `SRV-${randomHex}-${Date.now().toString(36)}`.toUpperCase().slice(0, 32);
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // 1. Insert into recharge_transactions
+      // 4. Lock Subscriber Row (Row Locking to prevent concurrent race conditions)
+      const subLockRes = await client.query<{
+        id: number;
+        username: string;
+        customer_id: string;
+        full_name: string;
+        current_package_id: number | null;
+        expiry_date: Date | string | null;
+        status: string;
+        organization_id: number | null;
+        branch_id: number | null;
+        reseller_id: number | null;
+      }>(
+        `SELECT id, username, customer_id, full_name, current_package_id, expiry_date, status,
+                organization_id, branch_id, reseller_id
+           FROM subscribers
+          WHERE id = $1
+            FOR UPDATE`,
+        [subscriber_id],
+      );
+      if (!subLockRes.rows[0]) {
+        throw HttpError.notFound('Customer record could not be found.');
+      }
+      const lockedSub = subLockRes.rows[0];
+
+      // Re-verify idempotency inside locked transaction
+      if (idempotency_key) {
+        const lockedTxRes = await client.query<BillingTransactionRecord>(
+          `SELECT * FROM recharge_transactions WHERE idempotency_key = $1`,
+          [idempotency_key],
+        );
+        if (lockedTxRes.rows.length > 0) {
+          const lockedInvRes = await client.query<InvoiceRecord>(
+            `SELECT * FROM invoices WHERE transaction_id = $1`,
+            [lockedTxRes.rows[0].transaction_id],
+          );
+          await client.query('COMMIT');
+          return { transaction: lockedTxRes.rows[0], invoice: lockedInvRes.rows[0] };
+        }
+      }
+
+      // 5. Handle Reseller Wallet & Balance Deduction (if payment_method is WALLET or user is reseller)
+      let walletId: number | null = null;
+      const targetResellerId = reseller_id || lockedSub.reseller_id;
+      const isWalletPayment = payment_method === 'WALLET' || payment_method === 'RESELLER_WALLET' || user_role === 'reseller';
+
+      if (isWalletPayment && targetResellerId) {
+        const wltRes = await client.query<{
+          id: number;
+          balance: string;
+          total_used: string;
+          status: string;
+        }>(
+          `SELECT id, balance, total_used, status
+             FROM wallets
+            WHERE reseller_id = $1
+              FOR UPDATE`,
+          [targetResellerId],
+        );
+
+        if (!wltRes.rows[0]) {
+          throw HttpError.badRequest('Insufficient wallet balance. No wallet provisioned for this reseller.');
+        }
+        const wallet = wltRes.rows[0];
+        if (wallet.status !== 'ACTIVE') {
+          throw HttpError.badRequest('Reseller wallet is not active.');
+        }
+
+        const balanceBefore = Number(wallet.balance || 0);
+        if (balanceBefore < finalAmount) {
+          throw HttpError.badRequest(
+            `Insufficient wallet balance. Available: Rs. ${balanceBefore.toFixed(2)}, Required: Rs. ${finalAmount.toFixed(2)}`
+          );
+        }
+
+        const balanceAfter = Math.round((balanceBefore - finalAmount) * 100) / 100;
+        const totalUsedAfter = Math.round((Number(wallet.total_used || 0) + finalAmount) * 100) / 100;
+
+        await client.query(
+          `UPDATE wallets SET balance = $1, total_used = $2, updated_at = NOW() WHERE id = $3`,
+          [balanceAfter, totalUsedAfter, wallet.id],
+        );
+
+        walletId = wallet.id;
+
+        // Record in wallet_transactions
+        const wtxId = `WTX-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        await client.query(
+          `INSERT INTO wallet_transactions (
+             transaction_id, wallet_id, type, amount, balance_before, balance_after,
+             reference, payment_method, reason, idempotency_key, created_by
+           ) VALUES ($1, $2, 'DEBIT', $3, $4, $5, $6, 'WALLET', $7, $8, $9)`,
+          [
+            wtxId,
+            wallet.id,
+            finalAmount,
+            balanceBefore,
+            balanceAfter,
+            transactionId,
+            `Customer Recharge: ${lockedSub.username} (${duration_months} mo) - ${pkg.name}`,
+            idempotency_key ? `WTX-${idempotency_key}` : null,
+            created_by,
+          ],
+        );
+      }
+
+      // 6. Safe Expiry Date Calculation (with month overflow handling)
+      const newExpiry = calculateNewExpiry(lockedSub.expiry_date, duration_months, now);
+
+      // 7. Insert into recharge_transactions
       const insertTxSql = `
         INSERT INTO recharge_transactions (
           transaction_id, receipt_no, subscriber_id, username, customer_id, full_name,
-          package_id, package_name, duration, duration_unit, original_price,
+          package_id, package_name, duration, duration_months, duration_unit, original_price,
           discount_type, discount_value, discount_amount, adjustment_amount,
-          tax_rate, tax_amount, final_amount, currency, payment_method,
+          tax_rate, tax_amount, final_amount, amount, currency, payment_method,
           payment_reference, recharge_date, previous_expiry, new_expiry,
-          status, created_by, notes, idempotency_key, duration_months, amount
+          status, created_by, notes, idempotency_key,
+          organization_id, branch_id, reseller_id, wallet_id, commission_amount
         ) VALUES (
           $1, $1, $2, $3, $4, $5,
-          $6, $7, $8, 'months', $9,
+          $6, $7, $8, $8, 'months', $9,
           $10, $11, $12, 0,
-          $13, $14, $15, $16, $17,
+          $13, $14, $15, $15, $16, $17,
           $18, NOW(), $19, $20,
-          'COMPLETED', $21, $22, $23, $8, $15
+          'COMPLETED', $21, $22, $23,
+          $24, $25, $26, $27, 0
         ) RETURNING *
       `;
       const txRes = await client.query<BillingTransactionRecord>(insertTxSql, [
         transactionId,
-        subscriber.id,
-        subscriber.username,
-        subscriber.customer_id,
-        subscriber.full_name,
+        lockedSub.id,
+        lockedSub.username,
+        lockedSub.customer_id,
+        lockedSub.full_name,
         pkg.id,
         pkg.name,
         duration_months,
@@ -425,15 +535,19 @@ export const billingRepository = {
         pkg.currency,
         payment_method,
         payment_reference || null,
-        subscriber.expiry_date,
+        lockedSub.expiry_date,
         newExpiry,
         created_by,
         notes || null,
         idempotency_key || null,
+        lockedSub.organization_id || null,
+        lockedSub.branch_id || null,
+        targetResellerId || null,
+        walletId,
       ]);
       const tx = txRes.rows[0];
 
-      // 2. Insert Invoice
+      // 8. Insert Invoice
       const insertInvSql = `
         INSERT INTO invoices (
           invoice_no, transaction_id, subscriber_id, customer_name, customer_id,
@@ -450,10 +564,10 @@ export const billingRepository = {
       const invRes = await client.query<InvoiceRecord>(insertInvSql, [
         invoiceNo,
         transactionId,
-        subscriber.id,
-        subscriber.full_name,
-        subscriber.customer_id,
-        subscriber.username,
+        lockedSub.id,
+        lockedSub.full_name,
+        lockedSub.customer_id,
+        lockedSub.username,
         pkg.name,
         duration_months,
         originalPrice,
@@ -465,67 +579,75 @@ export const billingRepository = {
       ]);
       const invoice = invRes.rows[0];
 
-      // 3. Update subscriber package, expiry, status
+      // 9. Update Subscriber Package, Expiry, Status, and Clear Grace
       await client.query(
         `UPDATE subscribers
             SET current_package_id = $1,
                 expiry_date = $2,
-                status = 'active',
+                status = 'enabled',
+                grace_status = 'inactive',
+                grace_end_date = NULL,
+                grace_days_granted = NULL,
                 updated_at = NOW()
           WHERE id = $3`,
-        [pkg.id, newExpiry, subscriber.id],
+        [pkg.id, newExpiry, lockedSub.id],
       );
 
-      // 4. Update FreeRADIUS radcheck Expiration & Clear Reject
+      // 10. Update FreeRADIUS radcheck Expiration & Clear Reject
       await client.query(
-        `UPDATE radcheck
-            SET value = to_char($1::timestamptz, 'DD Mon YYYY 23:59:59')
-          WHERE lower(username) = lower($2) AND attribute = 'Expiration'`,
-        [newExpiry, subscriber.username],
+        `DELETE FROM radcheck
+          WHERE lower(username) = lower($1) AND attribute = 'Expiration'`,
+        [lockedSub.username],
+      );
+      await client.query(
+        `INSERT INTO radcheck (username, attribute, op, value)
+         VALUES (lower($1), 'Expiration', ':=', to_char($2::timestamptz, 'DD Mon YYYY 23:59:59'))`,
+        [lockedSub.username, newExpiry],
       );
       await client.query(
         `DELETE FROM radcheck
           WHERE lower(username) = lower($1) AND attribute = 'Auth-Type' AND value = 'Reject'`,
-        [subscriber.username],
+        [lockedSub.username],
       );
 
-      // 5. Insert subscriber_services record
-      const serviceId = `SRV-${subscriber.customer_id}-${randomHex}`;
+      // 11. Insert Subscriber Service Record
       await client.query(
         `INSERT INTO subscriber_services (
            service_id, subscriber_id, package_id, start_date, expiry_date, status, created_by, notes
          ) VALUES ($1, $2, $3, NOW(), $4, 'active', $5, $6)`,
-        [serviceId, subscriber.id, pkg.id, newExpiry, created_by, `Recharge: ${duration_months} Months (${transactionId})`],
+        [serviceId, lockedSub.id, pkg.id, newExpiry, created_by, `Recharge: ${duration_months} Months (${transactionId})`],
       );
 
-      // 6. Record Activity, Network Event & Audit Log
+      // 12. Record Activity
       await client.query(
         `INSERT INTO subscriber_activity (subscriber_id, action, details, admin_username)
          VALUES ($1, 'billing.recharge', $2, $3)`,
         [
-          subscriber.id,
+          lockedSub.id,
           `Recharged ${duration_months} mo (${pkg.name}) for ${pkg.currency} ${finalAmount}. Expiry: ${newExpiry.toISOString().slice(0, 10)}. Tx: ${transactionId}`,
           created_by,
         ],
       );
 
+      // 13. Record Network Event
       await client.query(
         `INSERT INTO network_events (event_type, severity, actor, target, description, metadata)
          VALUES ('billing.recharge_completed', 'info', $1, $2, $3, $4)`,
         [
           created_by,
-          subscriber.username,
-          `Subscriber ${subscriber.username} recharged for ${duration_months} mo (${transactionId})`,
+          lockedSub.username,
+          `Subscriber ${lockedSub.username} recharged for ${duration_months} mo (${transactionId})`,
           JSON.stringify({ transactionId, invoiceNo, finalAmount, currency: pkg.currency, newExpiry }),
         ],
       );
 
+      // 14. Record Audit Log (Verified schema columns)
       await client.query(
-        `INSERT INTO audit_logs (actor, action, target_type, target_id, details)
-         VALUES ($1, 'billing.recharge', 'subscriber', $2, $3)`,
+        `INSERT INTO audit_logs (username, action, entity_type, entity_id, status, metadata)
+         VALUES ($1, 'billing.recharge', 'subscriber', $2, 'success', $3)`,
         [
           created_by,
-          String(subscriber.id),
+          String(lockedSub.id),
           JSON.stringify({
             transactionId,
             invoiceNo,
@@ -627,8 +749,8 @@ export const billingRepository = {
       );
 
       await client.query(
-        `INSERT INTO audit_logs (actor, action, target_type, target_id, details)
-         VALUES ($1, 'billing.refund', 'transaction', $2, $3)`,
+        `INSERT INTO audit_logs (username, action, entity_type, entity_id, status, metadata)
+         VALUES ($1, 'billing.refund', 'transaction', $2, 'success', $3)`,
         [
           processed_by,
           transaction_id,
@@ -674,8 +796,8 @@ export const billingRepository = {
     );
 
     await query(
-      `INSERT INTO audit_logs (actor, action, target_type, target_id, details)
-       VALUES ($1, 'billing.cancel_transaction', 'transaction', $2, $3)`,
+      `INSERT INTO audit_logs (username, action, entity_type, entity_id, status, metadata)
+       VALUES ($1, 'billing.cancel_transaction', 'transaction', $2, 'success', $3)`,
       [operator, transactionId, JSON.stringify({ reason })],
     );
   },
@@ -738,8 +860,8 @@ export const billingRepository = {
       );
 
       await client.query(
-        `INSERT INTO audit_logs (actor, action, target_type, target_id, details)
-         VALUES ($1, 'billing.adjustment', 'subscriber', $2, $3)`,
+        `INSERT INTO audit_logs (username, action, entity_type, entity_id, status, metadata)
+         VALUES ($1, 'billing.adjustment', 'subscriber', $2, 'success', $3)`,
         [operator_username, String(subscriber_id), JSON.stringify({ adjustmentId, adjustment_type, amount, days, reason })],
       );
 

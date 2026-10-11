@@ -1,6 +1,7 @@
 import { query, getClient } from '../db/pool';
 import { HttpError } from '../lib/http-error';
 import { auditRepository } from './audit.repository';
+import { calculateNewExpiry } from '../lib/billing-utils';
 
 export interface ResellerTopupCalcResult {
   paymentAmount: number;
@@ -449,9 +450,7 @@ export class ResellerRepository {
       // 5. Update Subscriber Expiry & Package
       const prevExpiry = subscriber.expiry_date ? new Date(subscriber.expiry_date) : null;
       const prevExpiryStr = prevExpiry ? prevExpiry.toISOString() : 'None';
-      const baseDate = prevExpiry && prevExpiry > new Date() ? prevExpiry : new Date();
-      const newExpiry = new Date(baseDate);
-      newExpiry.setMonth(newExpiry.getMonth() + duration);
+      const newExpiry = calculateNewExpiry(subscriber.expiry_date, duration);
       const newExpiryStr = newExpiry.toISOString();
       const rechargeRemarks = input.remarks
         ? `${input.remarks} (Prev Expiry: ${prevExpiryStr}, New Expiry: ${newExpiryStr})`
@@ -459,7 +458,7 @@ export class ResellerRepository {
 
       await client.query(`
         UPDATE subscribers
-           SET package_id = $1,
+           SET current_package_id = $1,
                status = 'enabled',
                reseller_id = COALESCE(reseller_id, $2),
                ownership_type = CASE WHEN reseller_id IS NULL THEN 'reseller' ELSE ownership_type END,
@@ -1197,10 +1196,10 @@ export class ResellerRepository {
       created_at: string;
     }>(`
       SELECT s.id, s.username, s.full_name, s.phone, s.email,
-             s.package_id, p.name AS package_name, COALESCE(p.price, 0)::float AS package_price,
+             s.current_package_id AS package_id, p.name AS package_name, COALESCE(p.price, 0)::float AS package_price,
              s.status, s.expiry_date, s.created_at
         FROM subscribers s
-        LEFT JOIN packages p ON p.id = s.package_id
+        LEFT JOIN packages p ON p.id = s.current_package_id
        WHERE s.reseller_id = $1
        ${searchClause}
        ORDER BY s.created_at DESC

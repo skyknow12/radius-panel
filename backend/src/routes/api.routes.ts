@@ -3330,6 +3330,7 @@ apiRouter.get(
 // ---- 7. Channel Recharge Execution ----
 apiRouter.post(
   '/channel/recharge',
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const operator = authReq.user?.username || 'admin';

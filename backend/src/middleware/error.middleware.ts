@@ -13,12 +13,19 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
     });
   }
 
-  logger.error({ err, path: req.path, method: req.method }, 'Unhandled internal error');
+  // Generate safe reference ID for administrative troubleshooting
+  const errorId = `ERR-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  logger.error(
+    { err, errorId, path: req.path, method: req.method },
+    `Unhandled internal server error [Ref: ${errorId}]`,
+  );
 
   return res.status(500).json({
     error: {
       code: 'INTERNAL_ERROR',
-      message: 'An unexpected internal server error occurred',
+      message: `Recharge could not be completed. No changes were saved. Reference: ${errorId}`,
+      reference_id: errorId,
     },
   });
 }

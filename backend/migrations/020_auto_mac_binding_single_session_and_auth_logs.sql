@@ -145,8 +145,8 @@ BEGIN
           VALUES (v_sub.username, 'subscriber.mac_bound', 'subscriber', v_sub.id::text, 'success',
                   json_build_object('mac_address', v_norm_mac, 'source', 'auto_first_login', 'timestamp', NOW()), NOW());
 
-          -- Record in subscriber_activity_logs
-          INSERT INTO subscriber_activity_logs (subscriber_id, action, details, admin_username, created_at)
+          -- Record in subscriber_activity
+          INSERT INTO subscriber_activity (subscriber_id, action, details, admin_username, created_at)
           VALUES (v_sub.id, 'mac_bound', 'MAC address automatically bound on first successful login: ' || v_norm_mac, 'auto_first_login', NOW());
         ELSE
           NEW.reason := 'Successful authentication';

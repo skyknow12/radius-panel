@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { query, getClient } from '../db/pool';
 import { HttpError } from '../lib/http-error';
 import { auditRepository } from '../repositories/audit.repository';
+import { calculateNewExpiry } from '../lib/billing-utils';
 
 export interface OrganizationItem {
   id: number;
@@ -1354,7 +1355,7 @@ export const organizationRepository = {
                s.status, s.ownership_type, s.branch_id, s.reseller_id,
                p.id AS current_package_id, p.name AS current_package_name
           FROM subscribers s
-          LEFT JOIN packages p ON p.id = s.package_id
+          LEFT JOIN packages p ON p.id = s.current_package_id
          WHERE s.id = $1 FOR UPDATE
       `, [input.subscriberId]);
       if (!subRes.rows[0]) throw HttpError.notFound('Subscriber not found');
@@ -1455,14 +1456,7 @@ export const organizationRepository = {
       }
 
       // 7. Calculate Expiry Date Extension
-      const now = new Date();
-      let baseDate = now;
-      const curExpiry = sub.expiry_date ? new Date(sub.expiry_date) : null;
-      if (curExpiry && curExpiry > now) {
-        baseDate = curExpiry;
-      }
-      const newExpiry = new Date(baseDate);
-      newExpiry.setMonth(newExpiry.getMonth() + input.durationMonths);
+      const newExpiry = calculateNewExpiry(sub.expiry_date, input.durationMonths);
 
       // 8. Generate Transaction and Receipt IDs
       const txId = `TXN-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -1480,15 +1474,15 @@ export const organizationRepository = {
       await client.query(`
         INSERT INTO recharge_transactions (
           transaction_id, receipt_no, subscriber_id, username, customer_id, full_name,
-          package_id, package_name, duration, duration_unit, original_price,
-          discount_type, discount_value, discount_amount, final_amount,
+          package_id, package_name, duration, duration_months, duration_unit, original_price,
+          discount_type, discount_value, discount_amount, final_amount, amount,
           currency, payment_method, payment_reference, recharge_date, previous_expiry,
           new_expiry, status, created_by, notes, idempotency_key,
           organization_id, branch_id, reseller_id, wallet_id, commission_amount
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
-          $7, $8, $9, 'months', $10,
-          $11, $12, $13, $14,
+          $7, $8, $9, $9, 'months', $10,
+          $11, $12, $13, $14, $14,
           'NPR', $15, $16, NOW(), $17,
           $18, 'COMPLETED', $19, $20, $21,
           $22, $23, $24, $25, $26
@@ -1547,7 +1541,7 @@ export const organizationRepository = {
       // 12. Update Subscriber Service
       await client.query(`
         UPDATE subscribers
-           SET package_id = $2,
+           SET current_package_id = $2,
                expiry_date = $3,
                status = 'enabled',
                updated_at = NOW()
