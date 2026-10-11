@@ -586,9 +586,9 @@ export const billingRepository = {
             SET current_package_id = $1,
                 expiry_date = $2,
                 status = 'enabled',
-                grace_status = 'inactive',
+                grace_status = 'none',
                 grace_end_date = NULL,
-                grace_days_granted = NULL,
+                grace_days_granted = 0,
                 updated_at = NOW()
           WHERE id = $3`,
         [pkg.id, newExpiry, lockedSub.id],

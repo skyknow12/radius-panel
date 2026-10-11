@@ -56,7 +56,7 @@ export function runRechargeRenewalIntegrityTests(): { name: string; passed: bool
     subscriber.current_package_id = pkg.id;
     subscriber.expiry_date = newExpiry.toISOString();
     subscriber.status = 'enabled';
-    subscriber.grace_status = 'inactive';
+    subscriber.grace_status = 'none';
     subscriber.grace_end_date = null as any;
 
     const transaction = {
@@ -73,7 +73,7 @@ export function runRechargeRenewalIntegrityTests(): { name: string; passed: bool
 
     assert(pricing.finalAmount === 1200, 'Scenario 1.1: Pricing calculation matches package price');
     assert(subscriber.status === 'enabled', 'Scenario 1.2: Subscriber status transitions to enabled');
-    assert(subscriber.grace_status === 'inactive', 'Scenario 1.3: Grace status cleared upon recharge');
+    assert(subscriber.grace_status === 'none', 'Scenario 1.3: Grace status cleared upon recharge');
     assert(subscriber.current_package_id === 5, 'Scenario 1.4: current_package_id updated to active package');
     assert(transaction.status === 'COMPLETED', 'Scenario 1.5: Transaction status recorded as COMPLETED');
     assert(transaction.duration_months === 1, 'Scenario 1.6: duration_months correctly populated');
