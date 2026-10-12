@@ -7,6 +7,7 @@ import { encryptSecret, decryptSecret, maskSecret, sanitizeLogOutput } from '../
 export interface OltItem {
   id: number;
   name: string;
+  description?: string | null;
   vendor: string;
   model: string;
   hardware_version?: string;
@@ -17,9 +18,13 @@ export interface OltItem {
   branch_id?: number | null;
   branch_name?: string | null;
   organization_id?: number | null;
+  snmp_enabled: boolean;
   snmp_version: string;
   snmp_port: number;
   snmp_community_masked?: string;
+  snmp_write_community_masked?: string;
+  snmp_timeout_ms: number;
+  snmp_retries: number;
   cli_protocol: 'telnet' | 'ssh';
   cli_username: string;
   cli_password_masked: string;
@@ -30,6 +35,23 @@ export interface OltItem {
   last_seen_at?: string | null;
   last_sync_at?: string | null;
   last_error?: string | null;
+  last_poll_at?: string | null;
+  last_poll_status?: 'success' | 'error' | 'timeout' | 'unknown' | null;
+  last_poll_error?: string | null;
+  next_poll_at?: string | null;
+  sys_uptime?: string | null;
+  sys_descr?: string | null;
+  sys_name?: string | null;
+  sys_location?: string | null;
+  sys_contact?: string | null;
+  cpu_utilization?: number | null;
+  memory_utilization?: number | null;
+  temperature?: number | null;
+  fans_status?: string | null;
+  power_status?: string | null;
+  active_alarms_count?: number;
+  registered_onus_count?: number;
+  online_onus_count?: number;
   optical_warning_threshold: number;
   optical_critical_threshold: number;
   total_onus?: number;
@@ -121,12 +143,22 @@ export const oltRepository = {
     }
 
     const sql = `
-      SELECT o.id, o.name, o.vendor, o.model, o.hardware_version, o.software_version, o.patch_version,
+      SELECT o.id, o.name, o.description, o.vendor, o.model, o.hardware_version, o.software_version, o.patch_version,
              host(o.management_ip) AS management_ip, o.management_port,
              o.branch_id, b.name AS branch_name, o.organization_id,
-             o.snmp_version, o.snmp_port, o.cli_protocol, o.cli_username,
+             COALESCE(o.snmp_enabled, TRUE) AS snmp_enabled,
+             o.snmp_version, o.snmp_port, o.snmp_write_community_encrypted,
+             COALESCE(o.snmp_timeout_ms, 3000) AS snmp_timeout_ms,
+             COALESCE(o.snmp_retries, 2) AS snmp_retries,
+             o.cli_protocol, o.cli_username,
              o.connection_timeout, o.polling_interval, o.enabled,
              o.connection_status, o.last_seen_at, o.last_sync_at, o.last_error,
+             o.last_poll_at, o.last_poll_status, o.last_poll_error, o.next_poll_at,
+             o.sys_uptime, o.sys_descr, o.sys_name, o.sys_location, o.sys_contact,
+             o.cpu_utilization, o.memory_utilization, o.temperature, o.fans_status, o.power_status,
+             COALESCE(o.active_alarms_count, 0) AS active_alarms_count,
+             COALESCE(o.registered_onus_count, 0) AS registered_onus_count,
+             COALESCE(o.online_onus_count, 0) AS online_onus_count,
              o.optical_warning_threshold, o.optical_critical_threshold,
              o.created_at, o.updated_at,
              COALESCE(s.total_onus, 0)::int AS total_onus,
@@ -150,14 +182,22 @@ export const oltRepository = {
 
     return rows.map((r) => ({
       ...r,
+      snmp_enabled: r.snmp_enabled ?? true,
+      snmp_timeout_ms: Number(r.snmp_timeout_ms || 3000),
+      snmp_retries: Number(r.snmp_retries || 2),
       cli_password_masked: maskSecret('saved'),
       snmp_community_masked: maskSecret('saved'),
+      snmp_write_community_masked: r.snmp_write_community_encrypted ? maskSecret('saved') : undefined,
+      cpu_utilization: r.cpu_utilization !== null ? Number(r.cpu_utilization) : null,
+      memory_utilization: r.memory_utilization !== null ? Number(r.memory_utilization) : null,
+      temperature: r.temperature !== null ? Number(r.temperature) : null,
       optical_warning_threshold: Number(r.optical_warning_threshold),
       optical_critical_threshold: Number(r.optical_critical_threshold),
       created_at: new Date(r.created_at).toISOString(),
       updated_at: new Date(r.updated_at).toISOString(),
       last_seen_at: r.last_seen_at ? new Date(r.last_seen_at).toISOString() : null,
       last_sync_at: r.last_sync_at ? new Date(r.last_sync_at).toISOString() : null,
+      last_poll_at: r.last_poll_at ? new Date(r.last_poll_at).toISOString() : null,
     }));
   },
 
@@ -166,12 +206,22 @@ export const oltRepository = {
    */
   async findById(id: number, actor?: AuthSession): Promise<OltItem | null> {
     const { rows } = await query<any>(
-      `SELECT o.id, o.name, o.vendor, o.model, o.hardware_version, o.software_version, o.patch_version,
+      `SELECT o.id, o.name, o.description, o.vendor, o.model, o.hardware_version, o.software_version, o.patch_version,
               host(o.management_ip) AS management_ip, o.management_port,
               o.branch_id, b.name AS branch_name, o.organization_id,
-              o.snmp_version, o.snmp_port, o.cli_protocol, o.cli_username,
+              COALESCE(o.snmp_enabled, TRUE) AS snmp_enabled,
+              o.snmp_version, o.snmp_port, o.snmp_write_community_encrypted,
+              COALESCE(o.snmp_timeout_ms, 3000) AS snmp_timeout_ms,
+              COALESCE(o.snmp_retries, 2) AS snmp_retries,
+              o.cli_protocol, o.cli_username,
               o.connection_timeout, o.polling_interval, o.enabled,
               o.connection_status, o.last_seen_at, o.last_sync_at, o.last_error,
+              o.last_poll_at, o.last_poll_status, o.last_poll_error, o.next_poll_at,
+              o.sys_uptime, o.sys_descr, o.sys_name, o.sys_location, o.sys_contact,
+              o.cpu_utilization, o.memory_utilization, o.temperature, o.fans_status, o.power_status,
+              COALESCE(o.active_alarms_count, 0) AS active_alarms_count,
+              COALESCE(o.registered_onus_count, 0) AS registered_onus_count,
+              COALESCE(o.online_onus_count, 0) AS online_onus_count,
               o.optical_warning_threshold, o.optical_critical_threshold,
               o.created_at, o.updated_at,
               COALESCE(s.total_onus, 0)::int AS total_onus,
@@ -201,14 +251,22 @@ export const oltRepository = {
 
     return {
       ...r,
+      snmp_enabled: r.snmp_enabled ?? true,
+      snmp_timeout_ms: Number(r.snmp_timeout_ms || 3000),
+      snmp_retries: Number(r.snmp_retries || 2),
       cli_password_masked: maskSecret('saved'),
       snmp_community_masked: maskSecret('saved'),
+      snmp_write_community_masked: r.snmp_write_community_encrypted ? maskSecret('saved') : undefined,
+      cpu_utilization: r.cpu_utilization !== null ? Number(r.cpu_utilization) : null,
+      memory_utilization: r.memory_utilization !== null ? Number(r.memory_utilization) : null,
+      temperature: r.temperature !== null ? Number(r.temperature) : null,
       optical_warning_threshold: Number(r.optical_warning_threshold),
       optical_critical_threshold: Number(r.optical_critical_threshold),
       created_at: new Date(r.created_at).toISOString(),
       updated_at: new Date(r.updated_at).toISOString(),
       last_seen_at: r.last_seen_at ? new Date(r.last_seen_at).toISOString() : null,
       last_sync_at: r.last_sync_at ? new Date(r.last_sync_at).toISOString() : null,
+      last_poll_at: r.last_poll_at ? new Date(r.last_poll_at).toISOString() : null,
     };
   },
 
@@ -221,13 +279,20 @@ export const oltRepository = {
     protocol: 'telnet' | 'ssh';
     username: string;
     passwordDecrypted: string;
+    snmpVersion: string;
+    snmpPort: number;
     snmpCommunityDecrypted?: string;
+    snmpWriteCommunityDecrypted?: string;
+    snmpTimeoutMs: number;
+    snmpRetries: number;
     timeoutMs: number;
     branchId?: number | null;
   } | null> {
     const { rows } = await query<any>(
       `SELECT host(management_ip) AS host, management_port AS port, cli_protocol,
-              cli_username, cli_password_encrypted, snmp_community_encrypted,
+              cli_username, cli_password_encrypted,
+              snmp_version, snmp_port, snmp_community_encrypted, snmp_write_community_encrypted,
+              snmp_timeout_ms, snmp_retries,
               connection_timeout, branch_id
          FROM olts WHERE id = $1`,
       [id]
@@ -241,7 +306,12 @@ export const oltRepository = {
       protocol: r.cli_protocol,
       username: r.cli_username,
       passwordDecrypted: decryptSecret(r.cli_password_encrypted),
+      snmpVersion: r.snmp_version || 'v2c',
+      snmpPort: r.snmp_port || 161,
       snmpCommunityDecrypted: r.snmp_community_encrypted ? decryptSecret(r.snmp_community_encrypted) : undefined,
+      snmpWriteCommunityDecrypted: r.snmp_write_community_encrypted ? decryptSecret(r.snmp_write_community_encrypted) : undefined,
+      snmpTimeoutMs: r.snmp_timeout_ms || 3000,
+      snmpRetries: r.snmp_retries ?? 2,
       timeoutMs: r.connection_timeout || 8000,
       branchId: r.branch_id,
     };
@@ -253,14 +323,19 @@ export const oltRepository = {
   async createOlt(
     input: {
       name: string;
+      description?: string;
       vendor?: string;
       model?: string;
       management_ip: string;
       management_port?: number;
       branch_id?: number | null;
+      snmp_enabled?: boolean;
       snmp_version?: string;
       snmp_port?: number;
       snmp_community?: string;
+      snmp_write_community?: string;
+      snmp_timeout_ms?: number;
+      snmp_retries?: number;
       cli_protocol?: 'telnet' | 'ssh';
       cli_username: string;
       cli_password: string;
@@ -278,25 +353,32 @@ export const oltRepository = {
 
     const cliPasswordEnc = encryptSecret(input.cli_password);
     const snmpCommunityEnc = input.snmp_community ? encryptSecret(input.snmp_community) : null;
+    const snmpWriteCommunityEnc = input.snmp_write_community ? encryptSecret(input.snmp_write_community) : null;
 
     const { rows } = await query<{ id: number }>(
       `INSERT INTO olts (
-         name, vendor, model, management_ip, management_port, branch_id,
-         snmp_version, snmp_port, snmp_community_encrypted, cli_protocol,
+         name, description, vendor, model, management_ip, management_port, branch_id,
+         snmp_enabled, snmp_version, snmp_port, snmp_community_encrypted, snmp_write_community_encrypted,
+         snmp_timeout_ms, snmp_retries, cli_protocol,
          cli_username, cli_password_encrypted, connection_timeout, polling_interval,
          enabled, optical_warning_threshold, optical_critical_threshold, created_by
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING id`,
       [
         input.name.trim(),
+        input.description?.trim() || null,
         input.vendor || 'Huawei',
         input.model || 'MA5683T',
         input.management_ip.trim(),
         input.management_port || 23,
         input.branch_id || (isBranchUser(actor) ? actor?.branchId : null),
+        input.snmp_enabled ?? true,
         input.snmp_version || 'v2c',
         input.snmp_port || 161,
         snmpCommunityEnc,
+        snmpWriteCommunityEnc,
+        input.snmp_timeout_ms || 3000,
+        input.snmp_retries ?? 2,
         input.cli_protocol || 'telnet',
         input.cli_username.trim(),
         cliPasswordEnc,
@@ -319,14 +401,19 @@ export const oltRepository = {
     id: number,
     input: Partial<{
       name: string;
+      description: string;
       vendor: string;
       model: string;
       management_ip: string;
       management_port: number;
       branch_id: number | null;
+      snmp_enabled: boolean;
       snmp_version: string;
       snmp_port: number;
       snmp_community: string;
+      snmp_write_community: string;
+      snmp_timeout_ms: number;
+      snmp_retries: number;
       cli_protocol: 'telnet' | 'ssh';
       cli_username: string;
       cli_password: string;
@@ -349,6 +436,10 @@ export const oltRepository = {
       fields.push(`name = $${idx++}`);
       values.push(input.name.trim());
     }
+    if (input.description !== undefined) {
+      fields.push(`description = $${idx++}`);
+      values.push(input.description ? input.description.trim() : null);
+    }
     if (input.vendor !== undefined) {
       fields.push(`vendor = $${idx++}`);
       values.push(input.vendor);
@@ -369,6 +460,10 @@ export const oltRepository = {
       fields.push(`branch_id = $${idx++}`);
       values.push(input.branch_id);
     }
+    if (input.snmp_enabled !== undefined) {
+      fields.push(`snmp_enabled = $${idx++}`);
+      values.push(input.snmp_enabled);
+    }
     if (input.snmp_version !== undefined) {
       fields.push(`snmp_version = $${idx++}`);
       values.push(input.snmp_version);
@@ -380,6 +475,18 @@ export const oltRepository = {
     if (input.snmp_community !== undefined && input.snmp_community.trim() && !input.snmp_community.includes('•')) {
       fields.push(`snmp_community_encrypted = $${idx++}`);
       values.push(encryptSecret(input.snmp_community));
+    }
+    if (input.snmp_write_community !== undefined && input.snmp_write_community.trim() && !input.snmp_write_community.includes('•')) {
+      fields.push(`snmp_write_community_encrypted = $${idx++}`);
+      values.push(encryptSecret(input.snmp_write_community));
+    }
+    if (input.snmp_timeout_ms !== undefined) {
+      fields.push(`snmp_timeout_ms = $${idx++}`);
+      values.push(input.snmp_timeout_ms);
+    }
+    if (input.snmp_retries !== undefined) {
+      fields.push(`snmp_retries = $${idx++}`);
+      values.push(input.snmp_retries);
     }
     if (input.cli_protocol !== undefined) {
       fields.push(`cli_protocol = $${idx++}`);
@@ -990,5 +1097,83 @@ export const oltRepository = {
          updated_at = NOW()`,
       [oltId, profileType, profileId, profileName, source]
     );
+  },
+
+  /**
+   * Get physical & logical interfaces with live traffic rates
+   */
+  async getInterfaces(oltId: number): Promise<any[]> {
+    const { rows } = await query(
+      `SELECT id, olt_id, if_index, if_name, if_descr, if_type, admin_status, oper_status,
+              speed_bps, mac_address, mtu, in_octets, out_octets, in_rate_bps, out_rate_bps,
+              in_errors, out_errors, in_discards, out_discards, last_change, updated_at
+         FROM olt_interfaces
+        WHERE olt_id = $1
+        ORDER BY if_index ASC`,
+      [oltId]
+    );
+    return rows.map((r: any) => ({
+      ...r,
+      speed_bps: Number(r.speed_bps || 0),
+      in_octets: Number(r.in_octets || 0),
+      out_octets: Number(r.out_octets || 0),
+      in_rate_bps: Number(r.in_rate_bps || 0),
+      out_rate_bps: Number(r.out_rate_bps || 0),
+      in_errors: Number(r.in_errors || 0),
+      out_errors: Number(r.out_errors || 0),
+      in_discards: Number(r.in_discards || 0),
+      out_discards: Number(r.out_discards || 0),
+      updated_at: r.updated_at ? new Date(r.updated_at).toISOString() : null,
+    }));
+  },
+
+  /**
+   * Get active and historical alarms for OLT
+   */
+  async getAlarms(oltId: number): Promise<any[]> {
+    const { rows } = await query(
+      `SELECT id, olt_id, alarm_id, severity, title, description, entity_type, entity_id, cleared, raised_at, cleared_at
+         FROM olt_alarms
+        WHERE olt_id = $1
+        ORDER BY raised_at DESC
+        LIMIT 100`,
+      [oltId]
+    );
+    return rows.map((r: any) => ({
+      ...r,
+      raised_at: new Date(r.raised_at).toISOString(),
+      cleared_at: r.cleared_at ? new Date(r.cleared_at).toISOString() : null,
+    }));
+  },
+
+  /**
+   * Get subscriber ONU optical readings with diagnostic thresholds
+   */
+  async getSubscriberOnuOptical(subscriberId: number): Promise<any | null> {
+    const association = await this.getCustomerOnuAssociation(subscriberId);
+    if (!association) return null;
+
+    const rx = association.last_rx_power;
+    const warn = association.optical_warning_threshold ?? -25;
+    const crit = association.optical_critical_threshold ?? -28;
+
+    let opticalStatus: 'optimal' | 'warning' | 'critical' | 'offline' = 'optimal';
+    if (association.run_state !== 'online' || rx === null) {
+      opticalStatus = 'offline';
+    } else if (rx <= crit) {
+      opticalStatus = 'critical';
+    } else if (rx <= warn) {
+      opticalStatus = 'warning';
+    } else {
+      opticalStatus = 'optimal';
+    }
+
+    return {
+      ...association,
+      optical_status: opticalStatus,
+      is_rx_power_available: rx !== null,
+      is_tx_power_available: association.last_tx_power !== null,
+      is_olt_rx_power_available: association.last_olt_rx_power !== null,
+    };
   },
 };

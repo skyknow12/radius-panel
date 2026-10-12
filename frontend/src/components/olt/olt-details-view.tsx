@@ -24,8 +24,22 @@ import {
   FileText,
   Signal,
   Cpu,
+  Wifi,
+  Thermometer,
+  ShieldAlert,
+  HardDrive,
+  Network,
 } from 'lucide-react';
-import type { OltItem, OnuItem, BoardInfo, DiscoveredOnt, OltProfileItem, OltOperationHistoryItem } from '@/types/olt';
+import type {
+  OltItem,
+  OnuItem,
+  BoardInfo,
+  DiscoveredOnt,
+  OltProfileItem,
+  OltOperationHistoryItem,
+  OltInterfaceItem,
+  OltAlarmItem,
+} from '@/types/olt';
 
 interface OltDetailsViewProps {
   olt: OltItem;
@@ -34,20 +48,42 @@ interface OltDetailsViewProps {
   currentUser?: any;
 }
 
+function formatBps(bps: number): string {
+  if (bps >= 1_000_000_000) return `${(bps / 1_000_000_000).toFixed(2)} Gbps`;
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(2)} Mbps`;
+  if (bps >= 1_000) return `${(bps / 1_000).toFixed(2)} Kbps`;
+  return `${bps} bps`;
+}
+
 export function OltDetailsView({
-  olt,
+  olt: initialOlt,
   onBack,
   onNavigateToProvision,
   currentUser,
 }: OltDetailsViewProps) {
+  const [olt, setOlt] = React.useState<OltItem>(initialOlt);
   const [activeTab, setActiveTab] = React.useState<
-    'overview' | 'boards' | 'ports' | 'onus' | 'discovery' | 'optical' | 'profiles' | 'service_ports' | 'sync' | 'history'
+    | 'overview'
+    | 'interfaces'
+    | 'optical'
+    | 'alarms'
+    | 'boards'
+    | 'ports'
+    | 'onus'
+    | 'discovery'
+    | 'profiles'
+    | 'service_ports'
+    | 'sync'
+    | 'history'
   >('overview');
 
   const [loading, setLoading] = React.useState(false);
   const [notice, setNotice] = React.useState<{ text: string; error?: boolean } | null>(null);
 
   // Tab Data States
+  const [telemetry, setTelemetry] = React.useState<any | null>(null);
+  const [interfaces, setInterfaces] = React.useState<OltInterfaceItem[]>([]);
+  const [alarms, setAlarms] = React.useState<OltAlarmItem[]>([]);
   const [boards, setBoards] = React.useState<BoardInfo[]>([]);
   const [onus, setOnus] = React.useState<OnuItem[]>([]);
   const [discoveredOnus, setDiscoveredOnus] = React.useState<DiscoveredOnt[]>([]);
@@ -55,7 +91,7 @@ export function OltDetailsView({
   const [history, setHistory] = React.useState<OltOperationHistoryItem[]>([]);
 
   // Action Loading States
-  const [testingCli, setTestingCli] = React.useState(false);
+  const [pollingSnmp, setPollingSnmp] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
   const [discovering, setDiscovering] = React.useState(false);
   const [inspectingOpticalOnuId, setInspectingOpticalOnuId] = React.useState<number | null>(null);
@@ -64,8 +100,7 @@ export function OltDetailsView({
   // Filters
   const [onuSearch, setOnuSearch] = React.useState('');
   const [onuRunStateFilter, setOnuRunStateFilter] = React.useState('all');
-  const [selectedSlot, setSelectedSlot] = React.useState<number>(0);
-  const [selectedPort, setSelectedPort] = React.useState<number>(0);
+  const [interfaceSearch, setInterfaceSearch] = React.useState('');
 
   const showMsg = (text: string, error = false) => {
     setNotice({ text, error });
@@ -76,6 +111,45 @@ export function OltDetailsView({
     if (typeof window === 'undefined') return {};
     const token = localStorage.getItem('radius_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  // Fetch telemetry
+  const fetchTelemetry = async () => {
+    try {
+      const res = await fetch(`/api/olts/${olt.id}/telemetry`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setTelemetry(json.data);
+      }
+    } catch {}
+  };
+
+  // Fetch interfaces
+  const fetchInterfaces = async () => {
+    try {
+      const res = await fetch(`/api/olts/${olt.id}/interfaces`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setInterfaces(json.data || []);
+      }
+    } catch {}
+  };
+
+  // Fetch alarms
+  const fetchAlarms = async () => {
+    try {
+      const res = await fetch(`/api/olts/${olt.id}/alarms`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setAlarms(json.data || []);
+      }
+    } catch {}
   };
 
   // Fetch registered ONUs for this OLT
@@ -138,6 +212,59 @@ export function OltDetailsView({
     } catch {}
   };
 
+  // Trigger SNMP Poll Now
+  const handlePollSnmpNow = async () => {
+    try {
+      setPollingSnmp(true);
+      const res = await fetch(`/api/olts/${olt.id}/poll-snmp`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showMsg(`SNMP poll completed in ${json.data?.pollDurationMs}ms`);
+        setTelemetry(json.data);
+        // Refresh OLT details
+        const oRes = await fetch(`/api/olts/${olt.id}`, { headers: getAuthHeaders() });
+        if (oRes.ok) {
+          const oJson = await oRes.json();
+          if (oJson.data) setOlt(oJson.data);
+        }
+        fetchInterfaces();
+        fetchAlarms();
+        fetchOnus();
+      } else {
+        showMsg(json.error?.message || 'SNMP polling failed', true);
+      }
+    } catch {
+      showMsg('Failed to trigger SNMP poll', true);
+    } finally {
+      setPollingSnmp(false);
+    }
+  };
+
+  // Synchronize OLT via CLI
+  const handleSyncOlt = async () => {
+    try {
+      setSyncing(true);
+      const res = await fetch(`/api/olts/${olt.id}/sync`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showMsg(json.data?.message || 'Sync completed successfully');
+        fetchOnus();
+      } else {
+        showMsg(`Sync failed: ${json.error?.message || 'Error'}`, true);
+      }
+    } catch {
+      showMsg('Failed to trigger synchronization', true);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // Run discovery
   const handleRunDiscovery = async () => {
     try {
@@ -159,57 +286,34 @@ export function OltDetailsView({
     }
   };
 
-  // Run Sync
-  const handleSyncOlt = async () => {
-    try {
-      setSyncing(true);
-      const res = await fetch(`/api/olts/${olt.id}/sync`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      });
-      const json = await res.json();
-      if (res.ok) {
-        showMsg(json.data?.message || 'Synchronization complete');
-        fetchOnus();
-        fetchHistory();
-      } else {
-        showMsg(json.error?.message || 'Sync failed', true);
-      }
-    } catch {
-      showMsg('Sync request failed', true);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Read Optical Info on single ONU
-  const handleReadOptical = async (onu: OnuItem) => {
+  // Sample optical power for specific ONU
+  const handleSampleOptical = async (onu: OnuItem) => {
     try {
       setInspectingOpticalOnuId(onu.id);
+      setOpticalResult(null);
       const res = await fetch(`/api/olts/${olt.id}/onus/${onu.id}/optical`, {
         headers: getAuthHeaders(),
       });
       const json = await res.json();
       if (res.ok) {
-        setOpticalResult(json.data);
-        showMsg(
-          json.data?.isAvailable
-            ? `Optical reading: Rx ${json.data.rxPower} dBm, Tx ${json.data.txPower} dBm`
-            : 'Optical reading unavailable (ONU may be offline)'
-        );
+        setOpticalResult({ onuId: onu.id, ...json.data });
+        showMsg(`Optical sampled: Rx ${json.data.rxPower} dBm`);
         fetchOnus();
       } else {
-        showMsg('Failed to query optical parameters', true);
+        showMsg(json.error?.message || 'Failed to query optical parameters', true);
       }
     } catch {
-      showMsg('Optical query failed', true);
+      showMsg('Error querying optical power', true);
     } finally {
       setInspectingOpticalOnuId(null);
     }
   };
 
   React.useEffect(() => {
+    fetchTelemetry();
     fetchOnus();
+    if (activeTab === 'interfaces') fetchInterfaces();
+    if (activeTab === 'alarms') fetchAlarms();
     if (activeTab === 'boards') fetchBoards();
     if (activeTab === 'discovery') handleRunDiscovery();
     if (activeTab === 'history') fetchHistory();
@@ -217,17 +321,23 @@ export function OltDetailsView({
   }, [activeTab]);
 
   const tabs = [
-    { key: 'overview', label: 'Overview', icon: Server },
+    { key: 'overview', label: 'Overview & Telemetry', icon: Server },
+    { key: 'interfaces', label: `Interfaces (${interfaces.length || '...'})`, icon: Network },
+    { key: 'optical', label: 'Optical Monitoring', icon: Signal },
+    { key: 'alarms', label: `Alarms (${alarms.length || olt.active_alarms_count || 0})`, icon: ShieldAlert },
     { key: 'boards', label: 'Boards', icon: Cpu },
     { key: 'ports', label: 'PON Ports', icon: Layers },
     { key: 'onus', label: `Registered ONUs (${onus.length})`, icon: Radio },
     { key: 'discovery', label: `ONU Discovery (${discoveredOnus.length})`, icon: Zap },
-    { key: 'optical', label: 'Optical Monitoring', icon: Signal },
     { key: 'profiles', label: 'Profiles', icon: Sliders },
     { key: 'service_ports', label: 'Service Ports', icon: Layers },
     { key: 'sync', label: 'Synchronization', icon: RefreshCw },
     { key: 'history', label: 'Operation History', icon: Clock },
   ] as const;
+
+  const isStale = telemetry?.isStale || olt.last_poll_status === 'error' || olt.last_poll_status === 'timeout';
+  const sysInfo = telemetry?.system || null;
+  const health = telemetry?.health || null;
 
   return (
     <div className="space-y-6">
@@ -284,14 +394,30 @@ export function OltDetailsView({
                   />
                   {olt.connection_status.toUpperCase()}
                 </span>
+
+                {isStale && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    STALE TELEMETRY
+                  </span>
+                )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {olt.vendor} {olt.model} • IP: <span className="font-mono text-foreground">{olt.management_ip}:{olt.management_port}</span> • Branch: {olt.branch_name || 'Organization Core'}
+                {olt.vendor} {olt.model} • IP: <span className="font-mono text-foreground">{olt.management_ip}:{olt.management_port}</span> • SNMP: {olt.snmp_version} (Port {olt.snmp_port}) • Branch: {olt.branch_name || 'Organization Core'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handlePollSnmpNow}
+              disabled={pollingSnmp}
+              className="px-3.5 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+              title="Poll SNMP MIB Telemetry Now"
+            >
+              <Wifi className={`w-3.5 h-3.5 ${pollingSnmp ? 'animate-spin' : ''}`} />
+              {pollingSnmp ? 'Polling...' : 'Poll SNMP Now'}
+            </button>
+
             <button
               onClick={handleSyncOlt}
               disabled={syncing}
@@ -336,96 +462,548 @@ export function OltDetailsView({
 
       {/* TAB CONTENT */}
 
-      {/* 1. OVERVIEW */}
+      {/* 1. OVERVIEW & TELEMETRY */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-card rounded-2xl border border-border p-5 space-y-4 shadow-sm md:col-span-2">
-            <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
-              <Server className="w-4 h-4 text-primary" />
-              Chassis Specifications & Firmware
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
-              <div className="p-3 rounded-xl bg-muted/40 border border-border">
-                <span className="text-[11px] text-muted-foreground block">Vendor & Model</span>
-                <span className="font-semibold text-foreground text-sm mt-0.5 block">{olt.vendor} {olt.model}</span>
+        <div className="space-y-6">
+          {/* Hardware Health Metrics Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* CPU */}
+            <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+              <div className="flex items-center justify-between text-muted-foreground mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">CPU Duty</span>
+                <Cpu className="w-4 h-4 text-primary" />
               </div>
-              <div className="p-3 rounded-xl bg-muted/40 border border-border">
-                <span className="text-[11px] text-muted-foreground block">Software Version</span>
-                <span className="font-mono text-foreground mt-0.5 block">{olt.software_version || 'MA5600V800R015C00'}</span>
+              {health?.isCpuSupported && health.cpuUtilization !== null ? (
+                <div>
+                  <div className="text-xl font-bold font-mono text-foreground">{health.cpuUtilization}%</div>
+                  <div className="w-full bg-muted rounded-full h-1.5 mt-2 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        health.cpuUtilization > 85 ? 'bg-rose-500' : health.cpuUtilization > 65 ? 'bg-amber-500' : 'bg-primary'
+                      }`}
+                      style={{ width: `${Math.min(health.cpuUtilization, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ) : olt.cpu_utilization !== null ? (
+                <div>
+                  <div className="text-xl font-bold font-mono text-foreground">{olt.cpu_utilization}%</div>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground italic mt-1">Not supported on this model</div>
+              )}
+            </div>
+
+            {/* Memory */}
+            <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+              <div className="flex items-center justify-between text-muted-foreground mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Memory Duty</span>
+                <HardDrive className="w-4 h-4 text-indigo-500" />
               </div>
-              <div className="p-3 rounded-xl bg-muted/40 border border-border">
-                <span className="text-[11px] text-muted-foreground block">Patch Level</span>
-                <span className="font-mono text-foreground mt-0.5 block">{olt.patch_version || 'SPC108 HP1019'}</span>
+              {health?.isMemorySupported && health.memoryUtilization !== null ? (
+                <div>
+                  <div className="text-xl font-bold font-mono text-foreground">{health.memoryUtilization}%</div>
+                  <div className="w-full bg-muted rounded-full h-1.5 mt-2 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        health.memoryUtilization > 85 ? 'bg-rose-500' : health.memoryUtilization > 65 ? 'bg-amber-500' : 'bg-indigo-500'
+                      }`}
+                      style={{ width: `${Math.min(health.memoryUtilization, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ) : olt.memory_utilization !== null ? (
+                <div>
+                  <div className="text-xl font-bold font-mono text-foreground">{olt.memory_utilization}%</div>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground italic mt-1">Not supported</div>
+              )}
+            </div>
+
+            {/* Temperature */}
+            <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+              <div className="flex items-center justify-between text-muted-foreground mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Temperature</span>
+                <Thermometer className="w-4 h-4 text-amber-500" />
               </div>
-              <div className="p-3 rounded-xl bg-muted/40 border border-border">
-                <span className="text-[11px] text-muted-foreground block">CLI Protocol & Port</span>
-                <span className="font-mono text-foreground uppercase mt-0.5 block">{olt.cli_protocol} / {olt.management_port}</span>
+              {health?.isTemperatureSupported && health.temperature !== null ? (
+                <div className="text-xl font-bold font-mono text-foreground">{health.temperature}°C</div>
+              ) : olt.temperature !== null ? (
+                <div className="text-xl font-bold font-mono text-foreground">{olt.temperature}°C</div>
+              ) : (
+                <div className="text-xs text-muted-foreground italic mt-1">Not supported</div>
+              )}
+            </div>
+
+            {/* Fans */}
+            <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+              <div className="flex items-center justify-between text-muted-foreground mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Fan Status</span>
+                <Activity className="w-4 h-4 text-emerald-500" />
               </div>
-              <div className="p-3 rounded-xl bg-muted/40 border border-border">
-                <span className="text-[11px] text-muted-foreground block">SNMP Version & Port</span>
-                <span className="font-mono text-foreground mt-0.5 block">{olt.snmp_version} / {olt.snmp_port}</span>
-              </div>
-              <div className="p-3 rounded-xl bg-muted/40 border border-border">
-                <span className="text-[11px] text-muted-foreground block">Command Timeout</span>
-                <span className="font-mono text-foreground mt-0.5 block">{olt.connection_timeout} ms</span>
+              <div className="text-sm font-bold text-foreground">
+                {health?.fansStatus || olt.fans_status || (health?.isFansSupported === false ? 'Not supported' : 'Normal')}
               </div>
             </div>
 
-            <div className="pt-3 border-t border-border">
-              <h4 className="text-xs font-bold text-foreground mb-2">Optical Alert Thresholds</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
-                  <span className="text-[11px] block font-semibold">Warning Threshold (Yellow)</span>
-                  <span className="text-base font-bold font-mono mt-0.5 block">{olt.optical_warning_threshold} dBm</span>
-                  <span className="text-[10px] opacity-80">Flags degrading fiber drop before service drops</span>
-                </div>
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400">
-                  <span className="text-[11px] block font-semibold">Critical Threshold (Red)</span>
-                  <span className="text-base font-bold font-mono mt-0.5 block">{olt.optical_critical_threshold} dBm</span>
-                  <span className="text-[10px] opacity-80">Severe attenuation requiring physical inspection</span>
-                </div>
+            {/* Power */}
+            <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+              <div className="flex items-center justify-between text-muted-foreground mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Power Status</span>
+                <Zap className="w-4 h-4 text-amber-500" />
+              </div>
+              <div className="text-sm font-bold text-foreground">
+                {health?.powerStatus || olt.power_status || (health?.isPowerSupported === false ? 'Not supported' : 'Normal')}
               </div>
             </div>
           </div>
 
-          <div className="bg-card rounded-2xl border border-border p-5 space-y-4 shadow-sm">
-            <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
-              <Activity className="w-4 h-4 text-emerald-500" />
-              Live Link Health Summary
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border text-xs">
-                <span className="text-muted-foreground">Total ONUs</span>
-                <span className="font-bold text-foreground text-sm">{onus.length}</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* System MIB Details */}
+            <div className="bg-card rounded-2xl border border-border p-5 space-y-4 shadow-sm md:col-span-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
+                  <Server className="w-4 h-4 text-primary" />
+                  Standard SNMP MIB-II System Group
+                </h3>
+                {isStale && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    Stale Since: {telemetry?.staleSince ? new Date(telemetry.staleSince).toLocaleTimeString() : 'Recent poll fail'}
+                  </span>
+                )}
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Online Optical ONUs</span>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
-                  {onus.filter((o) => o.run_state === 'online').length}
-                </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                  <span className="text-[11px] text-muted-foreground block">System Name (sysName)</span>
+                  <span className="font-semibold text-foreground mt-0.5 block truncate">
+                    {sysInfo?.sysName || olt.sys_name || olt.name}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                  <span className="text-[11px] text-muted-foreground block">Uptime (sysUpTime)</span>
+                  <span className="font-mono text-foreground font-semibold mt-0.5 block">
+                    {sysInfo?.sysUpTime || olt.sys_uptime || 'Unknown'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                  <span className="text-[11px] text-muted-foreground block">Location (sysLocation)</span>
+                  <span className="text-foreground mt-0.5 block truncate">
+                    {sysInfo?.sysLocation || olt.sys_location || 'Not set in device'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-muted/40 border border-border">
+                  <span className="text-[11px] text-muted-foreground block">Contact (sysContact)</span>
+                  <span className="text-foreground mt-0.5 block truncate">
+                    {sysInfo?.sysContact || olt.sys_contact || 'Not set in device'}
+                  </span>
+                </div>
+
+                <div className="sm:col-span-2 p-3 rounded-xl bg-muted/40 border border-border">
+                  <span className="text-[11px] text-muted-foreground block">System Description (sysDescr)</span>
+                  <p className="font-mono text-[11px] text-foreground mt-0.5 break-words">
+                    {sysInfo?.sysDescr || olt.sys_descr || `${olt.vendor} ${olt.model} Optical Line Termination Chassis`}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs">
-                <span className="text-rose-600 dark:text-rose-400 font-semibold">Offline ONUs</span>
-                <span className="font-bold text-rose-600 dark:text-rose-400 text-sm">
-                  {onus.filter((o) => o.run_state === 'offline').length}
-                </span>
+
+              {/* Optical Alert Thresholds */}
+              <div className="pt-3 border-t border-border">
+                <h4 className="text-xs font-bold text-foreground mb-2">Optical Margin Thresholds</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
+                    <span className="text-[11px] block font-semibold">Warning Threshold (Yellow)</span>
+                    <span className="text-base font-bold font-mono mt-0.5 block">{olt.optical_warning_threshold} dBm</span>
+                    <span className="text-[10px] opacity-80">Triggers pre-emptive fiber inspection alert</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400">
+                    <span className="text-[11px] block font-semibold">Critical Threshold (Red)</span>
+                    <span className="text-base font-bold font-mono mt-0.5 block">{olt.optical_critical_threshold} dBm</span>
+                    <span className="text-[10px] opacity-80">Severe optical attenuation below margin</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="pt-2 border-t border-border text-xs text-muted-foreground space-y-1">
-              <div>Last Sync: {olt.last_sync_at ? new Date(olt.last_sync_at).toLocaleString() : 'Never'}</div>
-              <div>Last Seen: {olt.last_seen_at ? new Date(olt.last_seen_at).toLocaleString() : 'Never'}</div>
-              {olt.last_error && (
-                <div className="text-rose-500 text-[11px] font-semibold mt-1">
-                  Alert: {olt.last_error}
+            {/* Quick Summary Card */}
+            <div className="bg-card rounded-2xl border border-border p-5 space-y-4 shadow-sm">
+              <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-500" />
+                Live Link Health Summary
+              </h3>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border text-xs">
+                  <span className="text-muted-foreground">Total ONUs</span>
+                  <span className="font-bold text-foreground text-sm">{onus.length || olt.registered_onus_count || 0}</span>
                 </div>
-              )}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Online Optical ONUs</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                    {onus.filter((o) => o.run_state === 'online').length || olt.online_onus_count || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs">
+                  <span className="text-rose-600 dark:text-rose-400 font-semibold">Offline ONUs</span>
+                  <span className="font-bold text-rose-600 dark:text-rose-400 text-sm">
+                    {onus.filter((o) => o.run_state === 'offline').length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold">Active Alarms</span>
+                  <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
+                    {alarms.length || olt.active_alarms_count || 0}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border text-xs text-muted-foreground space-y-1">
+                <div>Last Poll: {olt.last_poll_at ? new Date(olt.last_poll_at).toLocaleString() : 'Never'}</div>
+                <div>Last Seen: {olt.last_seen_at ? new Date(olt.last_seen_at).toLocaleString() : 'Never'}</div>
+                {olt.last_poll_error && (
+                  <div className="text-rose-500 text-[11px] font-semibold mt-1">
+                    Poll Error: {olt.last_poll_error}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. BOARDS */}
+      {/* 2. INTERFACES TAB */}
+      {activeTab === 'interfaces' && (
+        <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+          <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-foreground text-sm">Physical & Logical Interfaces (IF-MIB / IF-X-MIB)</h3>
+              <p className="text-[11px] text-muted-foreground">
+                64-bit high-capacity octet counters and live traffic rates calculated across poll intervals
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Filter interfaces..."
+                value={interfaceSearch}
+                onChange={(e) => setInterfaceSearch(e.target.value)}
+                className="px-3 py-1.5 rounded-xl bg-muted border border-border text-xs outline-none focus:ring-2 focus:ring-primary"
+              />
+              <button
+                onClick={fetchInterfaces}
+                className="p-1.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground text-xs"
+                title="Refresh interfaces"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
+                  <th className="py-3 px-4">Index</th>
+                  <th className="py-3 px-4">Interface Name</th>
+                  <th className="py-3 px-4">Type</th>
+                  <th className="py-3 px-4">Admin / Oper Status</th>
+                  <th className="py-3 px-4">Inbound Rate (bps)</th>
+                  <th className="py-3 px-4">Outbound Rate (bps)</th>
+                  <th className="py-3 px-4">Errors / Discards</th>
+                  <th className="py-3 px-4">Speed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {interfaces.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                      <Network className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                      <p className="font-semibold text-foreground text-sm">No interfaces loaded yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Click "Poll SNMP Now" to query the IF-MIB interface table from this OLT.
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  interfaces
+                    .filter(
+                      (i) =>
+                        !interfaceSearch.trim() ||
+                        i.if_name.toLowerCase().includes(interfaceSearch.toLowerCase()) ||
+                        i.if_descr.toLowerCase().includes(interfaceSearch.toLowerCase())
+                    )
+                    .map((iface) => {
+                      const isUp = iface.oper_status === 'up';
+                      return (
+                        <tr key={iface.id || iface.if_index} className="hover:bg-muted/40">
+                          <td className="py-3 px-4 font-mono text-muted-foreground">{iface.if_index}</td>
+                          <td className="py-3 px-4 font-semibold text-foreground">
+                            <div>{iface.if_name}</div>
+                            {iface.if_descr && iface.if_descr !== iface.if_name && (
+                              <div className="text-[10px] text-muted-foreground">{iface.if_descr}</div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground font-mono">{iface.if_type}</td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isUp
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                              }`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${isUp ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                              {iface.oper_status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                            {formatBps(iface.in_rate_bps || 0)}
+                          </td>
+                          <td className="py-3 px-4 font-mono font-semibold text-sky-600 dark:text-sky-400">
+                            {formatBps(iface.out_rate_bps || 0)}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-muted-foreground">
+                            {iface.in_errors + iface.out_errors > 0 ? (
+                              <span className="text-rose-500 font-bold">{iface.in_errors + iface.out_errors} err</span>
+                            ) : (
+                              '0 err'
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-muted-foreground">
+                            {iface.speed_bps > 0 ? formatBps(iface.speed_bps) : 'N/A'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 3. OPTICAL MONITORING TAB */}
+      {activeTab === 'optical' && (
+        <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm space-y-4 p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
+                <Signal className="w-4 h-4 text-primary" />
+                GPON Optical Signal Telemetry (SNMP hwGponOntOpticalInfoTable)
+              </h3>
+              <p className="text-[11px] text-muted-foreground">
+                Live transceiver optical power received by ONT, transmit power, and OLT receiver metrics in 0.01 dBm precision
+              </p>
+            </div>
+
+            <button
+              onClick={handlePollSnmpNow}
+              disabled={pollingSnmp}
+              className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${pollingSnmp ? 'animate-spin' : ''}`} />
+              Poll Telemetry Now
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
+              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 block">Optimal Signal Margin</span>
+              <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
+                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power >= olt.optical_warning_threshold).length}
+              </div>
+              <span className="text-[10px] text-muted-foreground">Power ≥ {olt.optical_warning_threshold} dBm</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+              <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 block">Warning Signal Attenuation</span>
+              <div className="text-xl font-bold font-mono text-amber-600 dark:text-amber-400 mt-1">
+                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power < olt.optical_warning_threshold && o.last_rx_power >= olt.optical_critical_threshold).length}
+              </div>
+              <span className="text-[10px] text-muted-foreground">Between {olt.optical_warning_threshold} and {olt.optical_critical_threshold} dBm</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs">
+              <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 block">Critical Optical Alarm</span>
+              <div className="text-xl font-bold font-mono text-rose-600 dark:text-rose-400 mt-1">
+                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power < olt.optical_critical_threshold).length}
+              </div>
+              <span className="text-[10px] text-muted-foreground">Power &lt; {olt.optical_critical_threshold} dBm</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto pt-2">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
+                  <th className="py-3 px-4">ONT Location</th>
+                  <th className="py-3 px-4">Serial Number</th>
+                  <th className="py-3 px-4">Subscriber</th>
+                  <th className="py-3 px-4">Run State</th>
+                  <th className="py-3 px-4">ONT Rx Power</th>
+                  <th className="py-3 px-4">ONT Tx Power</th>
+                  <th className="py-3 px-4">OLT Rx Power</th>
+                  <th className="py-3 px-4">Freshness</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {onus.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-muted-foreground">
+                      No ONUs registered on this OLT chassis.
+                    </td>
+                  </tr>
+                ) : (
+                  onus.map((onu) => {
+                    const rx = onu.last_rx_power;
+                    const isOnline = onu.run_state === 'online';
+                    const isWarning = rx !== null && rx < olt.optical_warning_threshold && rx >= olt.optical_critical_threshold;
+                    const isCritical = rx !== null && rx < olt.optical_critical_threshold;
+
+                    return (
+                      <tr key={onu.id} className="hover:bg-muted/40">
+                        <td className="py-3 px-4 font-mono">
+                          {onu.slot}/{onu.pon_port}:{onu.ont_id}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-foreground">{onu.serial_number}</td>
+                        <td className="py-3 px-4 text-foreground">
+                          {onu.customer_username ? (
+                            <span className="font-semibold text-primary">{onu.customer_username}</span>
+                          ) : (
+                            <span className="text-muted-foreground italic">Unlinked</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isOnline
+                                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                            }`}
+                          >
+                            {onu.run_state.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold">
+                          {rx !== null ? (
+                            <span className={isCritical ? 'text-rose-500' : isWarning ? 'text-amber-500' : 'text-emerald-500'}>
+                              {rx} dBm
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">N/A</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">
+                          {onu.last_tx_power !== null ? `${onu.last_tx_power} dBm` : 'N/A'}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">
+                          {onu.last_olt_rx_power !== null ? `${onu.last_olt_rx_power} dBm` : 'N/A'}
+                        </td>
+                        <td className="py-3 px-4 text-[10px] text-muted-foreground">
+                          {onu.last_optical_reading_at ? (
+                            <span className="px-1.5 py-0.5 rounded bg-muted border border-border">
+                              {new Date(onu.last_optical_reading_at).toLocaleTimeString()}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground italic">Pending</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 4. ALARMS TAB */}
+      {activeTab === 'alarms' && (
+        <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+          <div className="p-4 border-b border-border flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-rose-500" />
+                Active & Logged Hardware Alarms (SNMP hwAlarmActiveTable)
+              </h3>
+              <p className="text-[11px] text-muted-foreground">Faults, link drops, power fluctuations, and transceiver alarms</p>
+            </div>
+
+            <button
+              onClick={fetchAlarms}
+              className="p-1.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground text-xs"
+              title="Refresh Alarms"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
+                  <th className="py-3 px-4">Severity</th>
+                  <th className="py-3 px-4">Alarm ID</th>
+                  <th className="py-3 px-4">Title</th>
+                  <th className="py-3 px-4">Description</th>
+                  <th className="py-3 px-4">Raised At</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {alarms.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-10 text-center text-muted-foreground">
+                      <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500 opacity-60" />
+                      <p className="font-semibold text-foreground text-sm">No active alarms</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">All hardware boards and PON ports operating normally.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  alarms.map((alarm) => {
+                    const isCrit = alarm.severity === 'critical';
+                    const isMaj = alarm.severity === 'major';
+                    const isMin = alarm.severity === 'minor';
+
+                    return (
+                      <tr key={alarm.id || alarm.alarm_id} className="hover:bg-muted/40">
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isCrit
+                                ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                                : isMaj
+                                ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20'
+                                : isMin
+                                ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'
+                            }`}
+                          >
+                            {alarm.severity.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">{alarm.alarm_id}</td>
+                        <td className="py-3 px-4 font-bold text-foreground">{alarm.title}</td>
+                        <td className="py-3 px-4 text-muted-foreground">{alarm.description}</td>
+                        <td className="py-3 px-4 font-mono text-muted-foreground">
+                          {new Date(alarm.raised_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 5. BOARDS TAB */}
       {activeTab === 'boards' && (
         <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
           <div className="p-4 border-b border-border flex items-center justify-between">
@@ -450,47 +1028,27 @@ export function OltDetailsView({
                   <th className="py-3 px-4">Board Name</th>
                   <th className="py-3 px-4">Board Function</th>
                   <th className="py-3 px-4">Operational Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {boards.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                      Click "Query Hardware" to retrieve real-time slot inventory from OLT.
+                    <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                      Click &quot;Query Hardware&quot; to retrieve real-time slot inventory from OLT.
                     </td>
                   </tr>
                 ) : (
                   boards.map((b) => (
                     <tr key={b.slot} className="hover:bg-muted/30">
                       <td className="py-3 px-4 font-mono font-bold text-foreground">Slot {b.slot}</td>
-                      <td className="py-3 px-4 font-bold text-foreground">{b.boardName}</td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${
-                            b.isGpon
-                              ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
-                              : b.isControl
-                              ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                              : 'bg-muted text-muted-foreground'
-                          }`}
-                        >
-                          {b.isGpon ? 'GPON 16-Port Service' : b.isControl ? (b.isStandby ? 'Standby SCUN' : 'Active SCUN') : 'Uplink / Other'}
-                        </span>
+                      <td className="py-3 px-4 font-bold text-primary">{b.boardName}</td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {b.isGpon ? '16-Port GPON Service Board' : b.isControl ? 'Main Control / Switch Unit' : 'Uplink Interface'}
                       </td>
-                      <td className="py-3 px-4 font-semibold text-emerald-500">{b.status}</td>
-                      <td className="py-3 px-4 text-right">
-                        {b.isGpon && (
-                          <button
-                            onClick={() => {
-                              setSelectedSlot(b.slot);
-                              setActiveTab('onus');
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground font-semibold text-[11px] transition-colors"
-                          >
-                            View ONUs
-                          </button>
-                        )}
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                          {b.status.toUpperCase()}
+                        </span>
                       </td>
                     </tr>
                   ))
@@ -501,258 +1059,106 @@ export function OltDetailsView({
         </div>
       )}
 
-      {/* 3. PON PORTS */}
+      {/* 6. PON PORTS TAB */}
       {activeTab === 'ports' && (
         <div className="bg-card rounded-2xl border border-border p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-foreground text-sm">GPON PON Ports Matrix</h3>
-              <p className="text-[11px] text-muted-foreground">Select a PON port to inspect registered optical subscribers or trigger discovery</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">Slot:</span>
-              <select
-                value={selectedSlot}
-                onChange={(e) => setSelectedSlot(Number(e.target.value))}
-                className="px-2.5 py-1.5 rounded-xl bg-card border border-border font-semibold text-xs"
-              >
-                {[0, 2, 3, 5].map((s) => (
-                  <option key={s} value={s}>Slot {s} (H805GPFD)</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <h3 className="font-bold text-foreground text-sm">Chassis PON Port Matrix</h3>
+            <p className="text-[11px] text-muted-foreground">Select a PON port to inspect registered optical subscribers or trigger discovery</p>
           </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3 pt-2">
-            {Array.from({ length: 16 }, (_, p) => {
-              const count = onus.filter((o) => o.slot === selectedSlot && o.pon_port === p).length;
-              return (
-                <div
-                  key={p}
-                  onClick={() => {
-                    setSelectedPort(p);
-                    setActiveTab('onus');
-                  }}
-                  className="p-3 rounded-xl bg-muted/40 hover:bg-primary/10 hover:border-primary/30 border border-border cursor-pointer transition-all text-center group"
-                >
-                  <span className="text-[11px] text-muted-foreground block font-mono">Port {p}</span>
-                  <span className="text-lg font-bold text-foreground group-hover:text-primary transition-colors block mt-1">
-                    {count}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">ONUs</span>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3">
+            {Array.from({ length: 16 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="p-3 rounded-xl bg-muted/40 border border-border text-center hover:border-primary cursor-pointer transition-all"
+              >
+                <div className="text-[11px] font-bold text-foreground">Port {idx}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">GPON SFP</div>
+                <div className="mt-2 text-[10px] font-bold text-emerald-500">Active</div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* 4. REGISTERED ONUS */}
+      {/* 7. REGISTERED ONUS */}
       {activeTab === 'onus' && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="relative flex-1 min-w-[240px] max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+          <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-foreground text-sm">Provisioned ONT Subscriber Terminals</h3>
+              <p className="text-[11px] text-muted-foreground">Manage authorized serial numbers and inspect optical metrics</p>
+            </div>
+            <div className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder="Search registered ONUs by SN, username, desc..."
+                placeholder="Search serial or username..."
                 value={onuSearch}
                 onChange={(e) => setOnuSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none"
+                className="px-3 py-1.5 rounded-xl bg-muted border border-border text-xs outline-none focus:ring-2 focus:ring-primary"
               />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <select
-                value={onuRunStateFilter}
-                onChange={(e) => setOnuRunStateFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-card border border-border text-xs font-semibold"
-              >
-                <option value="all">All States</option>
-                <option value="online">Online</option>
-                <option value="offline">Offline</option>
-                <option value="missing">Missing</option>
-              </select>
-
               <button
                 onClick={fetchOnus}
-                className="p-2 rounded-xl bg-card border border-border hover:bg-muted text-foreground transition-all"
+                className="p-1.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground text-xs"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
-
-          <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
-                    <th className="py-3 px-4">Serial Number</th>
-                    <th className="py-3 px-4">Location (F/S/P:ID)</th>
-                    <th className="py-3 px-4">Associated Customer</th>
-                    <th className="py-3 px-4">Run State</th>
-                    <th className="py-3 px-4">Rx Power (dBm)</th>
-                    <th className="py-3 px-4">Last Event</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {onus.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-muted-foreground">
-                        No registered ONUs matching query.
-                      </td>
-                    </tr>
-                  ) : (
-                    onus.map((onu) => {
-                      const isOnline = onu.run_state === 'online';
-                      const isInspecting = inspectingOpticalOnuId === onu.id;
-                      const rxPower = onu.last_rx_power;
-
-                      let rxColorClass = 'text-muted-foreground';
-                      if (rxPower !== null && rxPower !== undefined) {
-                        if (rxPower >= olt.optical_warning_threshold) {
-                          rxColorClass = 'text-emerald-500 font-bold';
-                        } else if (rxPower >= olt.optical_critical_threshold) {
-                          rxColorClass = 'text-amber-500 font-bold';
-                        } else {
-                          rxColorClass = 'text-rose-500 font-bold';
-                        }
-                      }
-
-                      return (
-                        <tr key={onu.id} className="hover:bg-muted/30">
-                          <td className="py-3 px-4 font-mono font-bold text-foreground">
-                            {onu.serial_number}
-                          </td>
-                          <td className="py-3 px-4 font-mono text-muted-foreground">
-                            {onu.frame}/{onu.slot}/{onu.pon_port}:{onu.ont_id}
-                          </td>
-                          <td className="py-3 px-4">
-                            {onu.customer_username ? (
-                              <div>
-                                <span className="font-bold text-foreground block">{onu.customer_username}</span>
-                                <span className="text-[11px] text-muted-foreground">{onu.customer_name}</span>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground italic">Unassigned</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isOnline
-                                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                              }`}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-rose-400'}`} />
-                              {onu.run_state.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono">
-                            <span className={rxColorClass}>
-                              {rxPower !== null && rxPower !== undefined ? `${rxPower} dBm` : '—'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground text-[11px]">
-                            {onu.last_down_cause ? (
-                              <span className="text-rose-400 font-medium">Down: {onu.last_down_cause}</span>
-                            ) : onu.last_up_time ? (
-                              <span>Up: {new Date(onu.last_up_time).toLocaleString()}</span>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => handleReadOptical(onu)}
-                              disabled={isInspecting}
-                              className="px-2.5 py-1 rounded-lg bg-muted hover:bg-primary hover:text-primary-foreground font-semibold text-[11px] transition-colors inline-flex items-center gap-1"
-                              title="Read Live Optical Power"
-                            >
-                              <Signal className={`w-3 h-3 ${isInspecting ? 'animate-spin' : ''}`} />
-                              Optical
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 5. ONU DISCOVERY (AUTOFIND) */}
-      {activeTab === 'discovery' && (
-        <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-card border border-border flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-foreground text-sm">Unregistered ONU Discovery (Autofind)</h3>
-              <p className="text-[11px] text-muted-foreground">Scans GPON ports for newly plugged, unprovisioned ONUs</p>
-            </div>
-            <button
-              onClick={handleRunDiscovery}
-              disabled={discovering}
-              className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-primary/20"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${discovering ? 'animate-spin' : ''}`} />
-              {discovering ? 'Scanning OLT...' : 'DISCOVER NEW ONUs'}
-            </button>
-          </div>
-
-          <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
-                  <th className="py-3 px-4">Discovered Serial Number</th>
-                  <th className="py-3 px-4">Location (F/S/P)</th>
-                  <th className="py-3 px-4">Vendor ID</th>
-                  <th className="py-3 px-4">Equipment ID / Model</th>
-                  <th className="py-3 px-4">Discovery Timestamp</th>
-                  <th className="py-3 px-4 text-right">Action</th>
+                  <th className="py-3 px-4">ONT Location</th>
+                  <th className="py-3 px-4">Serial Number</th>
+                  <th className="py-3 px-4">Subscriber</th>
+                  <th className="py-3 px-4">Run State</th>
+                  <th className="py-3 px-4">Rx Power</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {discoveredOnus.length === 0 ? (
+                {onus.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-muted-foreground">
-                      <CheckCircle2 className="w-8 h-8 text-emerald-500/50 mx-auto mb-2" />
-                      <p className="font-semibold text-foreground text-sm">No unregistered ONUs currently detected.</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        All physically connected optical transceivers are registered or no new devices are plugged in.
-                      </p>
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                      No ONUs registered yet.
                     </td>
                   </tr>
                 ) : (
-                  discoveredOnus.map((d) => (
-                    <tr key={d.serialNumber} className="hover:bg-muted/30">
-                      <td className="py-3.5 px-4 font-mono font-bold text-foreground text-sm">
-                        {d.serialNumber}
+                  onus.map((onu) => (
+                    <tr key={onu.id} className="hover:bg-muted/40">
+                      <td className="py-3 px-4 font-mono">
+                        {onu.slot}/{onu.pon_port}:{onu.ont_id}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-muted-foreground">
-                        {d.frame}/{d.slot}/{d.ponPort}
+                      <td className="py-3 px-4 font-mono font-bold text-foreground">{onu.serial_number}</td>
+                      <td className="py-3 px-4 text-foreground">
+                        {onu.customer_username ? (
+                          <span className="font-semibold text-primary">{onu.customer_username}</span>
+                        ) : (
+                          <span className="text-muted-foreground italic">Unlinked</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-foreground">{d.vendorId || 'Huawei'}</td>
-                      <td className="py-3.5 px-4 text-muted-foreground">{d.equipmentId || 'EchoLife ONT'}</td>
-                      <td className="py-3.5 px-4 text-muted-foreground text-[11px]">{d.discoveryTime || 'Just now'}</td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() =>
-                            onNavigateToProvision({
-                              oltId: olt.id,
-                              slot: d.slot,
-                              port: d.ponPort,
-                              sn: d.serialNumber,
-                            })
-                          }
-                          className="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-all shadow-sm"
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            onu.run_state === 'online'
+                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                          }`}
                         >
-                          Register This ONU
+                          {onu.run_state.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold">
+                        {onu.last_rx_power !== null ? `${onu.last_rx_power} dBm` : 'N/A'}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => handleSampleOptical(onu)}
+                          disabled={inspectingOpticalOnuId === onu.id}
+                          className="px-2.5 py-1 rounded-lg bg-muted hover:bg-primary hover:text-primary-foreground text-xs font-semibold"
+                        >
+                          {inspectingOpticalOnuId === onu.id ? 'Sampling...' : 'Sample Optical'}
                         </button>
                       </td>
                     </tr>
@@ -764,91 +1170,100 @@ export function OltDetailsView({
         </div>
       )}
 
-      {/* 6. OPTICAL MONITORING */}
-      {activeTab === 'optical' && (
-        <div className="bg-card rounded-2xl border border-border p-6 space-y-6 shadow-sm">
-          <div>
-            <h3 className="font-bold text-foreground text-sm">Optical Link Power Monitoring</h3>
-            <p className="text-[11px] text-muted-foreground">
-              Real-time received signal levels (Rx dBm) with configurable attenuation thresholds
-            </p>
+      {/* 8. ONU DISCOVERY */}
+      {activeTab === 'discovery' && (
+        <div className="bg-card rounded-2xl border border-border p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-foreground text-sm">Autofind Unregistered ONUs</h3>
+              <p className="text-[11px] text-muted-foreground">Scans GPON transceiver ports for newly attached optical subscriber terminals</p>
+            </div>
+            <button
+              onClick={handleRunDiscovery}
+              disabled={discovering}
+              className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${discovering ? 'animate-spin' : ''}`} />
+              {discovering ? 'Scanning...' : 'Trigger Autofind'}
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 block">Good Quality (-14 to {olt.optical_warning_threshold} dBm)</span>
-              <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 block mt-1">
-                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power !== undefined && o.last_rx_power >= olt.optical_warning_threshold).length}
-              </span>
-              <span className="text-[10px] text-muted-foreground">Optimal optical margin</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
-              <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 block">Warning Range ({olt.optical_warning_threshold} to {olt.optical_critical_threshold} dBm)</span>
-              <span className="text-2xl font-bold text-amber-600 dark:text-amber-400 block mt-1">
-                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power !== undefined && o.last_rx_power < olt.optical_warning_threshold && o.last_rx_power >= olt.optical_critical_threshold).length}
-              </span>
-              <span className="text-[10px] text-muted-foreground">Elevated attenuation</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20">
-              <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 block">Critical Alarm (&lt; {olt.optical_critical_threshold} dBm)</span>
-              <span className="text-2xl font-bold text-rose-600 dark:text-rose-400 block mt-1">
-                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power !== undefined && o.last_rx_power < olt.optical_critical_threshold).length}
-              </span>
-              <span className="text-[10px] text-muted-foreground">Severe degradation</span>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
+                  <th className="py-3 px-4">Slot/Port</th>
+                  <th className="py-3 px-4">Serial Number</th>
+                  <th className="py-3 px-4">Vendor ID</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {discoveredOnus.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                      No unprovisioned ONUs broadcasting on splitters.
+                    </td>
+                  </tr>
+                ) : (
+                  discoveredOnus.map((d, idx) => (
+                    <tr key={idx} className="hover:bg-muted/40">
+                      <td className="py-3 px-4 font-mono">
+                        {d.slot}/{d.ponPort}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-foreground">{d.serialNumber}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{d.vendorId || 'Huawei'}</td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => onNavigateToProvision({ oltId: olt.id, slot: d.slot, port: d.ponPort, sn: d.serialNumber })}
+                          className="px-3 py-1 rounded-lg bg-primary text-primary-foreground font-semibold text-xs"
+                        >
+                          Register Now
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* 7. PROFILES */}
+      {/* 9. PROFILES */}
       {activeTab === 'profiles' && (
         <div className="bg-card rounded-2xl border border-border p-6 space-y-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-foreground text-sm">Line & Service Profiles Catalog</h3>
-              <p className="text-[11px] text-muted-foreground">Verified OMCI profiles registered on this OLT</p>
-            </div>
+          <div>
+            <h3 className="font-bold text-foreground text-sm">Line & Service Profiles Catalog</h3>
+            <p className="text-[11px] text-muted-foreground">Verified OMCI profiles registered on this OLT</p>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="border border-border rounded-xl p-4 bg-muted/20">
               <h4 className="font-bold text-foreground text-xs mb-3 flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-primary" />
-                Line Profiles (T-CONT & GEM Port)
+                Line Profiles
               </h4>
-              <div className="space-y-2">
-                <div className="p-2.5 rounded-lg bg-card border border-border flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-bold text-foreground block">line-profile-2</span>
-                    <span className="text-[11px] text-muted-foreground">Profile ID: 2 (OMCI T-CONT GEM:10)</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 font-bold">Verified</span>
-                </div>
+              <div className="p-2.5 rounded-lg bg-card border border-border text-xs">
+                <span className="font-bold text-foreground block">line-profile-2</span>
+                <span className="text-[11px] text-muted-foreground">Profile ID: 2 (OMCI T-CONT GEM:10)</span>
               </div>
             </div>
 
             <div className="border border-border rounded-xl p-4 bg-muted/20">
               <h4 className="font-bold text-foreground text-xs mb-3 flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-indigo-500" />
-                Service Profiles (Ethernet & VLAN)
+                Service Profiles
               </h4>
-              <div className="space-y-2">
-                <div className="p-2.5 rounded-lg bg-card border border-border flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-bold text-foreground block">srv-profile-2</span>
-                    <span className="text-[11px] text-muted-foreground">Profile ID: 2 (GigabitEthernet Multi-service)</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 font-bold">Verified</span>
-                </div>
+              <div className="p-2.5 rounded-lg bg-card border border-border text-xs">
+                <span className="font-bold text-foreground block">srv-profile-2</span>
+                <span className="text-[11px] text-muted-foreground">Profile ID: 2 (GigabitEthernet Multi-service)</span>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 8. SERVICE PORTS */}
+      {/* 10. SERVICE PORTS */}
       {activeTab === 'service_ports' && (
         <div className="bg-card rounded-2xl border border-border p-6 shadow-sm space-y-4">
           <div>
@@ -861,7 +1276,7 @@ export function OltDetailsView({
         </div>
       )}
 
-      {/* 9. SYNCHRONIZATION */}
+      {/* 11. SYNCHRONIZATION */}
       {activeTab === 'sync' && (
         <div className="bg-card rounded-2xl border border-border p-6 space-y-6 shadow-sm">
           <div>
@@ -875,7 +1290,7 @@ export function OltDetailsView({
             <div>
               <span className="font-bold text-foreground block text-sm">Full Chassis Sync</span>
               <span className="text-xs text-muted-foreground">
-                Enumerates slots [0, 2, 3, 5], reads all 16 ports per slot, updates statuses without overwriting manual customer links.
+                Enumerates slots, reads all ports, and updates ONU statuses without overwriting manual customer links.
               </span>
             </div>
             <button
@@ -890,7 +1305,7 @@ export function OltDetailsView({
         </div>
       )}
 
-      {/* 10. OPERATION HISTORY */}
+      {/* 12. OPERATION HISTORY */}
       {activeTab === 'history' && (
         <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
           <div className="p-4 border-b border-border">

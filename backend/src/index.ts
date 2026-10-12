@@ -11,6 +11,7 @@ import { runMigrations } from './db/migrate';
 import { authService } from './services/auth.service';
 import { userManagementRepository } from './repositories/user-management.repository';
 import { autoExpiryService } from './services/auto-expiry.service';
+import { oltPollerService } from './services/snmp';
 import { apiRouter } from './routes/api.routes';
 import { errorHandler } from './middleware/error.middleware';
 
@@ -83,11 +84,13 @@ async function bootstrap() {
   const server = app.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, `RADIUS PRO Backend listening on http://0.0.0.0:${config.PORT}`);
     autoExpiryService.start();
+    oltPollerService.startScheduler();
   });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down gracefully...');
     autoExpiryService.stop();
+    oltPollerService.stopScheduler();
     server.close(() => {
       logger.info('HTTP server closed');
       process.exit(0);

@@ -18,8 +18,17 @@ import {
   ChevronRight,
   ShieldAlert,
   Zap,
+  Cpu,
+  Thermometer,
+  Wifi,
+  Check,
 } from 'lucide-react';
-import type { OltItem } from '@/types/olt';
+import {
+  type OltItem,
+  type OltVendor,
+  OLT_VENDORS,
+  KNOWN_VENDOR_MODELS,
+} from '@/types/olt';
 
 interface OltInventoryViewProps {
   onSelectOlt: (olt: OltItem) => void;
@@ -37,7 +46,9 @@ export function OltInventoryView({
   const [olts, setOlts] = React.useState<OltItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
-  const [testingId, setTestingId] = React.useState<number | null>(null);
+  const [testingCliId, setTestingCliId] = React.useState<number | null>(null);
+  const [testingSnmpId, setTestingSnmpId] = React.useState<number | null>(null);
+  const [pollingSnmpId, setPollingSnmpId] = React.useState<number | null>(null);
   const [syncingId, setSyncingId] = React.useState<number | null>(null);
   const [notice, setNotice] = React.useState<{ text: string; error?: boolean } | null>(null);
 
@@ -46,19 +57,53 @@ export function OltInventoryView({
   const [editingOlt, setEditingOlt] = React.useState<OltItem | null>(null);
   const [deletingOlt, setDeletingOlt] = React.useState<OltItem | null>(null);
 
-  // Form states
+  // Form states - General
   const [formName, setFormName] = React.useState('');
-  const [formVendor, setFormVendor] = React.useState('Huawei');
-  const [formModel, setFormModel] = React.useState('MA5683T');
+  const [formDescription, setFormDescription] = React.useState('');
+  const [formVendor, setFormVendor] = React.useState<OltVendor>('Huawei');
+  const [formModelSelect, setFormModelSelect] = React.useState('MA5683T');
+  const [formCustomModel, setFormCustomModel] = React.useState('');
   const [formIp, setFormIp] = React.useState('');
   const [formPort, setFormPort] = React.useState('23');
+
+  // Form states - CLI
   const [formProtocol, setFormProtocol] = React.useState<'telnet' | 'ssh'>('telnet');
   const [formUsername, setFormUsername] = React.useState('root');
   const [formPassword, setFormPassword] = React.useState('');
   const [formTimeout, setFormTimeout] = React.useState('5000');
+
+  // Form states - SNMP
+  const [formSnmpEnabled, setFormSnmpEnabled] = React.useState(true);
+  const [formSnmpVersion, setFormSnmpVersion] = React.useState<'v1' | 'v2c' | 'v3'>('v2c');
+  const [formSnmpPort, setFormSnmpPort] = React.useState('161');
+  const [formSnmpCommunity, setFormSnmpCommunity] = React.useState('public');
+  const [formSnmpWriteCommunity, setFormSnmpWriteCommunity] = React.useState('');
+  const [formSnmpTimeout, setFormSnmpTimeout] = React.useState('3000');
+  const [formSnmpRetries, setFormSnmpRetries] = React.useState('2');
+  const [formPollingInterval, setFormPollingInterval] = React.useState('300');
+
+  // SNMP v3 specific fields
+  const [formV3Username, setFormV3Username] = React.useState('');
+  const [formV3SecLevel, setFormV3SecLevel] = React.useState<'noAuthNoPriv' | 'authNoPriv' | 'authPriv'>('authPriv');
+  const [formV3AuthProto, setFormV3AuthProto] = React.useState<'MD5' | 'SHA' | 'SHA256'>('SHA256');
+  const [formV3AuthPass, setFormV3AuthPass] = React.useState('');
+  const [formV3PrivProto, setFormV3PrivProto] = React.useState<'DES' | 'AES' | 'AES128'>('AES128');
+  const [formV3PrivPass, setFormV3PrivPass] = React.useState('');
+
+  // Thresholds
   const [formWarningThreshold, setFormWarningThreshold] = React.useState('-25.0');
   const [formCriticalThreshold, setFormCriticalThreshold] = React.useState('-28.0');
+
+  // Submitting and connection test states inside modal
   const [formSubmitting, setFormSubmitting] = React.useState(false);
+  const [modalTestingSnmp, setModalTestingSnmp] = React.useState(false);
+  const [modalSnmpResult, setModalSnmpResult] = React.useState<{
+    success: boolean;
+    message: string;
+    sysDescr?: string;
+    sysUpTime?: string;
+    rttMs?: number;
+  } | null>(null);
 
   const showMsg = (text: string, error = false) => {
     setNotice({ text, error });
@@ -97,28 +142,84 @@ export function OltInventoryView({
     fetchOlts();
   }, [search]);
 
+  // Handle vendor selection changes
+  const handleVendorChange = (newVendor: OltVendor) => {
+    setFormVendor(newVendor);
+    const availableModels = KNOWN_VENDOR_MODELS[newVendor] || ['Other'];
+    setFormModelSelect(availableModels[0] || 'Other');
+    setFormCustomModel('');
+  };
+
+  // Test CLI Connectivity from table row
   const handleTestCli = async (olt: OltItem, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      setTestingId(olt.id);
+      setTestingCliId(olt.id);
       const res = await fetch(`/api/olts/${olt.id}/test-cli`, {
         method: 'POST',
         headers: getAuthHeaders(),
       });
       const json = await res.json();
       if (res.ok && json.data?.success) {
-        showMsg(`Connection test to ${olt.name} successful!`);
+        showMsg(`CLI test to ${olt.name} successful!`);
         fetchOlts();
       } else {
-        showMsg(`Connection test to ${olt.name} failed: ${json.data?.message || 'Unreachable'}`, true);
+        showMsg(`CLI test to ${olt.name} failed: ${json.data?.message || 'Unreachable'}`, true);
       }
     } catch {
       showMsg('Failed to execute CLI test', true);
     } finally {
-      setTestingId(null);
+      setTestingCliId(null);
     }
   };
 
+  // Test SNMP Connectivity from table row
+  const handleTestSnmp = async (olt: OltItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setTestingSnmpId(olt.id);
+      const res = await fetch(`/api/olts/${olt.id}/test-snmp`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      const json = await res.json();
+      if (res.ok && json.data?.success) {
+        showMsg(`SNMP test to ${olt.name} successful! (${json.data.rttMs}ms)`);
+        fetchOlts();
+      } else {
+        showMsg(`SNMP test to ${olt.name} failed: ${json.data?.message || 'No response'}`, true);
+      }
+    } catch {
+      showMsg('Failed to execute SNMP test', true);
+    } finally {
+      setTestingSnmpId(null);
+    }
+  };
+
+  // Trigger SNMP Poll Now from table row
+  const handlePollSnmp = async (olt: OltItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setPollingSnmpId(olt.id);
+      const res = await fetch(`/api/olts/${olt.id}/poll-snmp`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showMsg(`SNMP poll completed for ${olt.name} in ${json.data?.pollDurationMs}ms`);
+        fetchOlts();
+      } else {
+        showMsg(`SNMP poll failed for ${olt.name}: ${json.error?.message || 'Error'}`, true);
+      }
+    } catch {
+      showMsg('Failed to trigger SNMP poll', true);
+    } finally {
+      setPollingSnmpId(null);
+    }
+  };
+
+  // Sync ONUs via CLI
   const handleSync = async (olt: OltItem, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
@@ -144,16 +245,33 @@ export function OltInventoryView({
 
   const handleOpenAddModal = () => {
     setFormName('');
+    setFormDescription('');
     setFormVendor('Huawei');
-    setFormModel('MA5683T');
+    setFormModelSelect('MA5683T');
+    setFormCustomModel('');
     setFormIp('');
     setFormPort('23');
     setFormProtocol('telnet');
     setFormUsername('root');
     setFormPassword('');
     setFormTimeout('5000');
+    setFormSnmpEnabled(true);
+    setFormSnmpVersion('v2c');
+    setFormSnmpPort('161');
+    setFormSnmpCommunity('public');
+    setFormSnmpWriteCommunity('');
+    setFormSnmpTimeout('3000');
+    setFormSnmpRetries('2');
+    setFormPollingInterval('300');
+    setFormV3Username('');
+    setFormV3SecLevel('authPriv');
+    setFormV3AuthProto('SHA256');
+    setFormV3AuthPass('');
+    setFormV3PrivProto('AES128');
+    setFormV3PrivPass('');
     setFormWarningThreshold('-25.0');
     setFormCriticalThreshold('-28.0');
+    setModalSnmpResult(null);
     setShowAddModal(true);
   };
 
@@ -161,16 +279,85 @@ export function OltInventoryView({
     e.stopPropagation();
     setEditingOlt(olt);
     setFormName(olt.name);
-    setFormVendor(olt.vendor);
-    setFormModel(olt.model);
+    setFormDescription(olt.description || '');
+
+    const vendor = (olt.vendor as OltVendor) || 'Huawei';
+    setFormVendor(vendor);
+
+    const knownModels = KNOWN_VENDOR_MODELS[vendor] || ['Other'];
+    if (knownModels.includes(olt.model)) {
+      setFormModelSelect(olt.model);
+      setFormCustomModel('');
+    } else {
+      setFormModelSelect('Other');
+      setFormCustomModel(olt.model || '');
+    }
+
     setFormIp(olt.management_ip);
-    setFormPort(String(olt.management_port));
-    setFormProtocol(olt.cli_protocol);
-    setFormUsername(olt.cli_username);
+    setFormPort(String(olt.management_port || 23));
+    setFormProtocol(olt.cli_protocol || 'telnet');
+    setFormUsername(olt.cli_username || 'root');
     setFormPassword('');
-    setFormTimeout(String(olt.connection_timeout));
-    setFormWarningThreshold(String(olt.optical_warning_threshold));
-    setFormCriticalThreshold(String(olt.optical_critical_threshold));
+    setFormTimeout(String(olt.connection_timeout || 5000));
+    setFormSnmpEnabled(olt.snmp_enabled ?? true);
+    setFormSnmpVersion((olt.snmp_version as any) || 'v2c');
+    setFormSnmpPort(String(olt.snmp_port || 161));
+    setFormSnmpCommunity(olt.snmp_community_masked ? '' : 'public');
+    setFormSnmpWriteCommunity('');
+    setFormSnmpTimeout(String(olt.snmp_timeout_ms || 3000));
+    setFormSnmpRetries(String(olt.snmp_retries ?? 2));
+    setFormPollingInterval(String(olt.polling_interval || 300));
+    setFormWarningThreshold(String(olt.optical_warning_threshold ?? -25.0));
+    setFormCriticalThreshold(String(olt.optical_critical_threshold ?? -28.0));
+    setModalSnmpResult(null);
+  };
+
+  // Test SNMP Connection from inside the modal
+  const handleModalTestSnmp = async () => {
+    if (!formIp.trim()) {
+      showMsg('Please provide a management IP before testing SNMP', true);
+      return;
+    }
+
+    try {
+      setModalTestingSnmp(true);
+      setModalSnmpResult(null);
+
+      const payload: any = {
+        host: formIp.trim(),
+        port: parseInt(formSnmpPort, 10) || 161,
+        version: formSnmpVersion,
+        community: formSnmpCommunity.trim() || 'public',
+        timeoutMs: parseInt(formSnmpTimeout, 10) || 3000,
+        retries: parseInt(formSnmpRetries, 10) || 2,
+      };
+
+      const res = await fetch('/api/olts/test-snmp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.data) {
+        setModalSnmpResult(json.data);
+      } else {
+        setModalSnmpResult({
+          success: false,
+          message: json.error?.message || 'SNMP connection test failed',
+        });
+      }
+    } catch (err: any) {
+      setModalSnmpResult({
+        success: false,
+        message: err.message || 'Network error while testing SNMP',
+      });
+    } finally {
+      setModalTestingSnmp(false);
+    }
   };
 
   const handleSaveOlt = async (e: React.FormEvent) => {
@@ -184,21 +371,36 @@ export function OltInventoryView({
       return;
     }
 
+    const effectiveModel = formModelSelect === 'Other' ? formCustomModel.trim() || 'Generic' : formModelSelect;
+
     try {
       setFormSubmitting(true);
       const payload: any = {
         name: formName.trim(),
+        description: formDescription.trim() || undefined,
         vendor: formVendor,
-        model: formModel,
+        model: effectiveModel,
         management_ip: formIp.trim(),
         management_port: parseInt(formPort, 10) || 23,
         cli_protocol: formProtocol,
         cli_username: formUsername.trim(),
         connection_timeout: parseInt(formTimeout, 10) || 5000,
+        snmp_enabled: formSnmpEnabled,
+        snmp_version: formSnmpVersion,
+        snmp_port: parseInt(formSnmpPort, 10) || 161,
+        snmp_timeout_ms: parseInt(formSnmpTimeout, 10) || 3000,
+        snmp_retries: parseInt(formSnmpRetries, 10) || 2,
+        polling_interval: parseInt(formPollingInterval, 10) || 300,
         optical_warning_threshold: parseFloat(formWarningThreshold) || -25.0,
         optical_critical_threshold: parseFloat(formCriticalThreshold) || -28.0,
       };
 
+      if (formSnmpCommunity.trim()) {
+        payload.snmp_community = formSnmpCommunity.trim();
+      }
+      if (formSnmpWriteCommunity.trim()) {
+        payload.snmp_write_community = formSnmpWriteCommunity.trim();
+      }
       if (formPassword.trim()) {
         payload.cli_password = formPassword.trim();
       }
@@ -248,117 +450,54 @@ export function OltInventoryView({
         showMsg(json?.error?.message || 'Failed to delete OLT', true);
       }
     } catch {
-      showMsg('Error removing OLT', true);
+      showMsg('Network error deleting OLT', true);
     } finally {
       setFormSubmitting(false);
     }
   };
 
-  // Aggregate stats
-  const totalOlts = olts.length;
-  const onlineOlts = olts.filter((o) => o.connection_status === 'online').length;
-  const totalOnus = olts.reduce((sum, o) => sum + (o.total_onus || 0), 0);
-  const onlineOnus = olts.reduce((sum, o) => sum + (o.online_onus || 0), 0);
-
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
       {notice && (
         <div
-          className={`px-4 py-3 rounded-xl border text-xs font-semibold flex items-center justify-between shadow-lg transition-all animate-in fade-in slide-in-from-top-2 ${
+          className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between ${
             notice.error
-              ? 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
+              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
           }`}
         >
           <span>{notice.text}</span>
-          <button onClick={() => setNotice(null)} className="ml-3 font-bold hover:opacity-75">
+          <button onClick={() => setNotice(null)} className="text-muted-foreground hover:text-foreground">
             ✕
           </button>
         </div>
       )}
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl bg-card border border-border shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Total OLT Chassis</span>
-            <Server className="w-4 h-4 text-primary" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">{totalOlts}</div>
-          <span className="text-[11px] text-muted-foreground">Managed Huawei units</span>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Online OLTs</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-emerald-500">{onlineOlts}</div>
-          <span className="text-[11px] text-muted-foreground">Reachable via Telnet/CLI</span>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Registered ONUs</span>
-            <Radio className="w-4 h-4 text-indigo-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-indigo-500">{totalOnus}</div>
-          <span className="text-[11px] text-muted-foreground">Across all PON ports</span>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Online Optical Links</span>
-            <Activity className="w-4 h-4 text-teal-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-teal-500">{onlineOnus}</div>
-          <span className="text-[11px] text-muted-foreground">Active fiber subscribers</span>
-        </div>
-      </div>
-
-      {/* Action & Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative flex-1 min-w-[260px] max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      {/* Top Header & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search OLT by name, IP, model..."
+            placeholder="Search by OLT name, vendor, model, or IP..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none text-foreground placeholder:text-muted-foreground"
+            className="w-full pl-9 pr-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none"
           />
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => onNavigateToDiscovery()}
-            className="px-3.5 py-2 rounded-xl bg-card hover:bg-muted border border-border text-xs font-semibold text-foreground flex items-center gap-1.5 transition-all shadow-sm"
+            onClick={() => fetchOlts()}
+            className="p-2 rounded-xl bg-card border border-border hover:bg-muted text-muted-foreground transition-all"
+            title="Refresh Inventory"
           >
-            <Radio className="w-3.5 h-3.5 text-indigo-500" />
-            Discover ONUs
-          </button>
-
-          <button
-            onClick={() => onNavigateToProvision()}
-            className="px-3.5 py-2 rounded-xl bg-card hover:bg-muted border border-border text-xs font-semibold text-foreground flex items-center gap-1.5 transition-all shadow-sm"
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
-            Provision Wizard
-          </button>
-
-          <button
-            onClick={fetchOlts}
-            disabled={loading}
-            className="p-2 rounded-xl bg-card hover:bg-muted border border-border text-foreground transition-all"
-            title="Refresh OLT List"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
 
           <button
             onClick={handleOpenAddModal}
-            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-primary/20"
+            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-primary/20 transition-all"
           >
             <Plus className="w-4 h-4" />
             Add OLT Chassis
@@ -366,37 +505,36 @@ export function OltInventoryView({
         </div>
       </div>
 
-      {/* OLT Inventory Table */}
+      {/* Inventory Table */}
       <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-muted/50 border-b border-border text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
-                <th className="py-3 px-4">OLT Name & Vendor</th>
-                <th className="py-3 px-4">Branch Affiliation</th>
-                <th className="py-3 px-4">Management IP & Port</th>
-                <th className="py-3 px-4">Connection State</th>
-                <th className="py-3 px-4">Registered ONUs</th>
-                <th className="py-3 px-4">Online / Offline</th>
-                <th className="py-3 px-4">Last Sync</th>
+                <th className="py-3 px-4">OLT Chassis</th>
+                <th className="py-3 px-4">Vendor & Model</th>
+                <th className="py-3 px-4">Management & SNMP</th>
+                <th className="py-3 px-4">Health / Telemetry</th>
+                <th className="py-3 px-4">ONUs (Online / Off)</th>
+                <th className="py-3 px-4">Last Poll</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading && olts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
                     Loading OLT inventory...
                   </td>
                 </tr>
               ) : olts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <Server className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     <p className="font-semibold text-foreground text-sm">No OLT devices registered</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Add a Huawei MA5683T chassis to start managing GPON boards, discovery, and ONUs.
+                      Add a Huawei, BDCOM, Powertech, or VSOL chassis to start monitoring SNMP telemetry.
                     </p>
                     <button
                       onClick={handleOpenAddModal}
@@ -411,7 +549,10 @@ export function OltInventoryView({
                 olts.map((olt) => {
                   const isOnline = olt.connection_status === 'online';
                   const isError = olt.connection_status === 'error';
-                  const isTesting = testingId === olt.id;
+                  const isPollSuccess = olt.last_poll_status === 'success';
+                  const isTestingCli = testingCliId === olt.id;
+                  const isTestingSnmp = testingSnmpId === olt.id;
+                  const isPollingSnmp = pollingSnmpId === olt.id;
                   const isSyncing = syncingId === olt.id;
 
                   return (
@@ -431,15 +572,18 @@ export function OltInventoryView({
                               <ChevronRight className="w-3 h-3 text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
                             <div className="text-[11px] text-muted-foreground">
-                              {olt.vendor} {olt.model}
+                              {olt.branch_name || 'Organization-wide'}
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4 text-muted-foreground">
-                        <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-medium text-foreground">
-                          {olt.branch_name || 'Organization-wide'}
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-semibold text-foreground mr-1.5">
+                          {olt.vendor}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground font-mono font-medium">
+                          {olt.model}
                         </span>
                       </td>
 
@@ -447,62 +591,100 @@ export function OltInventoryView({
                         <div className="font-mono text-foreground font-medium">
                           {olt.management_ip}:{olt.management_port}
                         </div>
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                          Protocol: {olt.cli_protocol}
+                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                          <span>SNMP {olt.snmp_version} (Port {olt.snmp_port})</span>
                         </div>
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                            isOnline
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                              : isError
-                              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                          }`}
-                        >
+                        <div className="flex items-center gap-2">
                           <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isOnline ? 'bg-emerald-500' : isError ? 'bg-rose-500' : 'bg-amber-500'
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isOnline
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                : isError
+                                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
                             }`}
-                          />
-                          {olt.connection_status.toUpperCase()}
-                        </span>
-                      </td>
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isOnline ? 'bg-emerald-500' : isError ? 'bg-rose-500' : 'bg-amber-500'
+                              }`}
+                            />
+                            {olt.connection_status.toUpperCase()}
+                          </span>
 
-                      <td className="py-3.5 px-4 font-bold text-foreground">
-                        {olt.total_onus || 0}
+                          {olt.cpu_utilization !== null && (
+                            <span className="text-[11px] text-muted-foreground flex items-center gap-0.5" title="CPU Duty">
+                              <Cpu className="w-3 h-3 text-primary" />
+                              {olt.cpu_utilization}%
+                            </span>
+                          )}
+
+                          {olt.temperature !== null && (
+                            <span className="text-[11px] text-muted-foreground flex items-center gap-0.5" title="Chassis Temperature">
+                              <Thermometer className="w-3 h-3 text-amber-500" />
+                              {olt.temperature}°C
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-foreground">{olt.total_onus || 0}</span>
+                          <span className="text-muted-foreground">|</span>
                           <span className="text-emerald-500 font-semibold">{olt.online_onus || 0} on</span>
-                          <span className="text-muted-foreground font-normal">/</span>
+                          <span className="text-muted-foreground">/</span>
                           <span className="text-rose-400 font-semibold">{olt.offline_onus || 0} off</span>
                         </div>
                       </td>
 
                       <td className="py-3.5 px-4 text-muted-foreground text-[11px]">
-                        {olt.last_sync_at ? new Date(olt.last_sync_at).toLocaleString() : 'Never'}
+                        <div>
+                          {olt.last_poll_at ? new Date(olt.last_poll_at).toLocaleTimeString() : 'Never'}
+                        </div>
+                        {olt.last_poll_status && (
+                          <div
+                            className={`text-[10px] font-bold ${
+                              isPollSuccess
+                                ? 'text-emerald-500'
+                                : olt.last_poll_status === 'timeout'
+                                ? 'text-amber-500'
+                                : 'text-rose-500'
+                            }`}
+                          >
+                            {olt.last_poll_status.toUpperCase()}
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={(e) => handleTestCli(olt, e)}
-                            disabled={isTesting}
-                            className="p-1.5 rounded-lg bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground transition-all"
-                            title="Test CLI Connectivity"
+                            onClick={(e) => handleTestSnmp(olt, e)}
+                            disabled={isTestingSnmp}
+                            className="p-1.5 rounded-lg bg-muted hover:bg-sky-600 hover:text-white text-muted-foreground transition-all"
+                            title="Test SNMP Connection"
                           >
-                            <Activity className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
+                            <Wifi className={`w-3.5 h-3.5 ${isTestingSnmp ? 'animate-spin' : ''}`} />
+                          </button>
+
+                          <button
+                            onClick={(e) => handlePollSnmp(olt, e)}
+                            disabled={isPollingSnmp}
+                            className="p-1.5 rounded-lg bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground transition-all"
+                            title="Poll SNMP Now"
+                          >
+                            <Activity className={`w-3.5 h-3.5 ${isPollingSnmp ? 'animate-spin' : ''}`} />
                           </button>
 
                           <button
                             onClick={(e) => handleSync(olt, e)}
                             disabled={isSyncing}
                             className="p-1.5 rounded-lg bg-muted hover:bg-emerald-600 hover:text-white text-muted-foreground transition-all"
-                            title="Synchronize Live Inventory"
+                            title="Synchronize Live CLI Inventory"
                           >
                             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                           </button>
@@ -539,14 +721,14 @@ export function OltInventoryView({
       {/* Add / Edit OLT Modal */}
       {(showAddModal || editingOlt) && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <div className="bg-card border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
               <div>
                 <h3 className="font-bold text-foreground text-sm">
-                  {editingOlt ? `Edit OLT: ${editingOlt.name}` : 'Register Huawei OLT Chassis'}
+                  {editingOlt ? `Edit OLT: ${editingOlt.name}` : 'Register New OLT Chassis'}
                 </h3>
                 <p className="text-[11px] text-muted-foreground">
-                  Provide management IP, credentials, and polling parameters
+                  Configure vendor hardware, management IP, SNMP monitoring, and CLI credentials
                 </p>
               </div>
               <button
@@ -560,124 +742,353 @@ export function OltInventoryView({
               </button>
             </div>
 
-            <form onSubmit={handleSaveOlt} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">OLT Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Kathmandu-Core-OLT-1"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none"
-                  />
+            <form onSubmit={handleSaveOlt} className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Section 1: Vendor & Hardware Selection */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Server className="w-3.5 h-3.5 text-primary" />
+                  1. Hardware Identity & Affiliation
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">OLT Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Core-Huawei-OLT-1"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">Description / Notes</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Primary FTTH Hub - Rack 4"
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">Model</label>
-                  <input
-                    type="text"
-                    value={formModel}
-                    onChange={(e) => setFormModel(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">Hardware Vendor *</label>
+                    <select
+                      value={formVendor}
+                      onChange={(e) => handleVendorChange(e.target.value as OltVendor)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-medium"
+                    >
+                      {OLT_VENDORS.map((v) => (
+                        <option key={v.value} value={v.value}>
+                          {v.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">Chassis Model *</label>
+                    <select
+                      value={formModelSelect}
+                      onChange={(e) => setFormModelSelect(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-medium"
+                    >
+                      {(KNOWN_VENDOR_MODELS[formVendor] || ['Other']).map((m) => (
+                        <option key={m} value={m}>
+                          {m === 'Other' ? 'Other / Custom Model...' : m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {formModelSelect === 'Other' && (
+                  <div className="mt-3">
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">Custom Model Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter exact OLT chassis model..."
+                      value={formCustomModel}
+                      onChange={(e) => setFormCustomModel(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Management IP */}
+              <div className="pt-3 border-t border-border">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Wifi className="w-3.5 h-3.5 text-primary" />
+                  2. IP Connectivity
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">Management IP Address *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 192.168.100.10"
+                      value={formIp}
+                      onChange={(e) => setFormIp(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">CLI Port</label>
+                    <input
+                      type="number"
+                      value={formPort}
+                      onChange={(e) => setFormPort(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="sm:col-span-2">
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">Management IP *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="192.168.100.1"
-                    value={formIp}
-                    onChange={(e) => setFormIp(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">Port</label>
-                  <input
-                    type="number"
-                    value={formPort}
-                    onChange={(e) => setFormPort(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">CLI Protocol</label>
-                  <select
-                    value={formProtocol}
-                    onChange={(e) => setFormProtocol(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-medium"
-                  >
-                    <option value="telnet">Telnet</option>
-                    <option value="ssh">SSH</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">CLI Username *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formUsername}
-                    onChange={(e) => setFormUsername(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">
-                    CLI Password {editingOlt ? '(leave blank to keep)' : '*'}
+              {/* Section 3: SNMP Configuration */}
+              <div className="pt-3 border-t border-border">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-sky-500" />
+                    3. SNMP Telemetry & Monitoring
+                  </h4>
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={formSnmpEnabled}
+                      onChange={(e) => setFormSnmpEnabled(e.target.checked)}
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    Enable SNMP Polling
                   </label>
-                  <input
-                    type="password"
-                    placeholder={editingOlt ? '••••••••' : 'Enter CLI password'}
-                    value={formPassword}
-                    onChange={(e) => setFormPassword(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
+                </div>
+
+                {formSnmpEnabled && (
+                  <div className="space-y-3 bg-muted/30 p-3.5 rounded-xl border border-border">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-foreground mb-1 block">SNMP Version</label>
+                        <select
+                          value={formSnmpVersion}
+                          onChange={(e) => setFormSnmpVersion(e.target.value as any)}
+                          className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-medium"
+                        >
+                          <option value="v2c">SNMPv2c (Recommended)</option>
+                          <option value="v1">SNMPv1</option>
+                          <option value="v3">SNMPv3 (Secure)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-foreground mb-1 block">SNMP Port</label>
+                        <input
+                          type="number"
+                          value={formSnmpPort}
+                          onChange={(e) => setFormSnmpPort(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-foreground mb-1 block">Polling Interval (s)</label>
+                        <input
+                          type="number"
+                          value={formPollingInterval}
+                          onChange={(e) => setFormPollingInterval(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {formSnmpVersion !== 'v3' ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-semibold text-foreground mb-1 block">Read Community</label>
+                          <input
+                            type="password"
+                            placeholder="e.g. public"
+                            value={formSnmpCommunity}
+                            onChange={(e) => setFormSnmpCommunity(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-semibold text-foreground mb-1 block">Write Community (Optional)</label>
+                          <input
+                            type="password"
+                            placeholder="Optional write community"
+                            value={formSnmpWriteCommunity}
+                            onChange={(e) => setFormSnmpWriteCommunity(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[11px] font-semibold text-foreground mb-1 block">v3 Security User</label>
+                          <input
+                            type="text"
+                            placeholder="SNMPv3 username"
+                            value={formV3Username}
+                            onChange={(e) => setFormV3Username(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-semibold text-foreground mb-1 block">Auth Password</label>
+                          <input
+                            type="password"
+                            value={formV3AuthPass}
+                            onChange={(e) => setFormV3AuthPass(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-semibold text-foreground mb-1 block">Priv Password</label>
+                          <input
+                            type="password"
+                            value={formV3PrivPass}
+                            onChange={(e) => setFormV3PrivPass(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Test Connection Button & Status inside modal */}
+                    <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={handleModalTestSnmp}
+                        disabled={modalTestingSnmp}
+                        className="px-3.5 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 text-xs font-semibold flex items-center gap-1.5 w-fit"
+                      >
+                        <Wifi className={`w-3.5 h-3.5 ${modalTestingSnmp ? 'animate-spin' : ''}`} />
+                        {modalTestingSnmp ? 'Querying SNMP...' : 'Test SNMP Connection'}
+                      </button>
+
+                      {modalSnmpResult && (
+                        <div
+                          className={`text-xs font-medium px-2.5 py-1 rounded-lg border ${
+                            modalSnmpResult.success
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                          }`}
+                        >
+                          {modalSnmpResult.success ? (
+                            <span>
+                              ✓ {modalSnmpResult.message}
+                              {modalSnmpResult.sysUpTime ? ` | Up: ${modalSnmpResult.sysUpTime}` : ''}
+                            </span>
+                          ) : (
+                            <span>✕ {modalSnmpResult.message}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 4: CLI Credentials */}
+              <div className="pt-3 border-t border-border">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-primary" />
+                  4. CLI Management Credentials
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">CLI Protocol</label>
+                    <select
+                      value={formProtocol}
+                      onChange={(e) => setFormProtocol(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-medium"
+                    >
+                      <option value="telnet">Telnet</option>
+                      <option value="ssh">SSH</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">CLI Username *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formUsername}
+                      onChange={(e) => setFormUsername(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">
+                      CLI Password {editingOlt ? '(leave blank to keep)' : '*'}
+                    </label>
+                    <input
+                      type="password"
+                      placeholder={editingOlt ? '••••••••' : 'Enter CLI password'}
+                      value={formPassword}
+                      onChange={(e) => setFormPassword(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border">
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">
-                    Optical Warning Threshold (dBm)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={formWarningThreshold}
-                    onChange={(e) => setFormWarningThreshold(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
-                  <span className="text-[10px] text-muted-foreground">e.g. -25.0 dBm (Yellow alert)</span>
-                </div>
+              {/* Section 5: Optical Thresholds */}
+              <div className="pt-3 border-t border-border">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  5. Optical Health Thresholds
+                </h4>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-foreground mb-1 block">
-                    Optical Critical Threshold (dBm)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={formCriticalThreshold}
-                    onChange={(e) => setFormCriticalThreshold(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
-                  />
-                  <span className="text-[10px] text-muted-foreground">e.g. -28.0 dBm (Red alarm)</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">
+                      Warning Threshold (dBm)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formWarningThreshold}
+                      onChange={(e) => setFormWarningThreshold(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Default: -25.0 dBm (Yellow alert)</span>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-foreground mb-1 block">
+                      Critical Threshold (dBm)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formCriticalThreshold}
+                      onChange={(e) => setFormCriticalThreshold(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs focus:ring-2 focus:ring-primary outline-none font-mono"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Default: -28.0 dBm (Red alarm)</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-border flex items-center justify-end gap-2">
+              {/* Form Action Buttons */}
+              <div className="pt-4 border-t border-border flex items-center justify-end gap-2 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => {

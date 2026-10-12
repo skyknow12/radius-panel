@@ -1,6 +1,25 @@
+export type OltVendor = 'Huawei' | 'BDCOM' | 'Powertech' | 'VSOL' | 'Other';
+
+export const OLT_VENDORS: { label: string; value: OltVendor }[] = [
+  { label: 'Huawei', value: 'Huawei' },
+  { label: 'BDCOM', value: 'BDCOM' },
+  { label: 'Powertech', value: 'Powertech' },
+  { label: 'VSOL', value: 'VSOL' },
+  { label: 'Other', value: 'Other' },
+];
+
+export const KNOWN_VENDOR_MODELS: Record<OltVendor, string[]> = {
+  Huawei: ['MA5683T', 'MA5608T', 'MA5800-X7', 'MA5800-X15', 'MA5800-X17', 'Other'],
+  BDCOM: ['GP3600-08', 'GP3600-16', 'P3608B', 'P3616-2TE', 'Other'],
+  Powertech: ['PT-G08', 'PT-G16', 'PT-E04', 'Other'],
+  VSOL: ['V1600G1', 'V1600G2', 'V1600D4', 'V1600D8', 'Other'],
+  Other: ['Other'],
+};
+
 export interface OltItem {
   id: number;
   name: string;
+  description?: string | null;
   vendor: string;
   model: string;
   hardware_version?: string;
@@ -11,9 +30,13 @@ export interface OltItem {
   branch_id?: number | null;
   branch_name?: string | null;
   organization_id?: number | null;
+  snmp_enabled?: boolean;
   snmp_version: string;
   snmp_port: number;
   snmp_community_masked?: string;
+  snmp_write_community_masked?: string;
+  snmp_timeout_ms?: number;
+  snmp_retries?: number;
   cli_protocol: 'telnet' | 'ssh';
   cli_username: string;
   cli_password_masked: string;
@@ -24,6 +47,23 @@ export interface OltItem {
   last_seen_at?: string | null;
   last_sync_at?: string | null;
   last_error?: string | null;
+  last_poll_at?: string | null;
+  last_poll_status?: 'success' | 'error' | 'timeout' | 'unknown' | null;
+  last_poll_error?: string | null;
+  next_poll_at?: string | null;
+  sys_uptime?: string | null;
+  sys_descr?: string | null;
+  sys_name?: string | null;
+  sys_location?: string | null;
+  sys_contact?: string | null;
+  cpu_utilization?: number | null;
+  memory_utilization?: number | null;
+  temperature?: number | null;
+  fans_status?: string | null;
+  power_status?: string | null;
+  active_alarms_count?: number;
+  registered_onus_count?: number;
+  online_onus_count?: number;
   optical_warning_threshold: number;
   optical_critical_threshold: number;
   total_onus?: number;
@@ -31,6 +71,44 @@ export interface OltItem {
   offline_onus?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface OltInterfaceItem {
+  id: number;
+  olt_id: number;
+  if_index: number;
+  if_name: string;
+  if_descr: string;
+  if_type: string;
+  admin_status: 'up' | 'down' | 'testing' | 'unknown';
+  oper_status: 'up' | 'down' | 'testing' | 'unknown' | 'dormant' | 'notPresent' | 'lowerLayerDown';
+  speed_bps: number;
+  mac_address?: string | null;
+  mtu?: number;
+  in_octets: number;
+  out_octets: number;
+  in_rate_bps: number;
+  out_rate_bps: number;
+  in_errors: number;
+  out_errors: number;
+  in_discards: number;
+  out_discards: number;
+  last_change?: string | null;
+  updated_at: string;
+}
+
+export interface OltAlarmItem {
+  id: number;
+  olt_id: number;
+  alarm_id: string;
+  severity: 'critical' | 'major' | 'minor' | 'warning' | 'info';
+  title: string;
+  description: string;
+  entity_type?: string;
+  entity_id?: string;
+  cleared: boolean;
+  raised_at: string;
+  cleared_at?: string | null;
 }
 
 export interface OnuItem {

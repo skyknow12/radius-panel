@@ -30,6 +30,7 @@ import { radiusCatalogRepository } from '../repositories/radius-catalog.reposito
 import { radiusManagementService } from '../services/radius-management.service';
 import { oltRepository } from '../repositories/olt.repository';
 import { oltService } from '../services/olt.service';
+import { SnmpClient, oltPollerService } from '../services/snmp';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { query } from '../db/pool';
@@ -4592,14 +4593,19 @@ apiRouter.post(
     const authReq = req as AuthenticatedRequest;
     const schema = z.object({
       name: z.string().min(1),
+      description: z.string().optional(),
       vendor: z.string().optional(),
       model: z.string().optional(),
       management_ip: z.string().min(1),
       management_port: z.number().int().positive().optional(),
       branch_id: z.number().int().optional().nullable(),
+      snmp_enabled: z.boolean().optional(),
       snmp_version: z.string().optional(),
       snmp_port: z.number().int().positive().optional(),
       snmp_community: z.string().optional(),
+      snmp_write_community: z.string().optional(),
+      snmp_timeout_ms: z.number().int().positive().optional(),
+      snmp_retries: z.number().int().nonnegative().optional(),
       cli_protocol: z.enum(['telnet', 'ssh']).optional(),
       cli_username: z.string().min(1),
       cli_password: z.string().min(1),
@@ -4613,6 +4619,27 @@ apiRouter.post(
     const parsed = schema.parse(req.body);
     const id = await oltRepository.createOlt(parsed, authReq.user);
     res.status(201).json(envelope({ id }, 'live'));
+  })
+);
+
+// Ad-hoc Test SNMP connection before saving
+apiRouter.post(
+  '/olts/test-snmp',
+  authMiddleware,
+  requirePermission('olt.test_connection'),
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      host: z.string().min(1),
+      port: z.number().int().positive().default(161),
+      version: z.enum(['v1', 'v2c', 'v3']).default('v2c'),
+      community: z.string().optional().default('public'),
+      timeoutMs: z.number().int().positive().optional().default(3000),
+      retries: z.number().int().nonnegative().optional().default(2),
+    });
+    const parsed = schema.parse(req.body);
+    const client = new SnmpClient(parsed);
+    const result = await client.testConnection();
+    res.json(envelope(result, 'live'));
   })
 );
 
@@ -4640,14 +4667,19 @@ apiRouter.put(
     const id = parseInt(req.params.id, 10);
     const schema = z.object({
       name: z.string().min(1).optional(),
+      description: z.string().optional(),
       vendor: z.string().optional(),
       model: z.string().optional(),
       management_ip: z.string().min(1).optional(),
       management_port: z.number().int().positive().optional(),
       branch_id: z.number().int().optional().nullable(),
+      snmp_enabled: z.boolean().optional(),
       snmp_version: z.string().optional(),
       snmp_port: z.number().int().positive().optional(),
       snmp_community: z.string().optional(),
+      snmp_write_community: z.string().optional(),
+      snmp_timeout_ms: z.number().int().positive().optional(),
+      snmp_retries: z.number().int().nonnegative().optional(),
       cli_protocol: z.enum(['telnet', 'ssh']).optional(),
       cli_username: z.string().min(1).optional(),
       cli_password: z.string().min(1).optional(),
@@ -4674,6 +4706,77 @@ apiRouter.delete(
     const id = parseInt(req.params.id, 10);
     await oltRepository.deleteOlt(id, authReq.user);
     res.json(envelope({ success: true }, 'live'));
+  })
+);
+
+// Test SNMP on existing OLT
+apiRouter.post(
+  '/olts/:id/test-snmp',
+  authMiddleware,
+  requirePermission('olt.test_connection'),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const creds = await oltRepository.getDecryptedCredentials(id);
+    if (!creds) throw HttpError.notFound('OLT not found');
+
+    const client = new SnmpClient({
+      host: creds.host,
+      port: creds.snmpPort || 161,
+      version: creds.snmpVersion as any,
+      community: creds.snmpCommunityDecrypted || 'public',
+      timeoutMs: creds.snmpTimeoutMs || 3000,
+      retries: creds.snmpRetries ?? 2,
+    });
+    const result = await client.testConnection();
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// Manual SNMP Poll Now
+apiRouter.post(
+  '/olts/:id/poll-snmp',
+  authMiddleware,
+  requirePermission('olt.sync'),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const telemetry = await oltPollerService.pollOlt(id, { force: true });
+    res.json(envelope(telemetry, 'live'));
+  })
+);
+
+// Get Normalized Telemetry for OLT
+apiRouter.get(
+  '/olts/:id/telemetry',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const telemetry = await oltPollerService.getTelemetry(id);
+    res.json(envelope(telemetry, 'live'));
+  })
+);
+
+// Get Interfaces with live traffic rates
+apiRouter.get(
+  '/olts/:id/interfaces',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const interfaces = await oltRepository.getInterfaces(id);
+    res.json(envelope(interfaces, 'live'));
+  })
+);
+
+// Get Alarms
+apiRouter.get(
+  '/olts/:id/alarms',
+  authMiddleware,
+  requirePermission('olt.view'),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const alarms = await oltRepository.getAlarms(id);
+    res.json(envelope(alarms, 'live'));
   })
 );
 
@@ -4944,6 +5047,18 @@ apiRouter.get(
     const customerId = parseInt(req.params.id, 10);
     const onu = await oltRepository.getCustomerOnu(customerId);
     res.json(envelope(onu, 'live'));
+  })
+);
+
+// Customer ONU optical telemetry endpoint
+apiRouter.get(
+  '/subscribers/:id/onu-optical',
+  authMiddleware,
+  requirePermission('subscriber.view'),
+  asyncHandler(async (req, res) => {
+    const customerId = parseInt(req.params.id, 10);
+    const optical = await oltRepository.getSubscriberOnuOptical(customerId);
+    res.json(envelope(optical, 'live'));
   })
 );
 
