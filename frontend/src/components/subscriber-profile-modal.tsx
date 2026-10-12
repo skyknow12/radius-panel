@@ -55,6 +55,7 @@ import {
 import { RechargeModal } from './recharge-modal';
 import { TransactionDetailsModal } from './transaction-details-modal';
 import { ReceiptModal } from './receipt-modal';
+import { cn } from '@/lib/utils';
 import type {
   SubscriberItem,
   SubscriberProfileData,
