@@ -815,7 +815,7 @@ export function OltDetailsView({
             <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
               <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 block">Optimal Signal Margin</span>
               <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power >= olt.optical_warning_threshold).length}
+                {onus.filter((o) => typeof o.last_rx_power === 'number' && o.last_rx_power >= (olt.optical_warning_threshold ?? -25)).length}
               </div>
               <span className="text-[10px] text-muted-foreground">Power ≥ {olt.optical_warning_threshold} dBm</span>
             </div>
@@ -823,7 +823,7 @@ export function OltDetailsView({
             <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
               <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 block">Warning Signal Attenuation</span>
               <div className="text-xl font-bold font-mono text-amber-600 dark:text-amber-400 mt-1">
-                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power < olt.optical_warning_threshold && o.last_rx_power >= olt.optical_critical_threshold).length}
+                {onus.filter((o) => typeof o.last_rx_power === 'number' && o.last_rx_power < (olt.optical_warning_threshold ?? -25) && o.last_rx_power >= (olt.optical_critical_threshold ?? -28)).length}
               </div>
               <span className="text-[10px] text-muted-foreground">Between {olt.optical_warning_threshold} and {olt.optical_critical_threshold} dBm</span>
             </div>
@@ -831,7 +831,7 @@ export function OltDetailsView({
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs">
               <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 block">Critical Optical Alarm</span>
               <div className="text-xl font-bold font-mono text-rose-600 dark:text-rose-400 mt-1">
-                {onus.filter((o) => o.last_rx_power !== null && o.last_rx_power < olt.optical_critical_threshold).length}
+                {onus.filter((o) => typeof o.last_rx_power === 'number' && o.last_rx_power < (olt.optical_critical_threshold ?? -28)).length}
               </div>
               <span className="text-[10px] text-muted-foreground">Power &lt; {olt.optical_critical_threshold} dBm</span>
             </div>
@@ -862,8 +862,10 @@ export function OltDetailsView({
                   onus.map((onu) => {
                     const rx = onu.last_rx_power;
                     const isOnline = onu.run_state === 'online';
-                    const isWarning = rx !== null && rx < olt.optical_warning_threshold && rx >= olt.optical_critical_threshold;
-                    const isCritical = rx !== null && rx < olt.optical_critical_threshold;
+                    const warnThresh = olt.optical_warning_threshold ?? -25;
+                    const critThresh = olt.optical_critical_threshold ?? -28;
+                    const isWarning = typeof rx === 'number' && rx < warnThresh && rx >= critThresh;
+                    const isCritical = typeof rx === 'number' && rx < critThresh;
 
                     return (
                       <tr key={onu.id} className="hover:bg-muted/40">
@@ -890,7 +892,7 @@ export function OltDetailsView({
                           </span>
                         </td>
                         <td className="py-3 px-4 font-mono font-bold">
-                          {rx !== null ? (
+                          {typeof rx === 'number' ? (
                             <span className={isCritical ? 'text-rose-500' : isWarning ? 'text-amber-500' : 'text-emerald-500'}>
                               {rx} dBm
                             </span>
@@ -899,10 +901,10 @@ export function OltDetailsView({
                           )}
                         </td>
                         <td className="py-3 px-4 font-mono text-muted-foreground">
-                          {onu.last_tx_power !== null ? `${onu.last_tx_power} dBm` : 'N/A'}
+                          {typeof onu.last_tx_power === 'number' ? `${onu.last_tx_power} dBm` : 'N/A'}
                         </td>
                         <td className="py-3 px-4 font-mono text-muted-foreground">
-                          {onu.last_olt_rx_power !== null ? `${onu.last_olt_rx_power} dBm` : 'N/A'}
+                          {typeof onu.last_olt_rx_power === 'number' ? `${onu.last_olt_rx_power} dBm` : 'N/A'}
                         </td>
                         <td className="py-3 px-4 text-[10px] text-muted-foreground">
                           {onu.last_optical_reading_at ? (
@@ -1150,7 +1152,7 @@ export function OltDetailsView({
                         </span>
                       </td>
                       <td className="py-3 px-4 font-mono font-bold">
-                        {onu.last_rx_power !== null ? `${onu.last_rx_power} dBm` : 'N/A'}
+                        {typeof onu.last_rx_power === 'number' ? `${onu.last_rx_power} dBm` : 'N/A'}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button
