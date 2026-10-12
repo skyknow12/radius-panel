@@ -114,7 +114,7 @@ export class GenericWebAdapter implements OnuManagementAdapter {
     };
   }
 
-  async testProfile(client: OnuHttpClient, username: string, password: string): Promise<OnuTestResult> {
+  async testProfile(client: OnuHttpClient, _username: string, _password: string): Promise<OnuTestResult> {
     const startTime = Date.now();
     const conn = await this.testConnection(client);
 

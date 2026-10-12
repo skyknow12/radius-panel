@@ -3,38 +3,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Wifi,
-  WifiOff,
   Server,
   Cpu,
   Layers,
-  Shield,
-  ShieldAlert,
   ShieldCheck,
   CheckCircle2,
   XCircle,
   AlertTriangle,
   Search,
-  Filter,
   Plus,
   Trash2,
   Copy,
-  Lock,
   Key,
   RefreshCw,
-  Sliders,
-  Download,
-  Upload,
   Activity,
-  Clock,
   ArrowRight,
   Info,
-  Globe,
   FileCode,
-  Eye,
-  EyeOff,
   Radio,
   ExternalLink,
-  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -44,7 +31,6 @@ import type {
   OnuModelProfileItem,
   OnuCredentialItem,
   OnuActivityLogItem,
-  OnuVendor,
 } from '@/types/onu';
 
 export type OnuSubTab =
@@ -64,7 +50,7 @@ interface OnuManagementViewProps {
 export function OnuManagementView({
   initialSubTab = 'overview',
   onOpenCustomer,
-  currentUser,
+  currentUser: _currentUser,
 }: OnuManagementViewProps) {
   const [activeTab, setActiveTab] = useState<OnuSubTab>(initialSubTab);
 
@@ -116,7 +102,6 @@ export function OnuManagementView({
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<Partial<OnuModelProfileItem> | null>(null);
   const [credentialModalOpen, setCredentialModalOpen] = useState(false);
-  const [wifiModalOnu, setWifiModalOnu] = useState<DetectedOnuItem | null>(null);
   const [testResultModal, setTestResultModal] = useState<{ title: string; result: any } | null>(null);
   const [testingOnuId, setTestingOnuId] = useState<number | null>(null);
 

@@ -41,7 +41,6 @@ export class HuaweiWebAdapter implements OnuManagementAdapter {
   }
 
   async authenticate(client: OnuHttpClient, username: string, password: string): Promise<OnuAdapterSession> {
-    const startTime = Date.now();
     // 1. Fetch login page to capture initial CSRF token or session cookie
     const initial = await client.request('/');
 

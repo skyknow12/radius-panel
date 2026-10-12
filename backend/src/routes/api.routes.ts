@@ -5408,7 +5408,8 @@ apiRouter.get(
     // Resolve customer's associated ONU
     const onu = await oltRepository.getCustomerOnu(customerId);
     if (!onu) {
-      return res.json(envelope({ hasOnu: false, message: 'No ONU is associated with this customer.' }, 'live'));
+      res.json(envelope({ hasOnu: false, message: 'No ONU is associated with this customer.' }, 'live'));
+      return;
     }
 
     // Branch isolation check on subscriber
