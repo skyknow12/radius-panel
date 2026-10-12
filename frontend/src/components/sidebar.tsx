@@ -208,6 +208,13 @@ export function Sidebar({
         'registered_onus',
         'olt_sync',
         'olt_history',
+        'onu_management',
+        'onu_overview',
+        'detected_onus',
+        'new_model_requests',
+        'model_profiles',
+        'management_credentials',
+        'management_activity_logs',
         'radius_overview',
         'radius_profiles',
         'sessions',
@@ -326,6 +333,7 @@ export function Sidebar({
             {renderNavItem('noc_dashboard', 'NOC Operations', Monitor, 'LIVE', 'radius.view')}
             {renderNavItem('nas_devices', 'NAS / BNG Gateways', Server, undefined, 'radius.view')}
             {renderNavItem('olt_management', 'OLT Management', Cpu, 'FTTH', 'olt.view')}
+            {renderNavItem('onu_management', 'ONU Management', Wifi, undefined, 'onu.view')}
             {renderNavItem('radius_overview', 'RADIUS Overview', Radio, undefined, 'radius.view')}
             {renderNavItem('radius_profiles', 'RADIUS Profiles', ShieldCheck, undefined, 'radius.view')}
             {renderNavItem('sessions', 'Online Sessions', Layers, undefined, 'radius.view')}

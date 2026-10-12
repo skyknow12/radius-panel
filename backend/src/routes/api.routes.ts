@@ -31,6 +31,8 @@ import { radiusManagementService } from '../services/radius-management.service';
 import { oltRepository } from '../repositories/olt.repository';
 import { oltService } from '../services/olt.service';
 import { SnmpClient, oltPollerService } from '../services/snmp';
+import { onuRepository } from '../repositories/onu.repository';
+import { onuManagementService, credentialService } from '../services/onu';
 import { RadiusClient, RadiusCode } from '../radius/radius-client';
 import { config } from '../config/env';
 import { query } from '../db/pool';
@@ -5109,7 +5111,386 @@ apiRouter.delete(
   })
 );
 
+// =============================================================================
+// ONU WEB MANAGEMENT & REUSABLE MODEL PROFILES
+// =============================================================================
 
+// 1. ONU Overview summary metrics
+apiRouter.get(
+  '/onu/overview',
+  authMiddleware,
+  requirePermission('onu.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const overview = await onuRepository.getOverview(authReq.user);
+    res.json(envelope(overview, 'live'));
+  })
+);
 
+// 2. Detected ONUs with filtering & pagination
+apiRouter.get(
+  '/onu/detected',
+  authMiddleware,
+  requirePermission('onu.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const search = req.query.search as string;
+    const oltId = req.query.olt_id ? parseInt(req.query.olt_id as string, 10) : undefined;
+    const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string, 10) : undefined;
+    const vendor = req.query.vendor as string;
+    const model = req.query.model as string;
+    const managementStatus = req.query.management_status as string;
+    const webStatus = req.query.web_status as string;
+    const linked = req.query.linked === 'true' ? true : req.query.linked === 'false' ? false : undefined;
 
+    const result = await onuRepository.listDetectedOnus(
+      {
+        page,
+        limit,
+        search,
+        olt_id: oltId,
+        branch_id: branchId,
+        vendor,
+        model,
+        management_status: managementStatus,
+        web_status: webStatus,
+        linked,
+      },
+      authReq.user
+    );
 
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// 3. New Model Requests (Pending / Unconfigured models)
+apiRouter.get(
+  '/onu/model-requests',
+  authMiddleware,
+  requirePermission('onu.view'),
+  asyncHandler(async (req, res) => {
+    const status = (req.query.status as string) || 'pending';
+    const requests = await onuRepository.listModelRequests({ status });
+    res.json(envelope(requests, 'live'));
+  })
+);
+
+// 4. Model Profiles Catalog
+apiRouter.get(
+  '/onu/model-profiles',
+  authMiddleware,
+  requirePermission('onu.view'),
+  asyncHandler(async (req, res) => {
+    const search = req.query.search as string;
+    const vendor = req.query.vendor as string;
+    const status = req.query.status as string;
+    const profiles = await onuRepository.listModelProfiles({ search, vendor, status });
+    res.json(envelope(profiles, 'live'));
+  })
+);
+
+apiRouter.get(
+  '/onu/model-profiles/:id',
+  authMiddleware,
+  requirePermission('onu.view'),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const profile = await onuRepository.getModelProfile(id);
+    if (!profile) throw HttpError.notFound('ONU model profile not found');
+    res.json(envelope(profile, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/onu/model-profiles',
+  authMiddleware,
+  requirePermission('onu.manage_profiles'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      name: z.string().min(1),
+      vendor: z.string().min(1),
+      model: z.string().min(1),
+      firmware_pattern: z.string().optional(),
+      adapter_type: z.enum(['huawei_web', 'zte_web', 'generic_web', 'unsupported']).optional(),
+      default_protocol: z.enum(['http', 'https']).optional(),
+      default_port: z.number().int().positive().optional(),
+      login_path: z.string().optional(),
+      default_username: z.string().min(1),
+      default_password: z.string().optional(),
+      wifi_bands: z.array(z.string()).optional(),
+      capabilities: z.record(z.any()).optional(),
+      status: z.enum(['active', 'disabled', 'needs_testing']).optional(),
+      notes: z.string().optional(),
+      resolve_request_id: z.number().int().positive().optional(),
+    });
+
+    const body = schema.parse(req.body);
+    const id = await onuRepository.createModelProfile(body, authReq.user);
+    res.status(201).json(envelope({ id, message: 'Model profile created successfully' }, 'live'));
+  })
+);
+
+apiRouter.put(
+  '/onu/model-profiles/:id',
+  authMiddleware,
+  requirePermission('onu.manage_profiles'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const schema = z.object({
+      name: z.string().min(1).optional(),
+      adapter_type: z.enum(['huawei_web', 'zte_web', 'generic_web', 'unsupported']).optional(),
+      default_protocol: z.enum(['http', 'https']).optional(),
+      default_port: z.number().int().positive().optional(),
+      login_path: z.string().optional(),
+      default_username: z.string().min(1).optional(),
+      default_password: z.string().optional(),
+      wifi_bands: z.array(z.string()).optional(),
+      capabilities: z.record(z.any()).optional(),
+      status: z.enum(['active', 'disabled', 'needs_testing']).optional(),
+      notes: z.string().optional(),
+    });
+
+    const body = schema.parse(req.body);
+    await onuRepository.updateModelProfile(id, body, authReq.user);
+    res.json(envelope({ success: true, message: 'Model profile updated successfully' }, 'live'));
+  })
+);
+
+// 5. Scoped Management Credentials (device > branch > model > global)
+apiRouter.get(
+  '/onu/credentials',
+  authMiddleware,
+  requirePermission('onu.manage_credentials'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const scope = req.query.scope as string;
+    const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string, 10) : undefined;
+    const creds = await onuRepository.listCredentials({ scope, branch_id: branchId }, authReq.user);
+    res.json(envelope(creds, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/onu/credentials',
+  authMiddleware,
+  requirePermission('onu.manage_credentials'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const schema = z.object({
+      name: z.string().min(1),
+      scope: z.enum(['global', 'model', 'branch', 'device']),
+      profile_id: z.number().int().positive().optional(),
+      branch_id: z.number().int().positive().optional(),
+      onu_id: z.number().int().positive().optional(),
+      username: z.string().min(1),
+      password: z.string().min(1),
+      notes: z.string().optional(),
+    });
+
+    const body = schema.parse(req.body);
+    const id = await onuRepository.createCredential(body, authReq.user);
+    res.status(201).json(envelope({ id, message: 'Credential profile saved' }, 'live'));
+  })
+);
+
+apiRouter.delete(
+  '/onu/credentials/:id',
+  authMiddleware,
+  requirePermission('onu.manage_credentials'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    await onuRepository.deleteCredential(id, authReq.user);
+    res.json(envelope({ success: true, message: 'Credential removed' }, 'live'));
+  })
+);
+
+// 6. Activity & Audit Logs
+apiRouter.get(
+  '/onu/logs',
+  authMiddleware,
+  requirePermission('onu.view_logs'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const onuId = req.query.onu_id ? parseInt(req.query.onu_id as string, 10) : undefined;
+    const customerId = req.query.customer_id ? parseInt(req.query.customer_id as string, 10) : undefined;
+    const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string, 10) : undefined;
+    const status = req.query.status as string;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+
+    const logs = await onuRepository.listActivityLogs(
+      { onu_id: onuId, customer_id: customerId, branch_id: branchId, status, limit },
+      authReq.user
+    );
+    res.json(envelope(logs, 'live'));
+  })
+);
+
+// 7. Test Connection & Test Login on specific ONU
+apiRouter.post(
+  '/onu/:id/test-connection',
+  authMiddleware,
+  requirePermission('onu.test_connection'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const result = await onuManagementService.testConnection(id, authReq.user);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+apiRouter.post(
+  '/onu/:id/test-login',
+  authMiddleware,
+  requirePermission('onu.test_connection'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const result = await onuManagementService.testLogin(id, authReq.user);
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// 8. Read Wi-Fi Settings on specific ONU
+apiRouter.get(
+  '/onu/:id/wifi',
+  authMiddleware,
+  requirePermission('onu.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const wifi = await onuManagementService.getWifiSettings(id, authReq.user);
+    res.json(envelope(wifi, 'live'));
+  })
+);
+
+// 9. Update Wi-Fi Settings on specific ONU
+apiRouter.post(
+  '/onu/:id/wifi',
+  authMiddleware,
+  requirePermission('onu.configure_wifi'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseInt(req.params.id, 10);
+    const schema = z.object({
+      band: z.enum(['2.4GHz', '5GHz']),
+      ssid: z.string().min(1).max(32).optional(),
+      password: z.string().min(8).max(63).optional(),
+    });
+
+    const body = schema.parse(req.body);
+    if (!body.ssid && !body.password) {
+      throw HttpError.badRequest('Either new SSID or new Wi-Fi password is required');
+    }
+
+    const result = await onuManagementService.updateWifiSettings(
+      id,
+      { band: body.band, ssid: body.ssid, password: body.password },
+      authReq.user
+    );
+    res.json(envelope(result, 'live'));
+  })
+);
+
+// 10. Customer Details > ONU Wi-Fi Management endpoints
+apiRouter.get(
+  '/subscribers/:id/onu-wifi',
+  authMiddleware,
+  requirePermission('subscriber.view'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const customerId = parseInt(req.params.id, 10);
+
+    // Resolve customer's associated ONU
+    const onu = await oltRepository.getCustomerOnu(customerId);
+    if (!onu) {
+      return res.json(envelope({ hasOnu: false, message: 'No ONU is associated with this customer.' }, 'live'));
+    }
+
+    // Branch isolation check on subscriber
+    assertCanAccessSubscriber(authReq.user, { branch_id: onu.branch_id });
+
+    // Resolve credential source
+    let credentialSource = 'none';
+    if (onu.onu_id) {
+      try {
+        const cred = await credentialService.resolveCredentials({
+          onuId: onu.onu_id,
+          profileId: onu.profile_id,
+          branchId: onu.branch_id,
+        });
+        if (cred) {
+          credentialSource = cred.sourceScope;
+        }
+      } catch {}
+    }
+
+    // Fetch Wi-Fi settings if management is configured
+    let wifiConfig = null;
+    let error = null;
+
+    if (onu.management_ip && onu.management_status === 'configured') {
+      try {
+        wifiConfig = await onuManagementService.getWifiSettings(onu.onu_id, authReq.user);
+      } catch (e: any) {
+        error = e.message;
+      }
+    }
+
+    res.json(
+      envelope(
+        {
+          hasOnu: true,
+          onu: {
+            ...onu,
+            management_ip: onu.management_ip,
+          },
+          credential_source: credentialSource,
+          wifiConfig,
+          error,
+        },
+        'live'
+      )
+    );
+  })
+);
+
+apiRouter.post(
+  '/subscribers/:id/onu-wifi',
+  authMiddleware,
+  requirePermission('onu.configure_wifi'),
+  asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const customerId = parseInt(req.params.id, 10);
+
+    const onu = await oltRepository.getCustomerOnu(customerId);
+    if (!onu) {
+      throw HttpError.notFound('No ONU is associated with this customer');
+    }
+
+    assertCanAccessSubscriber(authReq.user, { branch_id: onu.branch_id });
+
+    const schema = z.object({
+      band: z.enum(['2.4GHz', '5GHz']),
+      ssid: z.string().min(1).max(32).optional(),
+      password: z.string().min(8).max(63).optional(),
+    });
+
+    const body = schema.parse(req.body);
+    if (!body.ssid && !body.password) {
+      throw HttpError.badRequest('Either new SSID or new Wi-Fi password is required');
+    }
+
+    const result = await onuManagementService.updateWifiSettings(
+      onu.onu_id,
+      { band: body.band, ssid: body.ssid, password: body.password, customerId },
+      authReq.user
+    );
+
+    res.json(envelope(result, 'live'));
+  })
+);

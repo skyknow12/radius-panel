@@ -39,6 +39,9 @@ import {
   Copy,
   Check,
   Zap,
+  Wifi,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -146,6 +149,17 @@ export function SubscriberProfileModal({
   const [overrideModalOpen, setOverrideModalOpen] = React.useState(false);
   const [overrideDaysInput, setOverrideDaysInput] = React.useState<string>('');
 
+  // ONU Web & Wi-Fi Management states
+  const [onuWifiInfo, setOnuWifiInfo] = React.useState<any>(null);
+  const [wifiSsid2g, setWifiSsid2g] = React.useState('');
+  const [wifiPass2g, setWifiPass2g] = React.useState('');
+  const [wifiSsid5g, setWifiSsid5g] = React.useState('');
+  const [wifiPass5g, setWifiPass5g] = React.useState('');
+  const [showWifiPass, setShowWifiPass] = React.useState(false);
+  const [selectedWifiBand, setSelectedWifiBand] = React.useState<'2.4GHz' | '5GHz'>('2.4GHz');
+  const [updatingWifi, setUpdatingWifi] = React.useState(false);
+  const [wifiFeedback, setWifiFeedback] = React.useState<{ verified: boolean; message: string; type: 'success' | 'error' } | null>(null);
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
@@ -210,8 +224,26 @@ export function SubscriberProfileModal({
             .then((r) => r.json())
             .then((j) => setOnuOpticalHistory(j.data || []))
             .catch(() => {});
+
+          fetch(`/api/subscribers/${subscriberId}/onu-wifi`)
+            .then((r) => r.json())
+            .then((j) => {
+              if (j.data) {
+                setOnuWifiInfo(j.data);
+                if (j.data.onu?.wifi_ssid_2g) setWifiSsid2g(j.data.onu.wifi_ssid_2g);
+                if (j.data.onu?.wifi_ssid_5g) setWifiSsid5g(j.data.onu.wifi_ssid_5g);
+                if (j.data.wifiConfig?.bands) {
+                  const b2 = j.data.wifiConfig.bands.find((b: any) => b.band === '2.4GHz');
+                  const b5 = j.data.wifiConfig.bands.find((b: any) => b.band === '5GHz');
+                  if (b2?.ssid) setWifiSsid2g(b2.ssid);
+                  if (b5?.ssid) setWifiSsid5g(b5.ssid);
+                }
+              }
+            })
+            .catch(() => {});
         } else {
           setOnuOpticalHistory([]);
+          setOnuWifiInfo(null);
         }
       }
       if (oltsRes.ok) {
@@ -230,6 +262,162 @@ export function SubscriberProfileModal({
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 4000);
+  };
+
+  const handleUpdateWifiSsid = async () => {
+    const ssid = selectedWifiBand === '2.4GHz' ? wifiSsid2g : wifiSsid5g;
+    if (!ssid || ssid.trim().length === 0) {
+      showNotice('Please enter a valid Wi-Fi SSID');
+      return;
+    }
+    try {
+      setUpdatingWifi(true);
+      setWifiFeedback(null);
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu-wifi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          band: selectedWifiBand,
+          ssid: ssid.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.data?.success) {
+        setWifiFeedback({
+          verified: json.data.verified,
+          message: json.data.message || 'Wi-Fi SSID updated successfully',
+          type: 'success',
+        });
+        showNotice('Wi-Fi SSID updated and verified on device');
+        fetchProfile();
+      } else {
+        setWifiFeedback({
+          verified: false,
+          message: json.error?.message || json.data?.error || 'Failed to update Wi-Fi SSID',
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      setWifiFeedback({
+        verified: false,
+        message: err.message || 'Network error updating Wi-Fi SSID',
+        type: 'error',
+      });
+    } finally {
+      setUpdatingWifi(false);
+    }
+  };
+
+  const handleUpdateWifiPassword = async () => {
+    const pass = selectedWifiBand === '2.4GHz' ? wifiPass2g : wifiPass5g;
+    if (!pass || pass.length < 8) {
+      showNotice('Passphrase must be at least 8 characters');
+      return;
+    }
+    try {
+      setUpdatingWifi(true);
+      setWifiFeedback(null);
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu-wifi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          band: selectedWifiBand,
+          password: pass,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.data?.success) {
+        setWifiFeedback({
+          verified: json.data.verified,
+          message: json.data.message || 'Wi-Fi passphrase updated successfully',
+          type: 'success',
+        });
+        showNotice('Wi-Fi passphrase updated and verified on device');
+        fetchProfile();
+      } else {
+        setWifiFeedback({
+          verified: false,
+          message: json.error?.message || json.data?.error || 'Failed to update Wi-Fi passphrase',
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      setWifiFeedback({
+        verified: false,
+        message: err.message || 'Network error updating Wi-Fi passphrase',
+        type: 'error',
+      });
+    } finally {
+      setUpdatingWifi(false);
+    }
+  };
+
+  const handleApplyAllWifi = async () => {
+    const ssid = selectedWifiBand === '2.4GHz' ? wifiSsid2g : wifiSsid5g;
+    const pass = selectedWifiBand === '2.4GHz' ? wifiPass2g : wifiPass5g;
+    if (!ssid && !pass) {
+      showNotice('Please enter an SSID or passphrase to update');
+      return;
+    }
+    if (pass && pass.length < 8) {
+      showNotice('Passphrase must be at least 8 characters');
+      return;
+    }
+    try {
+      setUpdatingWifi(true);
+      setWifiFeedback(null);
+      const body: any = { band: selectedWifiBand };
+      if (ssid && ssid.trim()) body.ssid = ssid.trim();
+      if (pass && pass.trim()) body.password = pass.trim();
+
+      const res = await fetch(`/api/subscribers/${subscriberId}/onu-wifi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (res.ok && json.data?.success) {
+        setWifiFeedback({
+          verified: json.data.verified,
+          message: json.data.message || 'Wi-Fi settings applied successfully',
+          type: 'success',
+        });
+        showNotice('Wi-Fi configuration applied and verified on device');
+        fetchProfile();
+      } else {
+        setWifiFeedback({
+          verified: false,
+          message: json.error?.message || json.data?.error || 'Failed to apply Wi-Fi settings',
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      setWifiFeedback({
+        verified: false,
+        message: err.message || 'Network error applying Wi-Fi settings',
+        type: 'error',
+      });
+    } finally {
+      setUpdatingWifi(false);
+    }
+  };
+
+  const handleTestOnuWeb = async () => {
+    if (!customerOnu?.onu_id) return;
+    try {
+      setUpdatingWifi(true);
+      const res = await fetch(`/api/onu/${customerOnu.onu_id}/test-connection`, { method: 'POST' });
+      const json = await res.json();
+      if (json.data?.reachable) {
+        showNotice(`ONU is reachable (${json.data.latencyMs || 0} ms)`);
+      } else {
+        showNotice(json.data?.error || 'ONU is unreachable over management network');
+      }
+    } catch (err: any) {
+      showNotice(err.message || 'Connection test failed');
+    } finally {
+      setUpdatingWifi(false);
+    }
   };
 
   const handleSampleOptical = async () => {
@@ -2743,6 +2931,228 @@ export function SubscriberProfileModal({
                                 ? new Date(customerOnu.last_optical_reading_at).toLocaleString()
                                 : 'No live samples taken yet'}
                             </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Phase 8: ONU Web & Wi-Fi Management Card */}
+                      <div className="p-4 sm:p-5 rounded-xl border border-border bg-card shadow-sm space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                              <Wifi className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-sm text-foreground">ONU / Wi-Fi Management</h4>
+                              <p className="text-[11px] text-muted-foreground">
+                                Remote Wi-Fi SSID, security credentials, and wireless interface control.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Reachability Badge */}
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border',
+                                customerOnu.web_status === 'reachable'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                  : customerOnu.web_status === 'unreachable'
+                                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                                  : 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/20'
+                              )}
+                            >
+                              Web: {customerOnu.web_status || 'unknown'}
+                            </span>
+
+                            {/* Profile Badge */}
+                            {customerOnu.profile_name ? (
+                              <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[10px] font-semibold">
+                                {customerOnu.profile_name}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] font-semibold">
+                                Pending Profile
+                              </span>
+                            )}
+
+                            {/* Credential Scope Badge */}
+                            {onuWifiInfo?.credential_source && (
+                              <span className="px-2 py-0.5 rounded-full bg-muted border border-border text-[10px] font-medium text-muted-foreground">
+                                Creds: {onuWifiInfo.credential_source}
+                              </span>
+                            )}
+
+                            {/* Verification Badge */}
+                            {customerOnu.wifi_last_status && (
+                              <span
+                                className={cn(
+                                  'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border',
+                                  customerOnu.wifi_last_status === 'verified'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                )}
+                              >
+                                {customerOnu.wifi_last_status}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Disconnection Warning Notice */}
+                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                          <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                          <div>
+                            <strong>Disconnection Warning:</strong> Updating Wi-Fi SSID, passphrase, or radio settings will temporarily disconnect wireless client devices connected to this ONU.
+                          </div>
+                        </div>
+
+                        {/* Wi-Fi Feedback Alert */}
+                        {wifiFeedback && (
+                          <div
+                            className={cn(
+                              'p-3 rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm animate-in fade-in',
+                              wifiFeedback.type === 'success'
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              {wifiFeedback.verified ? (
+                                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                              )}
+                              <span>{wifiFeedback.message}</span>
+                            </div>
+                            <button onClick={() => setWifiFeedback(null)} className="opacity-70 hover:opacity-100">
+                              &times;
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Band Selector Tabs */}
+                        <div className="flex items-center gap-2 border-b border-border/40 pb-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedWifiBand('2.4GHz')}
+                            className={cn(
+                              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5',
+                              selectedWifiBand === '2.4GHz'
+                                ? 'bg-primary text-primary-foreground shadow-sm'
+                                : 'border border-border text-muted-foreground hover:bg-muted'
+                            )}
+                          >
+                            <Radio className="w-3.5 h-3.5" />
+                            2.4 GHz Band
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedWifiBand('5GHz')}
+                            className={cn(
+                              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5',
+                              selectedWifiBand === '5GHz'
+                                ? 'bg-primary text-primary-foreground shadow-sm'
+                                : 'border border-border text-muted-foreground hover:bg-muted'
+                            )}
+                          >
+                            <Radio className="w-3.5 h-3.5" />
+                            5 GHz Band (Dual-Band)
+                          </button>
+                        </div>
+
+                        {/* Band Form Controls */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                              <span>Wi-Fi Network Name (SSID)</span>
+                              <span className="text-[10px] text-muted-foreground">{selectedWifiBand}</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={selectedWifiBand === '2.4GHz' ? wifiSsid2g : wifiSsid5g}
+                              onChange={(e) => {
+                                if (selectedWifiBand === '2.4GHz') setWifiSsid2g(e.target.value);
+                                else setWifiSsid5g(e.target.value);
+                              }}
+                              placeholder="e.g. SKY_Home_WiFi"
+                              className="w-full px-3 py-2 rounded-xl border border-border bg-background text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                            />
+                            <p className="text-[10px] text-muted-foreground">Up to 32 characters broadcast name.</p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                              <span>WPA2/WPA3 Passphrase</span>
+                              <button
+                                type="button"
+                                onClick={() => setShowWifiPass(!showWifiPass)}
+                                className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                              >
+                                {showWifiPass ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                {showWifiPass ? 'Hide' : 'Show'}
+                              </button>
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={showWifiPass ? 'text' : 'password'}
+                                value={selectedWifiBand === '2.4GHz' ? wifiPass2g : wifiPass5g}
+                                onChange={(e) => {
+                                  if (selectedWifiBand === '2.4GHz') setWifiPass2g(e.target.value);
+                                  else setWifiPass5g(e.target.value);
+                                }}
+                                placeholder="••••••••••••"
+                                className="w-full px-3 py-2 rounded-xl border border-border bg-background text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">Minimum 8 characters WPA pre-shared key.</p>
+                          </div>
+                        </div>
+
+                        {/* Actions Row */}
+                        <div className="pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleTestOnuWeb}
+                              disabled={updatingWifi}
+                              className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              <Activity className="w-3.5 h-3.5 text-primary" />
+                              Test Connection
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={handleUpdateWifiSsid}
+                              disabled={updatingWifi}
+                              className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors disabled:opacity-50"
+                            >
+                              Update Wi-Fi Name
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleUpdateWifiPassword}
+                              disabled={updatingWifi}
+                              className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors disabled:opacity-50"
+                            >
+                              Update Wi-Fi Password
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleApplyAllWifi}
+                              disabled={updatingWifi}
+                              className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              {updatingWifi ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Check className="w-3.5 h-3.5" />
+                              )}
+                              {updatingWifi ? 'Applying...' : 'Apply Wi-Fi Changes'}
+                            </button>
                           </div>
                         </div>
                       </div>

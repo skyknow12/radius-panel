@@ -49,6 +49,7 @@ import { DeveloperToolsView } from '@/components/developer-tools-view';
 import { GlobalSearchDialog } from '@/components/global-search-dialog';
 import { SubscriberProfileModal } from '@/components/subscriber-profile-modal';
 import { OltManagementView } from '@/components/olt-management-view';
+import { OnuManagementView } from '@/components/onu/onu-management-view';
 import { Sparkles, Calendar, Clock, AlertCircle, Shield } from 'lucide-react';
 import type { TimeRange } from '@/types/api';
 
@@ -461,6 +462,30 @@ export default function DashboardPage() {
                   : activeTab === 'olt_history'
                   ? 'history'
                   : 'inventory'
+              }
+              onOpenCustomer={(id) => setSubscriberProfileId(id)}
+              currentUser={currentUser}
+            />
+          ) : activeTab === 'onu_management' ||
+              activeTab === 'onu_overview' ||
+              activeTab === 'detected_onus' ||
+              activeTab === 'new_model_requests' ||
+              activeTab === 'model_profiles' ||
+              activeTab === 'management_credentials' ||
+              activeTab === 'management_activity_logs' ? (
+            <OnuManagementView
+              initialSubTab={
+                activeTab === 'detected_onus'
+                  ? 'detected_onus'
+                  : activeTab === 'new_model_requests'
+                  ? 'model_requests'
+                  : activeTab === 'model_profiles'
+                  ? 'model_profiles'
+                  : activeTab === 'management_credentials'
+                  ? 'credentials'
+                  : activeTab === 'management_activity_logs'
+                  ? 'logs'
+                  : 'overview'
               }
               onOpenCustomer={(id) => setSubscriberProfileId(id)}
               currentUser={currentUser}

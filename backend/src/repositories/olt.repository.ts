@@ -3,6 +3,7 @@ import { HttpError } from '../lib/http-error';
 import { isBranchUser } from '../lib/access-control';
 import type { AuthSession } from '../services/auth.service';
 import { encryptSecret, decryptSecret, maskSecret, sanitizeLogOutput } from '../lib/crypto';
+import { modelDetectionService } from '../services/onu/model-detection.service';
 
 export interface OltItem {
   id: number;
@@ -747,9 +748,21 @@ export const oltRepository = {
         input.last_down_time ? new Date(input.last_down_time) : null,
         input.last_down_cause || null,
       ]
-    );
+    const onuId = rows[0].id;
 
-    return rows[0].id;
+    // Trigger automatic ONU vendor/model detection & profile matching asynchronously
+    modelDetectionService
+      .processDetectedOnu({
+        onuId,
+        oltId: input.olt_id,
+        serialNumber: input.serial_number,
+        vendorId: input.vendor_id,
+        equipmentId: input.equipment_id,
+        description: input.description,
+      })
+      .catch(() => {});
+
+    return onuId;
   },
 
   /**
@@ -960,12 +973,17 @@ export const oltRepository = {
               onu.description, onu.vendor_id, onu.equipment_id, onu.model,
               onu.run_state, onu.config_state, onu.match_state,
               onu.last_rx_power, onu.last_tx_power, onu.last_olt_rx_power, onu.last_optical_reading_at,
+              onu.management_ip, onu.web_port, onu.web_protocol, onu.web_status, onu.management_status,
+              onu.profile_id, onu.wifi_ssid_2g, onu.wifi_ssid_5g, onu.wifi_last_status,
+              onu.hardware_version, onu.firmware_version,
+              omp.name AS profile_name, omp.status AS profile_status,
               o.id AS olt_id, o.name AS olt_name, o.branch_id, b.name AS branch_name,
               o.optical_warning_threshold, o.optical_critical_threshold, o.last_sync_at
          FROM customer_onu_associations coa
          JOIN onus onu ON onu.id = coa.onu_id
          JOIN olts o ON o.id = coa.olt_id
     LEFT JOIN branches b ON b.id = o.branch_id
+    LEFT JOIN onu_model_profiles omp ON omp.id = onu.profile_id
         WHERE coa.customer_id = $1`,
       [customerId]
     );
