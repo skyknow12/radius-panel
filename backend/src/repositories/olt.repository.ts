@@ -986,6 +986,13 @@ export const oltRepository = {
   },
 
   /**
+   * Get active ONU association details for a customer (alias)
+   */
+  async getCustomerOnuAssociation(customerId: number): Promise<any | null> {
+    return this.getCustomerOnu(customerId);
+  },
+
+  /**
    * Log an operational event into olt_operation_history
    */
   async logOperation(

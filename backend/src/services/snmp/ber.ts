@@ -106,7 +106,7 @@ export class BerReader {
   }
 
   readUnsignedInteger(): number {
-    const tag = this.readTag();
+    this.readTag();
     const len = this.readLength();
     const bytes = this.readBytes(len);
     let val = 0;
@@ -117,7 +117,7 @@ export class BerReader {
   }
 
   readBigInt(): bigint {
-    const tag = this.readTag();
+    this.readTag();
     const len = this.readLength();
     const bytes = this.readBytes(len);
     let val = 0n;

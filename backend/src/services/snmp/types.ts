@@ -22,7 +22,7 @@ export interface SnmpV3Config {
 export interface SnmpConfig {
   host: string;
   port?: number;
-  version: SnmpVersion;
+  version?: SnmpVersion;
   community?: string;
   writeCommunity?: string;
   v3?: SnmpV3Config;

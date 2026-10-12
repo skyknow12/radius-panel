@@ -117,7 +117,7 @@ export class OltPollerService {
   /**
    * Poll a single OLT by ID with per-device mutex lock and concurrency limit
    */
-  async pollOlt(oltId: number, options: { force?: boolean } = {}): Promise<OltNormalizedTelemetry> {
+  async pollOlt(oltId: number, _options: { force?: boolean } = {}): Promise<OltNormalizedTelemetry> {
     if (activePolls.has(oltId)) {
       throw new Error(`SNMP poll already in progress for OLT #${oltId}`);
     }

@@ -1,8 +1,7 @@
 import dgram from 'node:dgram';
 import net from 'node:net';
-import crypto from 'node:crypto';
 import { ASN1_TAGS, buildSnmpPacket, parseSnmpResponse } from './ber';
-import type { SnmpConfig, SnmpVarBind, SnmpVersion } from './types';
+import type { SnmpConfig, SnmpVarBind } from './types';
 
 /**
  * SSRF Protection: Validates management host against prohibited targets
@@ -64,8 +63,8 @@ export class SnmpClient {
       timeoutMs: 3000,
       retries: 2,
       community: 'public',
-      version: 'v2c',
       ...config,
+      version: config.version || 'v2c',
     };
   }
 
@@ -243,7 +242,7 @@ export class SnmpClient {
       let nextVb: SnmpVarBind | null = null;
       try {
         nextVb = await this.getNext(currentOid);
-      } catch (err: any) {
+      } catch {
         // If device returns noSuchName or end of mib, terminate walk cleanly
         break;
       }
