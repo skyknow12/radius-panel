@@ -748,6 +748,8 @@ export const oltRepository = {
         input.last_down_time ? new Date(input.last_down_time) : null,
         input.last_down_cause || null,
       ]
+    );
+
     const onuId = rows[0].id;
 
     // Trigger automatic ONU vendor/model detection & profile matching asynchronously
